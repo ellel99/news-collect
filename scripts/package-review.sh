@@ -10,7 +10,7 @@ cleanup(){ rm -rf "${TEMP_DIR}"; }
 trap cleanup EXIT
 python3 "${SCRIPT_DIR}/validate-foundation.py"
 case "${OUTPUT_PATH}" in "${PROJECT_ROOT}"/*) echo 'output must be outside project' >&2; exit 1;; esac
-SUSPICIOUS="$(find "${PROJECT_ROOT}" -type f \( -name '.env' -o -name '.env.local' -o -name '.env.production' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.db' -o -name '*.dump' -o -name '*.backup' \) -not -path '*/.git/*' -not -path '*/.venv/*' -print)"
+SUSPICIOUS="$(find "${PROJECT_ROOT}" -type f \( -name '.env' -o -name '.env.local' -o -name '.env.production' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.db' -o -name '*.dump' -o -name '*.backup' \) -not -path '*/.git/*' -not -path '*/.venv/*' -not -path '*/.pytest_cache/*' -not -path '*/.mypy_cache/*' -not -path '*/.ruff_cache/*' -print)"
 if [[ -n "${SUSPICIOUS}" ]]; then echo 'sensitive/local files found:' >&2; echo "${SUSPICIOUS}" >&2; exit 1; fi
 PATTERN='-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|[0-9]{8,10}:[A-Za-z0-9_-]{35}|xox[baprs]-[A-Za-z0-9-]+'
 if command -v rg >/dev/null 2>&1; then

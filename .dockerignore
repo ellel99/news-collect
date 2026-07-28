@@ -1,0 +1,14 @@
+.git
+.idea
+.vscode
+.venv
+.env
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.log
+*.zip
+backups
+local-data
+runtime-data
