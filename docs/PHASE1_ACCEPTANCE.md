@@ -1,0 +1,36 @@
+# Phase 1 Acceptance
+
+版本：1.0  
+适用：Phase 1 最终验收与每个 SPEC 的阶段边界检查
+
+## 1. 主链路
+
+```text
+合法来源 → 稳定采集 → RawItem → ContentItem → 确定性去重 → 存储 → Outbox → Telegram → 运维与恢复
+```
+
+## 2. Blocker Gate
+
+- [ ] 无 LLM、Embedding、向量数据库
+- [ ] 无 Event、Evidence、Analysis
+- [ ] 无 Portfolio、Holding、InvestmentPlan、CandidateRule
+- [ ] 无交易建议和自动交易
+- [ ] 无隐式行为收窄
+- [ ] 每个真实来源有合法接入、授权、限流、Cursor、稳定 ID、Parser、保留和验证记录
+- [ ] 重复抓取不产生重复 ContentItem
+- [ ] 重复处理不产生重复 Telegram 消息
+- [ ] Cursor 只在安全持久化后推进
+- [ ] 失败可见、可分类、可重试
+- [ ] Outbox 与发送幂等
+- [ ] 管理 Bot 与推送 Bot 权限隔离
+- [ ] 日志和 Review ZIP 无秘密
+- [ ] Migration upgrade/downgrade/re-upgrade 通过
+- [ ] PostgreSQL 备份和新环境恢复演练通过
+- [ ] Ruff、format、mypy、pytest、Compose 和手动端到端通过
+- [ ] Delivery Report、Commit Evidence 和 Review ZIP 完整
+
+## 3. Phase 1 最终结论
+
+- PASS：全部 Blocker 满足。
+- PASS WITH ISSUES：仅有用户明确接受的非阻塞问题。
+- FAIL：范围偏差、安全问题、关键可靠性失败或真实主链路不完整。

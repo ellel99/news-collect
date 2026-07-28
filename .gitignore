@@ -1,0 +1,37 @@
+# IDE
+.idea/
+.vscode/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+data/
+runtime-data/
+local-data/
+postgres-data/
+redis-data/
+backups/
+
+# Build / package
+dist/
+build/
+*.zip
+
+# macOS
+.DS_Store
