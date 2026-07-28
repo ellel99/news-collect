@@ -2,6 +2,13 @@
 
 ## SPEC-0001 Project Bootstrap — 2026-07-29
 
+### Fixed
+
+- `.env.example` 改为宿主机 `localhost` 配置，Compose 暴露 PostgreSQL/Redis 端口并保留容器内部服务名；
+- `session_scope` 改为异步 context manager，并增加生命周期测试；
+- `DATABASE_URL` 仅允许 SPEC 固定的 PostgreSQL asyncpg URL；
+- 完成 Compose 健康、Alembic 往返与 Celery health task 的真实运行时验收。
+
 ### Added
 
 - Python 3.12 `src/` 项目骨架、FastAPI 应用与 live/ready 健康接口；

@@ -20,6 +20,11 @@ def test_invalid_database_scheme_is_rejected() -> None:
         Settings(DATABASE_URL="postgresql://host/db", _env_file=None)
 
 
+def test_sqlite_database_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(DATABASE_URL="sqlite+aiosqlite:///:memory:", _env_file=None)
+
+
 def test_production_defaults_fail_fast() -> None:
     with pytest.raises(ValidationError, match="production service URLs"):
         Settings(APP_ENV="production", _env_file=None)

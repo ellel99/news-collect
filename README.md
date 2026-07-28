@@ -117,6 +117,8 @@ uv run celery -A market_intelligence.tasks.celery_app:celery_app worker --loglev
 uv run celery -A market_intelligence.tasks.celery_app:celery_app beat --loglevel=INFO
 ```
 
+这是本地 uv 路线：Compose 将 PostgreSQL 暴露到 `${POSTGRES_PORT:-5432}`，将 Redis 暴露到 `${REDIS_PORT:-6379}`；`.env.example` 因此使用 `localhost`。完整 Compose 路线会通过服务级 `environment` 自动改用容器内部主机名 `postgres` 和 `redis`，无需修改 `.env`。
+
 健康检查：
 
 ```bash
@@ -176,7 +178,7 @@ Review ZIP 默认生成在项目目录外，并排除 `.env`、虚拟环境、ID
 
 - `uv: command not found`：安装 uv 后重新运行 `uv sync --frozen`；不要创建第二套锁文件。
 - `Cannot connect to the Docker daemon`：启动 Docker Desktop，确认 `docker info` 成功后重试。
-- `DB_UNAVAILABLE`：确认 PostgreSQL 已健康、`DATABASE_URL` 使用 `postgresql+asyncpg://`，且主机名与运行方式匹配（本地使用 `localhost`，Compose 内使用 `postgres`）。
+- `DB_UNAVAILABLE`：确认 PostgreSQL 已健康、`DATABASE_URL` 使用 `postgresql+asyncpg://`，且主机名与运行方式匹配（本地使用 `localhost`，Compose 内自动使用 `postgres`）。
 - `REDIS_UNAVAILABLE`：确认 Redis 已健康，并检查 `REDIS_URL`；本地与 Compose 的主机名同样不同。
 - 端口占用：在 `.env` 中修改 `APP_PORT`，或停止占用 8000 端口的进程。
-- 迁移连接失败：先运行 `docker compose up -d postgres`，再检查 `.env` 是否指向本机暴露的数据库。默认 Compose 不暴露数据库端口；本地执行迁移时可临时使用容器命令 `docker compose run --rm migrate`。
+- 迁移连接失败：先运行 `docker compose up -d postgres`，再检查 `.env` 是否指向 `localhost:${POSTGRES_PORT:-5432}`；也可使用容器命令 `docker compose run --rm migrate`。

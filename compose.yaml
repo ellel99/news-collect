@@ -20,6 +20,8 @@ x-app: &app
 services:
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: market_intelligence
       POSTGRES_USER: market_intelligence
@@ -34,6 +36,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data

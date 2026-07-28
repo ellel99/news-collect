@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
-        if not value.startswith(("postgresql+asyncpg://", "sqlite+aiosqlite://")):
-            raise ValueError("must use an async SQLAlchemy database URL")
+        if not value.startswith("postgresql+asyncpg://"):
+            raise ValueError("must use a PostgreSQL asyncpg SQLAlchemy URL")
         return value
 
     @field_validator("REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND")
