@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+from collections.abc import Callable
+from pathlib import Path
+
+import httpx
+import pytest
+
+from market_intelligence.providers.preflight import eia, finnhub, marketaux, newsapi_ai, sec_edgar
+from market_intelligence.providers.preflight.base import (
+    MissingCredentialError,
+    SmokeReport,
+)
+
+_SCRIPT_SPEC = importlib.util.spec_from_file_location(
+    "provider_smoke",
+    Path(__file__).parents[1] / "scripts" / "provider_smoke.py",
+)
+assert _SCRIPT_SPEC is not None and _SCRIPT_SPEC.loader is not None
+provider_smoke = importlib.util.module_from_spec(_SCRIPT_SPEC)
+_SCRIPT_SPEC.loader.exec_module(provider_smoke)
+
+SECRET = "do-not-print-this-secret"
+
+
+def _response(payload: object, headers: dict[str, str] | None = None) -> httpx.Response:
+    return httpx.Response(200, json=payload, headers=headers)
+
+
+@pytest.mark.parametrize(
+    ("provider", "builder"),
+    [
+        (
+            "newsapi_ai",
+            lambda env: newsapi_ai.build_request(
+                env, query="technology", max_results=1, execute=True
+            ),
+        ),
+        (
+            "marketaux",
+            lambda env: marketaux.build_request(env, query="technology", limit=1, execute=True),
+        ),
+        (
+            "finnhub",
+            lambda env: finnhub.build_request(env, symbol="AAPL", execute=True),
+        ),
+        (
+            "eia",
+            lambda env: eia.build_request(
+                {**env, "EIA_API_VERSION": "v2"},
+                dataset="electricity",
+                limit=1,
+                execute=True,
+            ),
+        ),
+        (
+            "sec_edgar",
+            lambda env: sec_edgar.build_request(env, ticker="AAPL", execute=True),
+        ),
+    ],
+)
+def test_execute_missing_credentials_fails_closed(
+    provider: str,
+    builder: Callable[[dict[str, str]], object],
+) -> None:
+    del provider
+    with pytest.raises(MissingCredentialError):
+        builder({})
+
+
+def test_default_cli_dry_run_does_not_call_network(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def unexpected_network(request: object) -> SmokeReport:
+        del request
+        raise AssertionError("network execution must not be reached")
+
+    monkeypatch.setattr(newsapi_ai, "execute_minimal_request", unexpected_network)
+    assert (
+        provider_smoke.main(
+            ["--provider", "newsapi_ai", "--query", "technology", "--max-results", "1"]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["classified_result"] == "BLOCKED"
+    assert report["http_status"] is None
+
+
+def test_execute_report_does_not_print_or_log_key(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("NEWSAPI_AI_API_KEY", SECRET)
+    safe_report = SmokeReport(
+        provider="newsapi_ai",
+        endpoint_family=newsapi_ai.ENDPOINT,
+        http_status=200,
+        valid_json=True,
+        top_level_fields=["articles"],
+        item_fields=["title", "url"],
+        result_count=1,
+        rate_limit_headers_present=[],
+        retry_after_present=False,
+        classified_result="PASS",
+    )
+    monkeypatch.setattr(
+        newsapi_ai,
+        "execute_minimal_request",
+        lambda request: safe_report,
+    )
+    assert (
+        provider_smoke.main(
+            [
+                "--provider",
+                "newsapi_ai",
+                "--query",
+                "technology",
+                "--max-results",
+                "1",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+    assert SECRET not in capsys.readouterr().out
+    assert SECRET not in caplog.text
+
+
+def test_cli_does_not_accept_key_argument() -> None:
+    with pytest.raises(SystemExit):
+        provider_smoke.main(["--provider", "newsapi_ai", "--api-key", SECRET])
+
+
+def test_redaction_never_contains_secrets() -> None:
+    requests = [
+        newsapi_ai.build_request(
+            {"NEWSAPI_AI_API_KEY": SECRET},
+            query="technology",
+            max_results=1,
+            execute=True,
+        ),
+        marketaux.build_request(
+            {"MARKETAUX_API_TOKEN": SECRET},
+            query="technology",
+            limit=1,
+            execute=True,
+        ),
+        finnhub.build_request(
+            {"FINNHUB_API_KEY": SECRET},
+            symbol="AAPL",
+            execute=True,
+        ),
+        eia.build_request(
+            {"EIA_API_KEY": SECRET, "EIA_API_VERSION": "v2"},
+            dataset="electricity",
+            limit=1,
+            execute=True,
+        ),
+        sec_edgar.build_request(
+            {"SEC_USER_AGENT": SECRET, "SEC_CONTACT_EMAIL": "private@example.invalid"},
+            ticker="AAPL",
+            execute=True,
+        ),
+    ]
+    redacted = json.dumps(
+        [
+            newsapi_ai.redact_request(requests[0]),
+            marketaux.redact_request(requests[1]),
+            finnhub.redact_request(requests[2]),
+            eia.redact_request(requests[3]),
+            sec_edgar.redact_request(requests[4]),
+        ]
+    )
+    assert SECRET not in redacted
+    assert "private@example.invalid" not in redacted
+
+
+def test_summary_contains_shape_not_values() -> None:
+    payload = {
+        "meta": {"returned": 1},
+        "data": [
+            {
+                "title": "REAL TITLE MUST NOT LEAK",
+                "url": "https://source.invalid/private",
+                "description": "REAL BODY MUST NOT LEAK",
+            }
+        ],
+    }
+    request = marketaux.build_request(
+        {"MARKETAUX_API_TOKEN": SECRET},
+        query="technology",
+        limit=1,
+        execute=True,
+    )
+    transport = httpx.MockTransport(
+        lambda incoming: _response(
+            payload,
+            {
+                "Retry-After": "10",
+                "X-RateLimit-Remaining": "20",
+            },
+        )
+    )
+    report = marketaux.execute_minimal_request(request, transport=transport)
+    serialized = json.dumps(report.as_dict())
+    assert "REAL TITLE MUST NOT LEAK" not in serialized
+    assert "https://source.invalid/private" not in serialized
+    assert "REAL BODY MUST NOT LEAK" not in serialized
+    assert SECRET not in serialized
+    assert set(report.as_dict()) == {
+        "provider",
+        "endpoint_family",
+        "http_status",
+        "valid_json",
+        "top_level_fields",
+        "item_fields",
+        "result_count",
+        "rate_limit_headers_present",
+        "retry_after_present",
+        "classified_result",
+    }
+    assert report.item_fields == ["description", "title", "url"]
+    assert report.result_count == 1
+    assert report.retry_after_present is True
+
+
+def test_official_request_contracts() -> None:
+    news_request = newsapi_ai.build_request(
+        {"NEWSAPI_AI_API_KEY": SECRET},
+        query="technology",
+        max_results=1,
+        execute=True,
+    )
+    assert news_request.url == "https://eventregistry.org/api/v1/article/getArticles"
+    assert news_request.method == "POST"
+    assert news_request.json_body is not None
+    assert news_request.json_body["articlesCount"] == 1
+
+    marketaux_request = marketaux.build_request(
+        {"MARKETAUX_API_TOKEN": SECRET},
+        query="technology",
+        limit=1,
+        execute=True,
+    )
+    assert marketaux_request.url == "https://api.marketaux.com/v1/news/all"
+    assert marketaux_request.params["limit"] == 1
+
+    finnhub_request = finnhub.build_request(
+        {"FINNHUB_API_KEY": SECRET},
+        symbol="AAPL",
+        execute=True,
+    )
+    assert finnhub_request.url == "https://finnhub.io/api/v1/quote"
+    assert finnhub_request.headers["X-Finnhub-Token"] == SECRET
+    assert "token" not in finnhub_request.params
+
+    eia_request = eia.build_request(
+        {"EIA_API_KEY": SECRET, "EIA_API_VERSION": "v2"},
+        dataset="electricity",
+        limit=1,
+        execute=True,
+    )
+    assert eia_request.url == "https://api.eia.gov/v2/electricity/retail-sales/data/"
+    assert eia_request.params["api_key"] == SECRET
+    assert eia_request.params["length"] == 1
+
+    sec_request = sec_edgar.build_request(
+        {"SEC_USER_AGENT": "news-collect", "SEC_CONTACT_EMAIL": "owner@example.invalid"},
+        ticker="AAPL",
+        execute=True,
+    )
+    assert sec_request.url == "https://data.sec.gov/submissions/CIK0000320193.json"
+    assert sec_request.headers["User-Agent"] == "news-collect owner@example.invalid"
+
+
+def test_sec_columnar_summary_records_fields_and_count_only() -> None:
+    payload = {
+        "name": "REAL COMPANY VALUE",
+        "filings": {
+            "recent": {
+                "accessionNumber": ["0001"],
+                "primaryDocument": ["secret-document.htm"],
+            }
+        },
+    }
+    top, item, count = sec_edgar.summarize_response_shape(payload)
+    assert top == ["filings", "name"]
+    assert item == ["accessionNumber", "primaryDocument"]
+    assert count == 1
+    assert "REAL COMPANY VALUE" not in json.dumps([top, item, count])

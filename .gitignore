@@ -15,6 +15,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+PROVIDER_CREDENTIALS_PRIVATE.md
 
 # Logs
 *.log

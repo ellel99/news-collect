@@ -1,0 +1,10 @@
+provider: newsapi_ai
+enabled: false
+credential_env: NEWSAPI_AI_API_KEY
+plan_env: NEWSAPI_AI_PLAN
+quota_env: NEWSAPI_AI_QUOTA
+allowed_retention_env: NEWSAPI_AI_ALLOWED_RETENTION
+internal_ai_allowed_env: NEWSAPI_AI_INTERNAL_AI_ALLOWED
+smoke:
+  query: technology
+  max_results: 1

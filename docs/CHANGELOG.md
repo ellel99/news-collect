@@ -4,6 +4,10 @@
 
 ### Documentation
 
+- 增加 provider preflight scaffold：五个平台的官方合同索引、凭证空模板、bounded smoke
+  runbook、placeholder-only provider 配置与默认 dry-run CLI。
+- 增加完全 mock 的 preflight 单元测试；本轮未使用真实 API key、未请求外部 API、未运行
+  真实 smoke、未实现 Adapter、未写数据库、迁移、schema/ORM 或 collection。
 - 纠正 SPEC-0004 provider 决策流程：平台选择由 ChatGPT / 用户确认，Primary Provider 为
   NewsAPI.ai / Event Registry（pending credentials），Codex 不负责重新评估或改选。
 - 记录 Marketaux 为 Secondary Financial News candidate、Finnhub 为 Market Validation

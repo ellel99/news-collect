@@ -1,0 +1,10 @@
+provider: marketaux
+enabled: false
+credential_env: MARKETAUX_API_TOKEN
+plan_env: MARKETAUX_PLAN
+daily_limit_env: MARKETAUX_DAILY_LIMIT
+allowed_retention_env: MARKETAUX_ALLOWED_RETENTION
+internal_ai_allowed_env: MARKETAUX_INTERNAL_AI_ALLOWED
+smoke:
+  query: technology
+  limit: 1

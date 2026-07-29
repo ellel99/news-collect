@@ -10,7 +10,8 @@
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：`spec/SPEC-0004.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0004 provider decision realignment；implementation not started
+- 当前工作状态：provider decision 已 realign；provider preflight scaffold 已准备；
+  SPEC-0004 implementation not started
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Primary Provider：NewsAPI.ai / Event Registry（selected；pending user credentials）
 - Secondary Financial News Provider：Marketaux（candidate；不在当前实现范围）
@@ -22,6 +23,9 @@
 - GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
 - 当前门禁：不得请求任何 provider API；不得继续 GDELT；不得开始 adapter implementation
+- Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
+  `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
+  `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
 - 下一步：用户提供 NewsAPI.ai / Event Registry API key、plan、quota/token limit、allowed
   retention 和 internal AI analysis 决策后，另行授权 bounded smoke
 - NewsAPI.ai / Event Registry bounded smoke 成功并通过 Review 前不得 implementation
@@ -33,8 +37,8 @@
 - 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
 - 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
 - AI 分析、Event、Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义，必须完成适用的 Foundation revision、Freeze Review 和独立 SPEC 后才能实施。
-- SPEC-0004 的 Active 状态仅表示文档审核，不是实现授权；不得写代码、创建迁移、安装依赖、
-  请求真实来源或注册真实 adapter。
+- SPEC-0004 的 Active 状态不是 Adapter 实现授权；独立 preflight scaffold 仅因用户明确授权而
+  存在，不得扩展为业务代码、迁移、依赖、真实来源请求或 adapter registration。
 - Foundation v2.1-FROZEN 仍然生效；Proposed Decisions 不等于实现授权。
 
 ## Phase 1 允许

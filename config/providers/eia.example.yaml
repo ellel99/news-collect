@@ -1,0 +1,7 @@
+provider: eia
+enabled: false
+credential_env: EIA_API_KEY
+api_version_env: EIA_API_VERSION
+smoke:
+  dataset: electricity
+  limit: 1
