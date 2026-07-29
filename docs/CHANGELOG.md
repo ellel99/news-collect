@@ -4,6 +4,10 @@
 
 ### Documentation
 
+- 细化 SPEC-0004 GDELT preimplementation verification：选择 DOC 2.0 ArticleList JSON
+  endpoint family，记录时间窗、结果上限、开放数据引用要求、最小留存和 fail-closed 边界。
+- 明确数值 rate limit、timeout/retry、真实响应字段和 endpoint smoke evidence 仍为
+  Pending/Blocked；本轮无代码、迁移、依赖、adapter、真实 collection 或 GDELT 数据保存。
 - 激活 `SPEC-0004 — First Approved Polling Source Pilot` 进入文档审核。
 - 创建 provider-neutral Polling Source Pilot 规格草案，并将用户选择的 GDELT 记录为唯一
   pilot candidate；implementation not started。
