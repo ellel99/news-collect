@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from market_intelligence.core.config import get_settings
+from market_intelligence.db import models as models
 from market_intelligence.db.base import Base
 
 config = context.config

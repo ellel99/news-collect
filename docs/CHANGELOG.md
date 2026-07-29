@@ -1,5 +1,27 @@
 # Changelog
 
+## SPEC-0002 Implementation — 2026-07-29
+
+### Added
+
+- 九个 Phase 1 SQLAlchemy ORM 模型：Source、SourceAccount、CollectionCursor、CollectionRun、RawItem、ContentItem、Notification、OutboxMessage、AuditLog；
+- PostgreSQL 16 原生 UUID、timestamptz、JSONB、enum、检查约束、外键、唯一索引和查询索引；
+- Alembic revision `0002_create_phase1_data_model`，支持 `upgrade → downgrade -1 → upgrade`；
+- PostgreSQL 集成测试、ORM/迁移一致性检查以及 schema allowlist/denylist 测试；
+- CI PostgreSQL 16 service 和 migration upgrade 步骤。
+
+### Changed
+
+- Alembic metadata 现在加载九个 Phase 1 模型，并保留 SPEC-0001 的 `system_metadata` 基础设施表；
+- `raw_items` 通过非空 `collection_run_id` 追溯采集运行；
+- `outbox_messages` 使用非空且唯一的 `idempotency_key` 防止 retry 重复发布记录。
+
+### Scope
+
+- 未实现 API、CLI、service、repository、adapter、collector、scheduler、真实来源、Telegram、标准化、Notification 策略或 Outbox 发布；
+- 未创建 Event、Evidence、Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 或其他未来阶段实体；
+- 未修改 Foundation v2.1-FROZEN。
+
 ## SPEC-0002 Source Registry and Phase 1 Data Model — 2026-07-29
 
 ### Added

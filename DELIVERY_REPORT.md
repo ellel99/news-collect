@@ -1,13 +1,13 @@
 # Delivery Report
 
-Build：SPEC-0001 bootstrap
-Active SPEC：SPEC-0001 — Project Bootstrap
+Build：SPEC-0002 Source Registry and Phase 1 Data Model
+Active SPEC：SPEC-0002 — Source Registry and Phase 1 Data Model
 交付日期：2026-07-29
 审核状态：PASS — approved for merge
 
 ## 1. 本轮目标
 
-建立可锁定依赖、启动 API/worker/beat、迁移、健康检查、测试和打包的 Python 3.12 项目基础设施。
+在 PostgreSQL 16 上实现 Source Registry 与九个 Phase 1 实体的 SQLAlchemy 2.x ORM 模型、严格数据约束、索引和可逆 Alembic 迁移，为后续采集 SPEC 提供持久化契约。
 
 ## 2. Foundation 与阶段合规
 
@@ -15,117 +15,149 @@ Active SPEC：SPEC-0001 — Project Bootstrap
 - 当前阶段：Phase 1 — Information Collection & Push
 - 是否修改冻结内容：否
 - 是否引入后续阶段实体/依赖：否
-- 结论：实现仅限 SPEC-0001；唯一数据表为可选基础设施表 `system_metadata`
+- 是否开始 SPEC-0003：否
+- 结论：实现仅限 SPEC-0002 数据模型、迁移与测试
 
 ## 3. 已完成
 
-- uv 管理的 Python 3.12 `src/` 项目与可复现锁文件
-- FastAPI 入口、Pydantic Settings、异步 SQLAlchemy session 基础设施
-- `/health/live` 与 PostgreSQL/Redis `/health/ready`
-- Alembic 基础设施及可回滚的 `system_metadata` 迁移
-- Celery worker、空 Beat 调度表和 `system.health_ping`
-- JSON 结构化日志、关联 ID 与敏感键脱敏
-- 非 root 应用容器、PostgreSQL 16、Redis 7 和完整 Compose 服务
-- pytest、pytest-asyncio、Ruff、mypy、GitHub Actions CI
-- `.env.example`、README、Changelog 和 Review ZIP 安全流程
+- 创建 `Source`、`SourceAccount`、`CollectionCursor`、`CollectionRun`
+- 创建 `RawItem`、`ContentItem`
+- 创建 `Notification`、`OutboxMessage`、`AuditLog`
+- 使用 PostgreSQL UUID、timestamptz、JSONB 和命名 enum
+- 实现 nullable、数据库默认值、检查约束、RESTRICT 外键、唯一索引和查询索引
+- `raw_items.collection_run_id` 非空并引用 `collection_runs.id`
+- `outbox_messages.idempotency_key` 非空且唯一
+- 新增 Alembic revision `0002_create_phase1_data_model`
+- 保留 SPEC-0001 的 `system_metadata`
+- 增加 ORM schema allowlist/denylist、PostgreSQL 实际 schema、外键和幂等约束测试
+- CI 增加 PostgreSQL 16 service 与 migration upgrade
 
-## 4. 未完成
+## 4. 明确未实现
 
-- 所有 SPEC-0002 及之后的功能均按范围要求未实现。
+- API、CLI、管理界面
+- service、repository 或 CRUD 工作流
+- adapter、collector、scheduler、Celery 采集任务
+- 真实来源、RSS、X、Telegram
+- RawItem 获取、ContentItem 标准化或确定性去重流程
+- Notification 策略或 Outbox publisher/consumer
+- AI、LLM、Event、Evidence、Analysis
+- Portfolio、Holding、Investment Plan、Candidate Rule
+- 任何 Phase 2–4 表或交易功能
 
 ## 5. 修改文件
 
 | 文件/目录 | 类型 | 说明 |
 |---|---|---|
-| `pyproject.toml`, `uv.lock` | 依赖 | Python 3.12、运行与开发依赖 |
-| `src/market_intelligence/` | 代码 | API、配置、日志、数据库、Celery |
-| `alembic/`, `alembic.ini` | 迁移 | 基础设施与 `system_metadata` |
-| `tests/` | 测试 | 配置、健康、日志、session context manager、任务 |
-| `Dockerfile`, `compose.yaml`, `.dockerignore` | 容器 | 非 root 应用与本地服务栈 |
-| `.env.example` | 配置 | 无真实秘密的本地示例 |
-| `.github/workflows/ci.yml` | CI | 完整静态检查、测试和安全打包 |
-| `scripts/package-review.sh` | 工具 | 排除工具缓存中的内部 `cache.db`，保留真实本地数据库拦截 |
-| `README.md`, `docs/CHANGELOG.md` | 文档 | 使用与本次实现记录 |
+| `src/market_intelligence/db/models.py` | 代码 | 九个 Phase 1 ORM 模型、enum、约束、索引和关系 |
+| `src/market_intelligence/db/base.py` | 代码 | 在 ORM metadata 中保留既有 `system_metadata` |
+| `src/market_intelligence/db/__init__.py` | 代码 | 导出九个模型 |
+| `alembic/env.py` | 迁移基础设施 | 加载模型 metadata |
+| `alembic/versions/0002_create_phase1_data_model.py` | 迁移 | 九表升级、逆序回滚和 enum 清理 |
+| `tests/test_models.py` | 测试 | ORM allowlist/denylist 和关键字段/索引 |
+| `tests/test_postgres_models.py` | 测试 | PostgreSQL 16 schema、外键和幂等约束 |
+| `.github/workflows/ci.yml` | CI | PostgreSQL 16 service 与 migration upgrade |
+| `docs/CHANGELOG.md`, `spec/SPEC-0002.md` | 文档 | 实现记录与真实证据 |
+| `DELIVERY_REPORT.md` | 文档 | 本报告 |
 
 ## 6. 数据库变化
 
-- 迁移：`0001_create_system_metadata`
-- 回滚：在 PostgreSQL 16 实测 upgrade → downgrade `0001 -> base` → re-upgrade `base -> 0001` 成功
-- 数据兼容：无既有业务表或业务数据；未创建 Phase 1 业务实体
+### 新增表
 
-## 7. 配置变化
+1. `sources`
+2. `source_accounts`
+3. `collection_cursors`
+4. `collection_runs`
+5. `raw_items`
+6. `content_items`
+7. `notifications`
+8. `outbox_messages`
+9. `audit_logs`
 
-- `APP_ENV`：运行环境；生产模式拒绝示例/本地服务 URL
-- `APP_LOG_LEVEL`：日志级别
-- `APP_HOST`, `APP_PORT`：API 监听配置
-- `DATABASE_URL`：异步 SQLAlchemy PostgreSQL URL
-- `REDIS_URL`：readiness Redis URL
-- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`：Celery Redis URL
-- `HEALTH_CHECK_TIMEOUT_SECONDS`：单项依赖健康检查超时
-- `POSTGRES_PORT`, `REDIS_PORT`：Compose 暴露给本地 uv 路线的可选宿主机端口
+### 保留的基础设施表
 
-`.env.example` 面向宿主机本地 uv 路线，使用 `localhost`。Compose 服务通过显式 `environment` 使用内部服务名 `postgres`/`redis`，避免两种运行方式的主机名冲突。
+- `system_metadata`
+- `alembic_version`
+
+### 明确不存在
+
+Event、EventVersion、EvidenceLink、Analysis、AssetImpact、PortfolioAccount、Holding、InvestmentPlan、PlanRule、CandidateRule、PlanReview 及其他未来实体。
+
+## 7. Migration and Rollback
+
+- Revision：`0002`
+- Down revision：`0001`
+- Upgrade：按 Source → SourceAccount/Run → RawItem → ContentItem → Notification 的依赖顺序创建九张表，并创建 Outbox/Audit 表和 12 个命名 enum
+- Downgrade：逆序删除九张表，再删除本 revision 创建的 enum
+- `system_metadata` 在 downgrade `0002 → 0001` 中保持不变
+- 实测：`upgrade head → downgrade -1 → upgrade head` 全部成功
+- 测试环境：本地 Docker Compose PostgreSQL 16；没有需保留的业务数据
+- 非空环境风险：downgrade 会删除九张业务表及数据，执行前必须备份并明确接受数据丢失
 
 ## 8. 测试与验证结果
 
-| 检查 | 命令/步骤 | 结果 |
+| 检查 | 命令 | 结果 |
 |---|---|---|
-| 依赖锁定 | `uv sync --frozen`（使用隔离安装的 uv 0.8.3） | PASS，57 packages |
+| 依赖锁定 | `uv sync --frozen` | PASS；57 packages audited |
 | Ruff | `uv run ruff check .` | PASS |
-| 格式 | `uv run ruff format --check .` | PASS，41 files |
-| mypy | `uv run mypy src` | PASS，13 source files |
-| pytest | `uv run pytest` | PASS，13 tests |
+| 格式 | `uv run ruff format --check .` | PASS；46 files |
+| mypy | `uv run mypy src` | PASS；14 source files |
+| pytest | `uv run pytest` | PASS；21 tests |
+| PostgreSQL 集成 | `tests/test_postgres_models.py` | PASS；4 tests，真实 PostgreSQL 16 |
+| ORM/迁移一致性 | `uv run alembic check` | PASS；No new upgrade operations detected |
 | Compose 静态配置 | `docker compose config` | PASS |
-| Foundation | `python scripts/validate-foundation.py` | PASS（使用 uv 环境中的 Python 3.12） |
-| Docker daemon | `docker info` | PASS，Docker Desktop 29.2.1 server |
-| Compose 构建/启动 | `docker compose up -d --build` | PASS |
-| Compose 状态 | `docker compose ps` | PASS；API/PostgreSQL/Redis healthy，worker/beat running |
-| Liveness | `curl -fsS http://localhost:8000/health/live` | PASS，`{"status":"ok"}` |
-| Readiness | `curl -fsS http://localhost:8000/health/ready` | PASS，database/redis 均 `ok` |
-| Migration upgrade | `docker compose run --rm migrate` | PASS |
-| Migration rollback | `docker compose run --rm migrate uv run alembic downgrade -1` | PASS，`0001 -> base` |
-| Migration re-upgrade | `docker compose run --rm migrate uv run alembic upgrade head` | PASS，`base -> 0001` |
-| Celery | 向运行中的 worker 调用 `system.health_ping` 并读取 result backend | PASS，`{"status":"ok"}` |
-| Review ZIP | `bash scripts/package-review.sh` | PASS（review-fix 最终重跑；文件数与哈希见命令输出） |
+| PostgreSQL 启动 | `docker compose up -d postgres` | PASS；container running |
+| Migration upgrade | `uv run alembic upgrade head` | PASS |
+| Migration rollback | `uv run alembic downgrade -1` | PASS；`0002 → 0001` |
+| Migration re-upgrade | `uv run alembic upgrade head` | PASS；`0001 → 0002` |
+| Foundation | `python3 scripts/validate-foundation.py` | PASS；20 required files，Markdown links/freeze markers valid |
+| Review ZIP | `bash scripts/package-review.sh` | PASS；59 files，秘密扫描无发现 |
 
-本机全局没有 `uv`。为完成锁定和测试，使用 `/tmp` 中隔离安装的 uv 0.8.3；仓库未包含该工具或其缓存。
+本机全局没有 `uv` 命令。本轮复用 `/tmp/news_collect_uv/bin/uv` 0.8.3，并通过临时 `PATH` 以用户指定的 `uv ...` 命令形式执行。uv cache 和 Python 安装目录均位于 `/tmp`，未提交到仓库。
 
-首次 `docker info` 发现 daemon 未运行；启动 Docker Desktop 后重新执行并通过。后续所有 Docker 结果均来自真实运行中的本地 Compose 栈。
+最初在默认沙箱运行数据库测试时，进程连接 `localhost:5432` 被权限策略拒绝；这是环境权限失败，不是测试断言失败。获得本地 PostgreSQL 连接权限后，迁移和全部 21 个测试均真实通过。
 
-## 9. 手动验证步骤
+## 9. 数据契约重点
 
-1. `docker info`：server 可用。
-2. `docker compose up -d --build`：镜像构建并启动成功。
-3. `docker compose ps`：API、PostgreSQL、Redis healthy；worker 与 beat running。
-4. live 返回 `{"status":"ok"}`；ready 返回 database/redis 均 `ok`。
-5. migration upgrade、downgrade 和 re-upgrade 均成功。
-6. `system.health_ping` 通过 worker 执行并返回 `{"status":"ok"}`。
+- 所有业务主键为数据库生成的 UUID
+- 所有时间字段使用 timezone-aware timestamp
+- JSONB 非空字段默认空对象
+- `Source.code` 非空白且唯一；来源默认禁用
+- `SourceAccount.external_id` 未知时允许 null，已知时来源范围唯一
+- 所有计数非负；schedule 和 payload version 为正
+- CollectionRun 完成时间不得早于开始时间
+- RawItem HTTP 状态限制为 100–599
+- RawItem 必须关联 CollectionRun，并支持 run/source 查询
+- ContentItem 使用 `source_summary`，没有 AI 摘要字段
+- ContentItem 只使用外部 ID、canonical URL 和来源范围 hash 的确定性唯一性
+- Notification 和 Outbox 均具有数据库级幂等唯一键
+- 外键使用 `ON DELETE RESTRICT`
 
 ## 10. 安全检查
 
 - [x] 无真实 `.env`
 - [x] 无 Token、Cookie、私钥或密码
-- [x] 无本地数据库或备份
+- [x] 无本地数据库或备份进入 Git
+- [x] 测试 fixture 不使用真实来源、URL、账号或正文
 - [x] 测试不访问真实外部服务
 - [x] Review ZIP 秘密扫描通过
 
 ## 11. 文档同步
 
-更新 `README.md`、`docs/CHANGELOG.md` 和本报告。未修改 Foundation、System Design、Data Model、Roadmap 或阶段边界。
+更新 `docs/CHANGELOG.md`、`spec/SPEC-0002.md` 和本报告。未修改 Foundation、System Design、Data Model、Roadmap 或阶段边界。
 
 ## 12. 与 Active SPEC 的偏差
 
-实现范围无偏差。Review blockers 已修复并完成真实 Docker 运行时复验；结论仍等待 reviewer 复核，不自行宣称 SPEC PASS。
+无。ORM metadata 与 Alembic 实际 schema 通过 `alembic check` 验证一致。
 
 ## 13. 已知问题
 
 ### Blocker
 
-- 无已知 blocker；等待 reviewer 复核。
+- 无已知 blocker；等待 Reviewer 审核。
 
 ### Must Fix
 
-- 无已知 must-fix；等待 reviewer 复核。
+- 无已知 must-fix；等待 Reviewer 审核。
 
 ### Improvement
 
@@ -133,12 +165,15 @@ Active SPEC：SPEC-0001 — Project Bootstrap
 
 ### Future Scope
 
-- Source、采集、业务数据模型、Outbox、Telegram 和所有 AI/投资功能均留待各自后续 SPEC。
+- 采集框架、调度、Cursor 推进和 retry 属于 SPEC-0003。
+- 真实来源、标准化、去重、Outbox 行为和 Telegram 留待各自后续 SPEC。
 
-## 14. Git 建议
+## 14. Git
 
-Review fix 提交信息：`fix: address SPEC-0001 review blockers`
+分支：`feat/spec-0002-source-registry-data-model`
+
+提交信息：`feat: implement SPEC-0002 source registry data model`
 
 ## 15. 下一步
 
-推送 review fix 并请求 PR #1 复核；不开始 SPEC-0002。
+提交并创建 PR；等待 SPEC-0002 实现审核，不开始 SPEC-0003。
