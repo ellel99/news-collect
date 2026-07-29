@@ -1,5 +1,22 @@
 # Changelog
 
+## SPEC-0002 Source Registry and Phase 1 Data Model — 2026-07-29
+
+### Added
+
+- 创建 `spec/SPEC-0002.md`，严格定义下一阶段的实现范围、非范围、九个 Phase 1 数据实体、字段、约束、迁移、测试与验收要求。
+
+### Changed
+
+- 将 SPEC-0001 标记为 Completed；
+- 将 SPEC-0002 设为唯一 Active SPEC，并更新 AI Context 入口。
+
+### Scope
+
+- 本次仅创建和激活规格文档，未开始 SPEC-0002 实现；
+- 未新增模型、迁移、业务代码、真实来源、Telegram、AI 或后续阶段实体；
+- 未修改 Foundation v2.1-FROZEN；实现须在 SPEC-0002 文档经用户或 Reviewer 审核 PASS 后开始。
+
 ## SPEC-0001 Project Bootstrap — 2026-07-29
 
 ### Fixed
