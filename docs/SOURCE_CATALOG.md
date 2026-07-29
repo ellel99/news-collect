@@ -75,7 +75,7 @@
 
 | Code | 用途 | 候选模式 | 状态 |
 |---|---|---|---|
-| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | SPEC-0004 bounded smoke verified；implementation not started、非全文授权、非核心依赖 |
+| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | bounded smoke attempted；HTTP 429 observed；further smoke gated by failure analysis |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
 | `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
@@ -103,6 +103,12 @@
   参数和真实响应字段仍是 implementation blocker。
 - 尚未实现或注册 GDELT adapter，未运行 collection；成功 JSON/schema、实际无 API key 行为、
   `maxrecords`/`timespan` 效果和长期可用性仍 Blocked。
+- 不得继续盲目重试。官方文档审计发现上次 `timespan=15m` 不是 15 分钟语法；若 Review 后
+  用户另行授权，下一次最多一次 GET，使用 `timespan=15min`、`maxrecords=1` 并经过冷却期。
+- 若下一次仍为 429 或连接失败，应把 GDELT DOC 2.0 pilot 标记为 `runtime blocked`，再由用户
+  决定是否另行评估 RSS/Atom、SEC/官方公告来源或独立 Web NGrams / GDELT dataset SPEC；
+  本轮不切换 provider。
+- GDELT 仍未实现、不是全文授权来源，也不是核心依赖。
 - 权威证据与剩余风险见 `spec/SPEC-0004.md` 的 GDELT Verification Evidence。
 
 ## 4.2 候选商业升级来源
