@@ -2,13 +2,13 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0002
+Active SPEC：SPEC-0003
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
-| SPEC-0002 | Source Registry and Phase 1 Data Model | Active | SPEC-0001 |
-| SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Planned | SPEC-0002 |
+| SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
+| SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Active | SPEC-0002 |
 | SPEC-0004 | First Approved News/RSS/API Source | Planned | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned | SPEC-0003 |
 | SPEC-0006 | Normalization, Deduplication and Outbox | Planned | SPEC-0004 or approved test source |
