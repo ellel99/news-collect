@@ -8,7 +8,7 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0002.md`
+- 当前 Active SPEC：`spec/SPEC-0003.md`
 
 ## Phase 1 允许
 

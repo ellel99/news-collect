@@ -1,5 +1,22 @@
 # Changelog
 
+## SPEC-0003 Collection Framework, Scheduler, Cursor and Retry — 2026-07-29
+
+### Added
+
+- 创建 `spec/SPEC-0003.md`，严格定义下一阶段的 adapter contract、调度框架、CollectionRun 生命周期、cursor checkpoint、retry、错误分类、测试和验收要求。
+
+### Changed
+
+- 将 SPEC-0002 标记为 Completed；
+- 将 SPEC-0003 设为唯一 Active SPEC，并更新 AI Context 入口。
+
+### Scope
+
+- 本次仅创建和激活规格文档，未开始 SPEC-0003 实现；
+- 未新增代码、迁移、数据库表、真实来源、Telegram、Normalization/Dedup/Outbox 行为、AI 或后续阶段实体；
+- 未修改 Foundation v2.1-FROZEN；实现须在 SPEC-0003 文档经用户或 Reviewer 审核 PASS 后开始。
+
 ## SPEC-0002 Implementation — 2026-07-29
 
 ### Added
