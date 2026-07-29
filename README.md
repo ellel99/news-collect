@@ -14,7 +14,7 @@
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：`spec/SPEC-0001.md`
+- 开发入口：`spec/SPEC-0003.md`
 
 Phase 1 固定主链路：
 
@@ -62,8 +62,8 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0001.md`](spec/SPEC-0001.md)
-- 当前实现：SPEC-0001 项目基础设施（尚未通过 Review）
+- Active SPEC：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)
+- 当前实现：SPEC-0003 来源无关采集框架（仅 fake adapter，等待实现 Review）
 
 ## 目录
 
@@ -110,7 +110,7 @@ uv run alembic upgrade head
 uv run uvicorn market_intelligence.main:app --host 127.0.0.1 --port 8000
 ```
 
-另开终端启动 worker 和无业务调度项的 Celery Beat：
+另开终端启动 worker 和只处理 fake adapter 的 Celery Beat：
 
 ```bash
 uv run celery -A market_intelligence.tasks.celery_app:celery_app worker --loglevel=INFO

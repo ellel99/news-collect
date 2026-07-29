@@ -1,5 +1,23 @@
 # Changelog
 
+## SPEC-0003 Implementation — 2026-07-29
+
+### Added
+
+- 来源无关的 collection contract、仅含 fake adapter 的 registry，以及确定性 dispatcher。
+- Celery collection tasks、Redis owner-token lease、CollectionRun 生命周期、RawItem/cursor 原子 checkpoint、retry/error classification、source health 和 stale run recovery。
+- 单元、PostgreSQL 16、Redis/Celery 与故障注入测试。
+
+### Changed
+
+- 增加无秘密 collection 配置模板和 Celery Beat schedule。
+- CI 增加 Redis 7 service。
+
+### Scope
+
+- 无 schema 变化、无 Alembic revision、未修改 ORM 模型或 Foundation。
+- 未接入真实来源、Normalization/Dedup/Outbox、Telegram、AI 或未来阶段实体。
+
 ## SPEC-0003 Collection Framework, Scheduler, Cursor and Retry — 2026-07-29
 
 ### Added
