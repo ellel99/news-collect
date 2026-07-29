@@ -75,7 +75,7 @@
 
 | Code | 用途 | 候选模式 | 状态 |
 |---|---|---|---|
-| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | SPEC-0004 preimplementation verification；未实现、非全文授权、非核心依赖 |
+| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | SPEC-0004 bounded smoke verified；implementation not started、非全文授权、非核心依赖 |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
 | `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
@@ -88,8 +88,8 @@
 ### GDELT SPEC-0004 核验状态
 
 - 用户选择 GDELT 作为唯一 Polling Source Pilot candidate；这不表示已实现或已授权新闻全文。
-- 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family，精确 query/endpoint 在实现前
-  contract review 中固定；本轮未请求 API 或生产数据。
+- 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family；bounded smoke 共尝试两次，
+  观察到一次 HTTP 429 和一次 SSL connection timeout，未获得或保存文章数据。
 - 当前核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
   API 或条款，GDELT Cloud 需要未来独立 SPEC 或规格修订与评估。
 - 默认 `access_level = LINK_ONLY`。只允许 title、GDELT/来源 metadata、source URL、时间、
@@ -101,6 +101,8 @@
   Backfill。
 - 官方确认 DOC/Context APIs 会 rate limit，但未公布数值配额；numeric limit、timeout、retry
   参数和真实响应字段仍是 implementation blocker。
+- 尚未实现或注册 GDELT adapter，未运行 collection；成功 JSON/schema、实际无 API key 行为、
+  `maxrecords`/`timespan` 效果和长期可用性仍 Blocked。
 - 权威证据与剩余风险见 `spec/SPEC-0004.md` 的 GDELT Verification Evidence。
 
 ## 4.2 候选商业升级来源

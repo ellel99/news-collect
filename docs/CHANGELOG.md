@@ -4,6 +4,10 @@
 
 ### Documentation
 
+- 记录 GDELT Project DOC 2.0 bounded smoke verification：两次极小请求尝试分别观察到 HTTP
+  429 和 SSL connection timeout；成功响应 schema 等仍保持 Blocked。
+- 本轮无代码、迁移、依赖、adapter、adapter key 或 collection；未访问 source page，未保存
+  完整 response、真实 GDELT 数据或新闻正文，implementation still not started。
 - 细化 SPEC-0004 GDELT preimplementation verification：选择 DOC 2.0 ArticleList JSON
   endpoint family，记录时间窗、结果上限、开放数据引用要求、最小留存和 fail-closed 边界。
 - 明确区分 GDELT Project DOC 2.0 与 GDELT Cloud，防止实现阶段混用 API 合同、认证、分页、
