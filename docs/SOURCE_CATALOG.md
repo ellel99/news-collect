@@ -75,7 +75,7 @@
 
 | Code | 用途 | 候选模式 | 状态 |
 |---|---|---|---|
-| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | bounded smoke attempted；HTTP 429 observed；further smoke gated by failure analysis |
+| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | runtime blocked；corrected smoke HTTP 429；implementation not started |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
 | `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
@@ -108,6 +108,10 @@
 - 若下一次仍为 429 或连接失败，应把 GDELT DOC 2.0 pilot 标记为 `runtime blocked`，再由用户
   决定是否另行评估 RSS/Atom、SEC/官方公告来源或独立 Web NGrams / GDELT dataset SPEC；
   本轮不切换 provider。
+- Gate 已触发：冷却超过 60 分钟并改用 `timespan=15min` 后，唯一 corrected GET 仍返回
+  HTTP 429，且没有有效 JSON 或字段结构。不得再次请求或开始 adapter implementation。
+- 下一步由用户/Reviewer 决定保持 blocked，还是另行修订 SPEC-0004 评估 RSS/Atom、
+  SEC/官方公告 pilot，或用独立 SPEC 评估 Web NGrams / GDELT dataset。
 - GDELT 仍未实现、不是全文授权来源，也不是核心依赖。
 - 权威证据与剩余风险见 `spec/SPEC-0004.md` 的 GDELT Verification Evidence。
 

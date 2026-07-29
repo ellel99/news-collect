@@ -10,14 +10,15 @@
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：`spec/SPEC-0004.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0004 GDELT failure analysis before further smoke；implementation not
-  started
+- 当前工作状态：SPEC-0004 GDELT corrected smoke completed；DOC 2.0 pilot runtime blocked；
+  implementation not started
 - Provider candidate：GDELT（用户已选择；不是核心依赖）
 - 当前证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
   或保存文章数据
-- 当前门禁：本 failure-analysis PR 通过 Review 前不得请求任何 GDELT API；之后仍需用户单独
-  授权才能进行最多一次修正参数的 smoke
-- 下一步：Review failure analysis；不得开始 adapter implementation
+- corrected smoke 证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
+  429，未获得有效 JSON 或文章字段
+- 当前门禁：不得再次请求 GDELT API，不得开始 adapter implementation
+- 下一步：由用户/Reviewer 决定保持 blocked、修订 pilot provider 或另开 dataset SPEC
 
 ## 架构修订状态
 

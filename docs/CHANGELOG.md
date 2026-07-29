@@ -4,6 +4,10 @@
 
 ### Documentation
 
+- 记录唯一一次 GDELT corrected smoke：超过 60 分钟冷却、使用 `timespan=15min` 和
+  `maxrecords=1` 后仍返回 HTTP 429；DOC 2.0 pilot 标记为 `runtime blocked`。
+- corrected smoke 未产生有效 JSON/schema evidence；未保存完整 response、真实 title/body/
+  URL 值，未访问 source page，未写代码、迁移、依赖、adapter 或运行 collection。
 - 增加 GDELT failure analysis before further smoke：官方参数审计确认 `timespan=15m` 不是
   15 分钟语法，记录 DOC rate-limit 官方边界、SSL timeout 未确认边界和下一次单请求 gate。
 - 本轮无代码、迁移、依赖、API request、adapter 或 collection；不切换 provider，
