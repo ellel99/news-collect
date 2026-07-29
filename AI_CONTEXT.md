@@ -10,10 +10,12 @@
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：`spec/SPEC-0004.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0004 GDELT preimplementation verification；implementation not started
+- 当前工作状态：SPEC-0004 GDELT bounded smoke verification completed；implementation not
+  started
 - Provider candidate：GDELT（用户已选择；不是核心依赖）
-- 当前允许：只核验公开官方文档并整理证据，不请求 GDELT 数据 API 或真实来源数据
-- 下一步：完成剩余 Blocked/Pending 项的实现前核验并再次 Review；未获单独授权不得实现
+- 当前证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
+  或保存文章数据
+- 下一步：Review 本轮证据；未获下一步单独授权不得开始 adapter implementation
 
 ## 架构修订状态
 
