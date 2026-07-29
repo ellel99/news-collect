@@ -2,12 +2,12 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0001
+Active SPEC：SPEC-0002
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
-| SPEC-0001 | Project Bootstrap | Active | Foundation v2.1-FROZEN |
-| SPEC-0002 | Source Registry and Phase 1 Data Model | Planned | SPEC-0001 |
+| SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
+| SPEC-0002 | Source Registry and Phase 1 Data Model | Active | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Planned | SPEC-0002 |
 | SPEC-0004 | First Approved News/RSS/API Source | Planned | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned | SPEC-0003 |
@@ -16,4 +16,4 @@ Active SPEC：SPEC-0001
 | SPEC-0008 | Telegram Management Bot | Planned | SPEC-0002/0003/0007 |
 | SPEC-0009 | Operations, Backup, Restore and Phase 1 Acceptance | Planned | SPEC-0001–0008 |
 
-Planned 不代表批准。只有一个 Active SPEC，当前未 PASS 前不开始下一项。
+Planned 不代表批准。只有一个 Active SPEC，当前 Active SPEC 文档未通过实现前审核时，不得开始实现或下一项 SPEC。
