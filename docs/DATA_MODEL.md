@@ -39,6 +39,69 @@ erDiagram
 
 上图同时展示长期关系，但 Phase 1 实际只创建 Source、SourceAccount、CollectionCursor、CollectionRun、RawItem、ContentItem、Notification、OutboxMessage、AuditLog，以及 SPEC-0001 可选的 system_metadata。Event、Evidence、Analysis、Portfolio 和 Investment Plan 只作为未来合同，不提前建表。
 
+## 2.1 Unified News Record 逻辑合同（Proposed）
+
+Unified News Record 是跨 `Source`、`RawItem`、`ContentItem` 及后续 enrichment 的逻辑投影视图，不是要求新增一张“大而全”表。它用于隔离 provider 差异；任何字段落库变化仍需独立 SPEC 和迁移。
+
+| 逻辑字段 | 语义 | 阶段/现有映射 |
+|---|---|---|
+| `internal_id` | 系统内部稳定标识 | ContentItem/后续 projection |
+| `provider` | 数据供应商或承载方，不等同于原始发布者 | Source contract，后续细化 |
+| `source_id`, `source_type` | 逻辑来源与类型 | Phase 1 已有 |
+| `ingestion_mode` | polling / streaming / webhook / historical_backfill | 后续 connector SPEC |
+| `external_id` | provider 稳定外部 ID；未知为 null | Phase 1 已有 |
+| `canonical_url` | 确定性规范 URL | Phase 1 ContentItem |
+| `title`, `public_summary`, `content` | 标题、合法公开摘要、授权内容 | `source_summary`/body 映射；不得混入 AI 摘要 |
+| `language`, `authors` | 来源语言与作者集合 | Phase 1 字段/后续规范化 |
+| `published_at` | 媒体发布时间 | `source_published_at` |
+| `source_updated_at` | 媒体更新时间 | Phase 1 已有 |
+| `first_seen_at` | 系统首次发现时间 | Phase 1 已有 |
+| `received_at` | 系统实际收到本条消息的时间 | 后续 ingestion contract |
+| `last_checked_at` | 系统最后检查来源/记录的时间 | 后续 ingestion contract |
+| `entities`, `topics` | 实体与主题 enrichment | Phase 2，不进 Phase 1 schema |
+| `related_companies`, `related_assets` | 公司与资产映射 | Phase 2/3 |
+| `access_level`, `license_policy` | 内容访问级别与许可策略 | 后续 access-policy SPEC |
+| `raw_payload_reference` | 受控原始载荷引用 | Phase 1 `payload_location` 映射 |
+| `cursor`, `sequence_number` | 恢复 cursor 与流序列 | CollectionCursor/后续 streaming contract |
+| `content_hash` | 确定性内容指纹 | Phase 1 ContentItem |
+| `source_priority` | 来源级确定性优先信息 | Phase 1 policy contract |
+| `processing_status` | ingestion/normalization/analysis 状态投影 | 跨阶段 projection |
+
+时间字段必须分别保存，不得用一个“新闻时间”替代：
+
+```text
+published_at
+source_updated_at
+first_seen_at
+received_at
+last_checked_at
+```
+
+内容访问状态候选枚举：
+
+```text
+PUBLIC_FULLTEXT
+PUBLIC_SUMMARY
+SUBSCRIPTION_REQUIRED
+LICENSED
+LINK_ONLY
+BLOCKED
+```
+
+`SUBSCRIPTION_REQUIRED`、`LINK_ONLY` 或 `BLOCKED` 仍可形成可追溯线索，但不得伪装成完整正文。Bloomberg、WSJ 等未获得授权全文时，完整正文采集不是成功条件。
+
+## 2.2 恢复与幂等投影（Proposed）
+
+每个实时或轮询来源的运行合同至少表达：
+
+- cursor / sequence number；
+- last received time / last acknowledged time；
+- retry count / reconnect；
+- checkpoint / historical backfill；
+- idempotency key / duplicate protection。
+
+现有 Phase 1 schema 已覆盖部分 cursor、retry 和幂等能力；缺失的 streaming/webhook 字段不在本轮补表，必须由后续 SPEC 证明必要性后迁移。
+
 ## 3. Phase 1 实体
 
 Phase 1 允许创建：`Source`、`SourceAccount`、`CollectionCursor`、`CollectionRun`、`RawItem`、`ContentItem`、`Notification`、`OutboxMessage`、`AuditLog`。

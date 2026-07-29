@@ -7,6 +7,15 @@
 | Source | 逻辑信息来源，如 Reuters、X、SEC。 |
 | Source Account | Source 下的账号、栏目、Feed 或端点。 |
 | Adapter | 针对某接入方式的采集实现。 |
+| Connector | 按 Polling、Streaming、Webhook 或 Historical Backfill 模式接入 provider，并转换为统一 ingestion contract 的边界组件。 |
+| Provider | 提供新闻、公告、市场或财务数据的供应商/承载方；不等同于原始发布者 Source。 |
+| Unified Ingestion Gateway | 验证、接收并发布统一 ingestion envelope 的供应商无关边界。 |
+| Internal Event Bus | 进程间传递内部消息的抽象合同；Redis Streams/Kafka 是可替换实现，不是业务模型。 |
+| Polling Source | 通过定时查询 REST、RSS、网页或公告获取增量的来源模式。 |
+| Streaming Source | 通过长连接、WebSocket、Kafka 或商业实时流连续接收消息的来源模式。 |
+| Webhook Source | 由 provider 主动推送并要求签名、幂等和 replay protection 的来源模式。 |
+| Historical Backfill Source | 按时间窗或历史 cursor 回补缺失数据的来源模式。 |
+| Unified News Record | 跨 RawItem、ContentItem 和后续 enrichment 的逻辑投影视图，不等同于单一数据库表。 |
 | Collection Run | 一次可审计的采集执行。 |
 | Raw Item | 原始响应或其最小合法留痕。 |
 | Content Item | 标准化后的单条文章、帖子、公告或 Feed 项。项目中不再用 `News` 作为通用模型名。 |
@@ -33,6 +42,9 @@
 | Policy Rule ID | 产生 Notification 决策的规则标识。 |
 | Severity | 影响程度 1–5。 |
 | Confidence | 对某事实、匹配或分析判断的确信程度。 |
+| Access Level | 内容访问状态：公开全文、公开摘要、需订阅、已授权、仅链接或阻塞。 |
+| License Policy | 对获取、保存、处理和展示内容的许可约束。 |
+| Research Recommendation | 经事实、影响和市场数据验证后形成的可追溯研究参考；不是收益保证或自动交易指令。当前仍属 Proposed。 |
 | Broad Scan | 不因隐式行为缩小 Collection Scope 和 Analysis Scope。 |
 | Controlled Push | 根据明确规则控制 Notification Scope。 |
 | Collection Scope | 系统获取的信息范围。 |

@@ -26,6 +26,62 @@ flowchart TD
 
 Phase 1 只实现采集、原始存储、标准化、基础去重、通知和运维接口。未实现的未来模块必须有稳定接口边界，但不得以空洞“引擎”增加复杂度。
 
+## 1.1 供应商无关目标架构（Proposed）
+
+以下是 D-020–D-023 的长期合同，不是当前实现状态，也不改变 Phase 1 Content First：
+
+```text
+Source Connectors
+├── Polling Connector
+├── Streaming Connector
+├── Webhook Connector
+└── Historical Backfill Connector
+        ↓
+Unified Ingestion Gateway
+        ↓
+Internal Event Bus
+        ↓
+Normalization
+        ↓
+Deterministic Deduplication
+        ↓
+Event Clustering (Phase 2)
+        ↓
+Importance Scoring (Phase 2)
+        ↓
+Investment Impact Analysis (Phase 2+)
+        ↓
+Market Validation (future approved SPEC)
+        ↓
+Research Recommendation (future Foundation/SPEC approval)
+```
+
+边界：
+
+- Connector 只把供应商响应转换为统一 ingestion contract；Normalization、聚类、AI、通知不得直接依赖供应商 SDK。
+- GDELT、NewsAPI.ai / Event Registry、Finnhub、Reuters/LSEG、Factiva、LexisNexis 都只能是可替换 provider。
+- Internal Event Bus 是抽象合同。首版候选实现可为 Redis Streams；迁移到 Kafka 或其他队列不得改变业务消息 schema。
+- Phase 1 仍不实现 Event、AI、市场验证或研究建议；上图中的后半链路只用于保持接口方向。
+
+## 1.2 Connector 模式
+
+| 模式 | 用途 | 必需恢复语义 |
+|---|---|---|
+| Polling | REST API、RSS/Atom、公开网页、监管公告、定时查询 | cursor、水位、周期 checkpoint、幂等 |
+| Streaming | 未来 Reuters/LSEG、WebSocket、Kafka 或商业实时流 | sequence、reconnect、last received/acknowledged、gap detection |
+| Webhook | 供应商推送、邮件转发、外部通知 | 签名验证、delivery ID、ack、replay protection |
+| Historical Backfill | 断线回补、指定时间段重采、数据修复 | 时间窗、分页 cursor、幂等、与实时流合流 |
+
+标准恢复流程：
+
+```text
+连接或采集失败
+→ 分类重试
+→ 从最后 checkpoint / cursor / acknowledged sequence 恢复
+→ 无法直接恢复时启动历史时间窗回补
+→ 经幂等与去重重新进入主流程
+```
+
 ## 2. 模块职责
 
 ### 2.1 Source Registry
@@ -168,6 +224,13 @@ candidate
 - `processed_at`：标准化或分析完成时间；
 - `pushed_at`：通知成功时间。
 
+统一 ingestion contract 还必须区分：
+
+- `received_at`：系统实际收到 provider 消息的时间；
+- `last_checked_at`：系统最后确认来源状态的时间；
+- `last_received_at`：连接最近一次收到消息的水位；
+- `last_acknowledged_at`：系统最近一次完成持久化确认的时间。
+
 来源目标延迟是服务目标，不是外部平台承诺。建议目标：
 
 - X 流式或官方接口：15–60 秒；
@@ -175,6 +238,17 @@ candidate
 - RSS/公开 API：1–5 分钟；
 - 普通网页：3–15 分钟；
 - 正文补充与事件更新：5–30 分钟。
+
+来源不得统一承诺“实时”，应声明服务等级：
+
+| 等级 | 目标 |
+|---|---|
+| Streaming | 数秒级 |
+| Near Real-time | 1–5 分钟 |
+| Standard | 10–30 分钟 |
+| Periodic | 1–6 小时 |
+
+Phase 1 主要采用 Polling 与 Near Real-time；业务处理合同保持事件驱动，但这不等于 Phase 1 已实现 Redis Streams。
 
 ## 6. 可靠性
 
@@ -253,3 +327,27 @@ Playwright 和正文提取库只在真实来源需要时引入，避免基础工
 - Telegram 成功率；
 - AI 阶段的耗时、成本和失败率；
 - Event 合并误判、重大漏报和重复通知等质量指标。
+
+## 11. 后续 AI、市场验证与研究参考边界（Proposed）
+
+后续链路必须分为三个独立输出：
+
+1. 事实与证据：发生了什么、来源、确认/报道/传闻/评论状态；
+2. 投资影响：行业、产业链、公司与资产影响路径，短中长期、支持与反方证据、待验证数据；
+3. 研究参考：关注级别、是否等待确认、风险、催化剂、失效条件、适用周期和置信度。
+
+研究参考生成前必须通过可替换 Market Data Adapter 校验价格、1/5/20 日变化、成交量、波动率、财报、收入/盈利/指引、估值、市场预期以及相关 ETF、指数、商品、利率和汇率变化。新闻本身不得直接产生研究参考，更不得自动执行交易。
+
+研究参考状态候选定义由 `AI_RULES.md` 维护；在 D-023 Freeze Review 前不得实现。
+
+## 12. 个人研究体验目标（Proposed）
+
+未来首页的核心单位是 Event/EventVersion，而不是时间倒序文章列表。候选视图包括：
+
+- 最近 1 小时、6 小时、24 小时的重要事件；
+- AI 重点摘要、高影响事件和等待确认事项；
+- 持仓或关注列表相关事件（Phase 3）；
+- 潜在受益/承压行业、候选研究方向、风险和失效条件；
+- 每项结论的原始证据链接。
+
+当前项目没有 Web Dashboard，该体验需要独立 SPEC；不得以此修改 Phase 1 已冻结交互范围。

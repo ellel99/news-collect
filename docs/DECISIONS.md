@@ -116,3 +116,54 @@
 - 决定：v2.1-FROZEN 作为 Phase 1 开发基线。
 - 原因：业务边界、技术基线和第一阶段范围已具备开发条件。
 - 后果：修改冻结内容需要用户明确确认、新 Decision、新版本和 Freeze Review。
+
+## Proposed Decisions — 等待 Foundation Revision Freeze Review
+
+以下决定记录 2026-07-29 用户明确确认的新方向，但在新 Foundation 版本通过 Freeze Review 前不覆盖 D-001–D-019，也不授权实现。
+
+## D-020 供应商无关的混合采集架构（Proposed）
+
+- 建议决定：所有真实来源通过 Polling、Streaming、Webhook 或 Historical Backfill Connector 接入 Unified Ingestion Gateway；下游不得依赖具体供应商 SDK。
+- 原因：允许从低成本公开来源平滑升级到商业实时数据流，避免 GDELT、NewsAPI.ai、Finnhub 或单一媒体成为不可替换核心。
+- 影响：需要后续 SPEC 定义 connector contract、统一 envelope、ack/replay/backfill、许可策略和事件总线抽象；不改变已完成 SPEC-0003。
+- 状态：Proposed，等待新 Foundation 版本和 Freeze Review。
+
+## D-021 事件驱动处理与可替换内部总线（Proposed）
+
+- 建议决定：业务链按事件驱动合同设计；首版可选 Redis Streams，未来可迁移 Kafka 或其他队列，业务模块只依赖内部消息 schema。
+- 原因：同时支持轮询、流式、Webhook、断线回补和不同实时性等级。
+- 影响：Redis Streams 不是当前已实现事实，也不是不可替换核心；实现前需独立 SPEC、容量/顺序/ack/重放与迁移方案。
+- 状态：Proposed。
+
+## D-022 统一逻辑新闻记录与事件主视图（Proposed）
+
+- 建议决定：跨阶段使用统一逻辑新闻记录合同表达来源、访问许可、时间、接收序列、处理状态与后续 enrichment；最终用户主视图以 Event/EventVersion 为核心，原始 ContentItem 永久可追溯。
+- 原因：统一供应商差异，并支持同源更新、跨源聚类、证据合并和一键查看重要事件。
+- 影响：该合同是跨阶段逻辑聚合，不要求把所有字段放进 Phase 1 单表；Phase 1 冻结 schema 不变，新增字段/实体必须走后续 SPEC 和迁移。
+- 状态：Proposed。
+
+## D-023 三层 AI 研究与市场验证（Proposed）
+
+- 建议决定：后续 AI 严格分离事实与证据层、投资影响分析层、研究参考层；任何研究参考必须先结合可替换市场/财务数据 adapter 验证，不得由单条新闻直接生成。
+- 原因：降低把报道、观点或已定价信息误当作投资结论的风险。
+- 影响：需要扩展现有 AI Rules；研究参考必须包含证据、反方观点、风险、催化剂、失效条件、适用周期与置信度，且永不自动执行。
+- 状态：Proposed；涉及 D-005 的输出边界，必须 Freeze Review。
+
+## D-024 个人优先并保留未来升级入口（Proposed）
+
+- 建议决定：当前仍为个人自用、每天约查看 3–5 次；架构接口允许未来提高频率、接入商业数据和授权全文，并为更多用户保留升级入口。
+- 原因：避免为当前规模过度设计，同时不把核心合同锁死在单机轮询。
+- 影响：当前不得实现租户、Workspace、计费或多用户数据隔离；“更多用户”与 D-001 冲突，只有未来独立 Foundation/SPEC 才能启用。
+- 状态：Proposed。
+
+## Foundation Revision Impact
+
+新版本 Freeze Review 至少必须裁决：
+
+1. 商品、利率、外汇继续只是解释变量，还是成为直接可推荐/持有资产；
+2. `HOLD`、`REDUCE_EXPOSURE`、`SMALL_POSITION_OBSERVATION` 等状态如何避免成为替用户决策的交易指令；
+3. “更多用户升级入口”是否只保留接口，还是改变单用户数据与权限模型；
+4. 四阶段边界是否保持，市场验证与研究参考分别进入 Phase 2、3 或新增阶段；
+5. 统一逻辑新闻记录如何映射既有 Phase 1 schema，避免提前迁移。
+
+研究状态的安全命名、动作语义限制和候选替代标签由 `AI_RULES.md` 第 11 节统一定义。

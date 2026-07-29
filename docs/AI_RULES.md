@@ -212,3 +212,56 @@ long_term
 - 分析延迟、成本和失败率。
 
 不得用打开率或点击率作为缩小信息范围的依据。
+
+## 11. Proposed v2.2 — 三层研究合同与市场验证
+
+本节记录 D-023 候选方向，在新 Foundation/AI Rules 版本通过 Freeze Review 前不生效、不进入实现。
+
+后续 AI 输出必须分别生成：
+
+1. **事实层**：发生了什么、来源、官方/确认/报道/传闻/预测/评论状态；
+2. **投资影响层**：行业、产业链、公司和资产影响，短中长期路径，支持/反方证据与待验证数据；
+3. **研究参考层**：关注优先级、市场是否已反映、催化剂、风险、失效条件、适用周期和置信度。
+
+单条新闻不得直接生成研究参考。进入第三层前必须引用可替换 Market Data Adapter 提供的价格、1/5/20 日变化、成交量、波动率、财报时间、收入/盈利/指引、估值、市场预期和相关市场验证。
+
+候选研究状态：
+
+```text
+HIGH_PRIORITY_WATCH
+WAIT_FOR_CONFIRMATION
+WATCH_ON_PULLBACK
+SMALL_POSITION_OBSERVATION
+HOLD
+REDUCE_EXPOSURE
+AVOID_TEMPORARILY
+INSUFFICIENT_EVIDENCE
+```
+
+其中 `SMALL_POSITION_OBSERVATION`、`HOLD`、`REDUCE_EXPOSURE` 带有交易动作语义，与当前
+D-005/第 3 节绝对禁止存在冲突，Freeze Review 前不得实现。
+
+优先采用不含交易指令的研究标签，例如：
+
+```text
+EVIDENCE_BUILDING
+THESIS_UNCHANGED
+THESIS_WEAKENING
+RISK_REVIEW_REQUIRED
+```
+
+这些名称描述证据或研究命题状态，不替用户决定仓位。若未来仍保留 `SMALL_POSITION_OBSERVATION`、
+`HOLD` 或 `REDUCE_EXPOSURE`，必须经 Freeze Review 和独立 SPEC 批准，并严格限定为用户已
+确认持仓或投资计划的人工复核标签；不得由模型自动应用为交易指令，不得触发自动执行。
+审核完成前系统只能使用不含交易动作的 watch / confirmation / insufficient-evidence 类状态。
+
+每条候选研究参考至少包含：
+
+- 投资主题、候选标的和核心逻辑；
+- 新闻与市场数据证据；
+- 新闻影响及市场是否已反映；
+- 时间周期、候选研究状态；
+- 催化剂、风险、反方观点和失效条件；
+- 后续观察指标、置信度、生成时间和引用。
+
+任何输出都必须声明：这是投资研究参考，不保证收益，不是自动交易指令；模型无券商/交易所执行权限。

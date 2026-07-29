@@ -14,6 +14,14 @@ Phase 1 信息采集与及时推送
 
 每个阶段通过多个小型 SPEC 交付。当前 SPEC 未通过验收前，不进入下一 SPEC；当前阶段的基础可靠性未达到完成标准前，不提前开发后一阶段的复杂能力。
 
+当前 SPEC-0003 已完成，暂无 Active SPEC。下一步只能在用户确认后准备 SPEC-0004 文档。
+
+## 产品覆盖说明
+
+Collection Scope 不是“AI 新闻”关键词订阅。它覆盖 AI 模型与应用、GPU/AI 芯片、半导体设计/EDA/设备/先进制程/晶圆制造/先进封装/存储、服务器/网络/光模块/云/数据中心/散热液冷、电力/电网/发电/核电/天然气/可再生能源/储能、机器人/自动驾驶/企业软件/网络安全，以及相关政策、监管、宏观、供应链和地缘政治。
+
+这些主题用于发现影响当前冻结市场范围的机会与风险；商品是否升级为直接投资域仍待 Foundation Revision Freeze Review。
+
 ## Phase 1 — Information Collection & Push
 
 ### 目标
@@ -163,3 +171,17 @@ Planned 序号不代表批准；开始前必须创建完整 SPEC 并确认。
 - 其他股票市场；
 - 自动执行交易；
 - 大规模公开内容再分发。
+
+## Foundation Revision 后的候选路线（非 Active）
+
+若 D-020–D-024 通过 Freeze Review，可按独立 SPEC 追加：
+
+1. 四类 Connector 与 Unified Ingestion Gateway；
+2. 可替换 Internal Event Bus（Redis Streams 候选实现，Kafka 迁移边界）；
+3. Unified News Record 与 access/license policy；
+4. Event/Evidence/importance scoring；
+5. 可替换市场与财务数据 adapter；
+6. 经市场验证的研究参考合同；
+7. 以 1h/6h/24h 重要事件为核心的个人研究首页。
+
+多用户、商品直接投资域、券商/交易系统、回测和建议效果评估必须分别经过 Foundation 与 SPEC 批准；不因列入候选路线而进入当前范围。

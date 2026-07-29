@@ -122,3 +122,15 @@
 
 | 轮次 | 结果 | 主要问题 | 处理 |
 |---|---|---|---|
+
+## 22. 架构与治理检查
+
+- Active Foundation 版本：
+- 是否依赖 Proposed Decision：
+- 是否需要先完成 Freeze Review：
+- 是否改变阶段边界、schema 或既有实体：
+- 外部 Provider / Connector 及授权状态：
+- 数据许可、保存与再分发限制：
+- 采集模式（Polling / Streaming / Webhook / Historical Backfill）：
+- cursor、sequence、ack、retry 与 recovery 规则：
+- 是否保持未知或未授权能力 fail closed：
