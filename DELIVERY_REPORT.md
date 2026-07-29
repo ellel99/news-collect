@@ -3,7 +3,7 @@
 Build：SPEC-0003 Collection Framework, Scheduler, Cursor and Retry
 Active SPEC：SPEC-0003
 交付日期：2026-07-29
-审核状态：IN REVIEW
+审核状态：PASS — approved for merge
 
 ## 1. 本轮目标
 
