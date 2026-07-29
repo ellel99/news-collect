@@ -10,14 +10,21 @@
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：`spec/SPEC-0004.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0004 GDELT failure analysis before further smoke；implementation not
-  started
-- Provider candidate：GDELT（用户已选择；不是核心依赖）
-- 当前证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
+- 当前工作状态：SPEC-0004 provider decision realignment；implementation not started
+- Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
+- Primary Provider：NewsAPI.ai / Event Registry（selected；pending user credentials）
+- Secondary Financial News Provider：Marketaux（candidate；不在当前实现范围）
+- Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
+- Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
+- GDELT Project DOC 2.0：runtime blocked / future evaluation only；不再是 primary pilot
+- GDELT 历史证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
   或保存文章数据
-- 当前门禁：本 failure-analysis PR 通过 Review 前不得请求任何 GDELT API；之后仍需用户单独
-  授权才能进行最多一次修正参数的 smoke
-- 下一步：Review failure analysis；不得开始 adapter implementation
+- GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
+  429，未获得有效 JSON 或文章字段
+- 当前门禁：不得请求任何 provider API；不得继续 GDELT；不得开始 adapter implementation
+- 下一步：用户提供 NewsAPI.ai / Event Registry API key、plan、quota/token limit、allowed
+  retention 和 internal AI analysis 决策后，另行授权 bounded smoke
+- NewsAPI.ai / Event Registry bounded smoke 成功并通过 Review 前不得 implementation
 
 ## 架构修订状态
 
