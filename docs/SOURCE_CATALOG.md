@@ -90,6 +90,8 @@
 - 用户选择 GDELT 作为唯一 Polling Source Pilot candidate；这不表示已实现或已授权新闻全文。
 - 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family，精确 query/endpoint 在实现前
   contract review 中固定；本轮未请求 API 或生产数据。
+- 当前核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
+  API 或条款，GDELT Cloud 需要未来独立 SPEC 或规格修订与评估。
 - 默认 `access_level = LINK_ONLY`。只允许 title、GDELT/来源 metadata、source URL、时间、
   确定性 ID/hash 和最小 raw reference；不得保存第三方新闻正文。
 - GDELT 官方 Terms 允许使用和再分发 GDELT 发布的数据集，但要求引用 GDELT 并链接官网；
