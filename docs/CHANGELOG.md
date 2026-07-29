@@ -4,6 +4,10 @@
 
 ### Documentation
 
+- 增加 GDELT failure analysis before further smoke：官方参数审计确认 `timespan=15m` 不是
+  15 分钟语法，记录 DOC rate-limit 官方边界、SSL timeout 未确认边界和下一次单请求 gate。
+- 本轮无代码、迁移、依赖、API request、adapter 或 collection；不切换 provider，
+  implementation still not started。
 - 记录 GDELT Project DOC 2.0 bounded smoke verification：两次极小请求尝试分别观察到 HTTP
   429 和 SSL connection timeout；成功响应 schema 等仍保持 Blocked。
 - 本轮无代码、迁移、依赖、adapter、adapter key 或 collection；未访问 source page，未保存
