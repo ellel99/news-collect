@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -25,7 +26,11 @@ from market_intelligence.collection.errors import ClassifiedCollectionError, Col
 from market_intelligence.collection.locking import retry_marker_key
 from market_intelligence.collection.registry import AdapterRegistry, build_fake_registry
 from market_intelligence.collection.runner import CollectionRunner, recover_stale_runs
-from market_intelligence.collection.scheduler import DispatchRequest, dispatch_due_targets
+from market_intelligence.collection.scheduler import (
+    DispatchRequest,
+    dispatch_due_targets,
+    dispatch_marker_key,
+)
 from market_intelligence.core.config import Settings
 from market_intelligence.db import Base
 from market_intelligence.db.models import (
@@ -244,11 +249,78 @@ async def test_unknown_access_method_fails_closed_before_run(
         assert await session.scalar(select(text("count(*)")).select_from(CollectionRun)) == 0
 
 
+async def assert_no_collection_output(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with factory() as session:
+        assert await session.scalar(select(text("count(*)")).select_from(CollectionRun)) == 0
+        assert await session.scalar(select(text("count(*)")).select_from(RawItem)) == 0
+
+
+@pytest.mark.asyncio
+async def test_disabled_account_fails_closed_without_output(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(factory)
+    async with factory.begin() as session:
+        stored = await session.get(SourceAccount, account.id)
+        assert stored is not None
+        stored.enabled = False
+    with pytest.raises(ClassifiedCollectionError) as caught:
+        await CollectionRunner(factory, redis, build_fake_registry(), settings()).run(
+            make_target(source, account)
+        )
+    assert caught.value.code == CollectionErrorCode.CONFIG_INVALID
+    await assert_no_collection_output(factory)
+
+
+@pytest.mark.asyncio
+async def test_mismatched_account_fails_closed_without_output(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, _ = await create_source(factory)
+    _, other_account = await create_source(factory)
+    invalid = CollectionTarget(
+        source.id,
+        other_account.id,
+        source.source_type.value,
+        "fake",
+        source.retention_class,
+        {},
+    )
+    with pytest.raises(ClassifiedCollectionError) as caught:
+        await CollectionRunner(factory, redis, build_fake_registry(), settings()).run(invalid)
+    assert caught.value.code == CollectionErrorCode.CONFIG_INVALID
+    await assert_no_collection_output(factory)
+
+
+@pytest.mark.asyncio
+async def test_source_level_target_with_account_fails_closed_without_output(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, _ = await create_source(factory)
+    invalid = CollectionTarget(
+        source.id,
+        None,
+        source.source_type.value,
+        "fake",
+        source.retention_class,
+        {},
+    )
+    with pytest.raises(ClassifiedCollectionError) as caught:
+        await CollectionRunner(factory, redis, build_fake_registry(), settings()).run(invalid)
+    assert caught.value.code == CollectionErrorCode.CONFIG_INVALID
+    await assert_no_collection_output(factory)
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_only_schedules_authorized_or_implemented(
     collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
 ) -> None:
-    factory, _ = collection_runtime
+    factory, redis = collection_runtime
     for status in AuthorizationStatus:
         await create_source(factory, authorization_status=status)
     captured: list[DispatchRequest] = []
@@ -256,13 +328,111 @@ async def test_dispatcher_only_schedules_authorized_or_implemented(
     async def enqueue(request: DispatchRequest) -> None:
         captured.append(request)
 
-    await dispatch_due_targets(
-        factory,
-        build_fake_registry(),
-        enqueue,
-        now=datetime(2026, 7, 29, tzinfo=UTC),
+    await asyncio.gather(
+        dispatch_due_targets(
+            factory,
+            build_fake_registry(),
+            redis,
+            enqueue,
+            execution_window_seconds=1920,
+            now=datetime(2026, 7, 29, tzinfo=UTC),
+        ),
+        dispatch_due_targets(
+            factory,
+            build_fake_registry(),
+            redis,
+            enqueue,
+            execution_window_seconds=1920,
+            now=datetime(2026, 7, 29, tzinfo=UTC),
+        ),
     )
     assert len(captured) == 2
+    marker_ttls = [await redis.ttl(dispatch_marker_key(request.task_id)) for request in captured]
+    assert all(ttl >= 1920 for ttl in marker_ttls)
+
+
+async def add_second_account(
+    factory: async_sessionmaker[AsyncSession], source_id: uuid.UUID
+) -> SourceAccount:
+    async with factory.begin() as session:
+        account = SourceAccount(
+            source_id=source_id,
+            identity_status="verified",
+            enabled=True,
+            collection_options={"behavior": "empty"},
+        )
+        session.add(account)
+        await session.flush()
+        account_id = account.id
+    async with factory() as session:
+        stored = await session.get(SourceAccount, account_id)
+        assert stored is not None
+        return stored
+
+
+@pytest.mark.asyncio
+async def test_account_success_does_not_use_other_account_old_success(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account_a = await create_source(factory)
+    account_b = await add_second_account(factory, source.id)
+    old_success = datetime.now(UTC) - timedelta(days=1)
+    async with factory.begin() as session:
+        stored_source = await session.get(Source, source.id)
+        assert stored_source is not None
+        stored_source.consecutive_failures = 3
+        session.add(
+            CollectionRun(
+                source_id=source.id,
+                source_account_id=account_b.id,
+                started_at=old_success,
+                finished_at=old_success,
+                status=CollectionRunStatus.SUCCEEDED,
+            )
+        )
+    outcome = await CollectionRunner(factory, redis, build_fake_registry(), settings()).run(
+        make_target(source, account_a)
+    )
+    assert outcome.status == "succeeded"
+    async with factory() as session:
+        stored_source = await session.get(Source, source.id)
+        assert stored_source is not None
+        assert stored_source.last_success_at is None
+        assert stored_source.consecutive_failures == 3
+
+
+@pytest.mark.asyncio
+async def test_account_success_does_not_mask_other_account_current_failure(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account_a = await create_source(factory)
+    account_b = await add_second_account(factory, source.id)
+    now = datetime.now(UTC)
+    async with factory.begin() as session:
+        stored_source = await session.get(Source, source.id)
+        assert stored_source is not None
+        stored_source.consecutive_failures = 2
+        session.add(
+            CollectionRun(
+                source_id=source.id,
+                source_account_id=account_b.id,
+                started_at=now,
+                finished_at=now,
+                status=CollectionRunStatus.FAILED,
+                error_code="COLLECTION_UNKNOWN",
+            )
+        )
+    outcome = await CollectionRunner(factory, redis, build_fake_registry(), settings()).run(
+        make_target(source, account_a)
+    )
+    assert outcome.status == "succeeded"
+    async with factory() as session:
+        stored_source = await session.get(Source, source.id)
+        assert stored_source is not None
+        assert stored_source.last_success_at is None
+        assert stored_source.consecutive_failures == 2
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,7 @@ Active SPEC：SPEC-0003
 - fake adapter 使用纯合成数据且不访问网络
 - `authorized` / `implemented` + enabled + due 的 dispatcher 门禁
 - 确定性 dispatch key 与 Celery task ID
+- Redis dispatch marker 使用 `SET NX EX`，同 target/slot 只 enqueue 一次
 - `collection.dispatch_due_targets`
 - `collection.run_target`
 - `collection.recover_stale_runs`
@@ -87,7 +88,12 @@ Active SPEC：SPEC-0003
 - 非法 cursor 故障注入不留下 RawItem/cursor
 - stale recovery 写入 `COLLECTION_STALE_RUN`、标记 failed 且 cursor 不变
 - 已排队 retry 使用 Redis marker，stale recovery 不会误判有效 retry
+- worker 验证 account 存在、归属、enabled，并禁止有账号来源的 source-level target
+- account-level success 保守地不更新 source-level health，避免旧历史成功掩盖本轮失败
 - Celery task/Beat 注册与 eager contract
+- 并发 dispatcher/Beat replay 的 Redis marker 幂等
+- disabled、mismatched 和非法 source-level target 均不创建 Run/RawItem
+- 多账号旧成功或本轮失败不会被另一账号成功掩盖
 
 ## 8. 验证结果
 
@@ -97,7 +103,7 @@ Active SPEC：SPEC-0003
 | Ruff | `uv run ruff check .` | PASS |
 | Format | `uv run ruff format --check .` | PASS；60 files |
 | mypy | `uv run mypy src` | PASS；24 source files |
-| pytest | `uv run pytest` | PASS；52 tests |
+| pytest | `uv run pytest` | PASS；57 tests |
 | Compose config | `docker compose config` | PASS |
 | Services | `docker compose up -d postgres redis` | PASS；PostgreSQL 16 / Redis 7 running |
 | Schema drift | `uv run alembic check` | PASS；No new upgrade operations detected |
@@ -122,7 +128,14 @@ Active SPEC：SPEC-0003
 - collection options、错误和日志不得包含秘密或 raw payload
 - Review ZIP 秘密扫描结果见最终验证
 
-## 10. 已知问题
+## 10. Review Fixes
+
+- PR #5 首轮审核要求修复 dispatch enqueue 幂等、worker account target 校验和多账号 Source health 轮次误判。
+- dispatch marker 在 `apply_async` 前以 Redis `SET NX EX` 抢占，TTL 覆盖 scheduled slot 与执行/恢复窗口；enqueue 异常会释放 marker。
+- worker 对 source/account 组合执行数据库二次校验，所有非法 target 在创建 CollectionRun 前 fail closed。
+- 既有 schema 无 dispatch round 标识，因此 account-level success 不更新 `Source.last_success_at` 或清零 `consecutive_failures`；宁可保守不更新，也不使用旧 run 推断本轮全成功。
+
+## 11. 已知问题
 
 ### Blocker
 
@@ -139,12 +152,12 @@ Active SPEC：SPEC-0003
 - Telegram 属于 SPEC-0007/0008。
 - AI/Event/Portfolio 属于后续阶段。
 
-## 11. Git
+## 12. Git
 
 分支：`feat/spec-0003-collection-framework-scheduler-cursor-retry`
 
 提交信息：`feat: implement SPEC-0003 collection framework scheduler cursor retry`
 
-## 12. 下一步
+## 13. 下一步
 
 完成全部验证、提交并创建 PR；等待 SPEC-0003 实现审核，不开始 SPEC-0004。

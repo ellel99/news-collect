@@ -46,6 +46,7 @@ async def _dispatch() -> int:
     settings = get_settings()
     engine = create_engine(settings)
     factory = create_session_factory(engine)
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
     async def enqueue(request: DispatchRequest) -> None:
         run_target.apply_async(
@@ -54,9 +55,20 @@ async def _dispatch() -> int:
         )
 
     try:
-        requests = await dispatch_due_targets(factory, build_fake_registry(), enqueue)
+        requests = await dispatch_due_targets(
+            factory,
+            build_fake_registry(),
+            redis,
+            enqueue,
+            execution_window_seconds=(
+                settings.COLLECTION_STALE_RUN_AFTER_SECONDS
+                + settings.COLLECTION_TASK_DEADLINE_SECONDS
+                + settings.COLLECTION_MAX_RETRY_AFTER_SECONDS
+            ),
+        )
         return len(requests)
     finally:
+        await redis.aclose()
         await engine.dispose()
 
 

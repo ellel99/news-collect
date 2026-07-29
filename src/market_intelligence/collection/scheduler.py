@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from redis.asyncio import Redis
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -35,6 +36,10 @@ def dispatch_key(target: CollectionTarget, scheduled_slot: int) -> str:
 
 def task_id_for(key: str) -> str:
     return f"collection-{uuid5(NAMESPACE_URL, key)}"
+
+
+def dispatch_marker_key(task_id: str) -> str:
+    return f"collection:dispatch:{task_id}"
 
 
 def scheduled_slot(now: datetime, schedule_seconds: int) -> int:
@@ -72,8 +77,10 @@ def eligible_sources_query() -> Select[tuple[Source]]:
 async def dispatch_due_targets(
     factory: async_sessionmaker[AsyncSession],
     registry: AdapterRegistry,
+    redis: Redis,
     enqueue: Callable[[DispatchRequest], Awaitable[None]],
     *,
+    execution_window_seconds: int,
     now: datetime | None = None,
 ) -> list[DispatchRequest]:
     current = now or datetime.now(UTC)
@@ -81,6 +88,8 @@ async def dispatch_due_targets(
     async with factory() as session:
         sources = list((await session.scalars(eligible_sources_query())).all())
         for source in sources:
+            if source.schedule_seconds is None:
+                continue
             if not registry.supports(source.access_method):
                 continue
             latest_run_at = await session.scalar(
@@ -121,8 +130,22 @@ async def dispatch_due_targets(
                     retention_class=source.retention_class,
                     collection_options=options,
                 )
-                key = dispatch_key(target, scheduled_slot(current, source.schedule_seconds or 1))
+                key = dispatch_key(target, scheduled_slot(current, source.schedule_seconds))
                 request = DispatchRequest(target, key, task_id_for(key))
-                await enqueue(request)
+                marker_key = dispatch_marker_key(request.task_id)
+                marker_ttl = source.schedule_seconds + execution_window_seconds
+                claimed = await redis.set(
+                    marker_key,
+                    request.dispatch_key,
+                    nx=True,
+                    ex=marker_ttl,
+                )
+                if not claimed:
+                    continue
+                try:
+                    await enqueue(request)
+                except Exception:
+                    await redis.delete(marker_key)
+                    raise
                 requests.append(request)
     return requests

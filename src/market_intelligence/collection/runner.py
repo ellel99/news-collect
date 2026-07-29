@@ -174,6 +174,24 @@ class CollectionRunner:
                 raise ClassifiedCollectionError(
                     CollectionErrorCode.CONFIG_INVALID, "source is not authorized for collection"
                 )
+            if target.source_account_id is not None:
+                account = await session.get(SourceAccount, target.source_account_id)
+                if account is None or account.source_id != target.source_id or not account.enabled:
+                    raise ClassifiedCollectionError(
+                        CollectionErrorCode.CONFIG_INVALID,
+                        "source account is missing, mismatched, or disabled",
+                    )
+            else:
+                account_exists = await session.scalar(
+                    select(SourceAccount.id)
+                    .where(SourceAccount.source_id == target.source_id)
+                    .limit(1)
+                )
+                if account_exists is not None:
+                    raise ClassifiedCollectionError(
+                        CollectionErrorCode.CONFIG_INVALID,
+                        "source-level collection is forbidden when accounts exist",
+                    )
 
     async def _create_run(self, target: CollectionTarget) -> UUID:
         async with self.factory.begin() as session:
@@ -285,37 +303,9 @@ class CollectionRunner:
             run.finished_at = now
             run.error_code = None
             run.error_message_redacted = None
-            if target.source_account_id is None or await self._all_accounts_succeeded(
-                session, target.source_id
-            ):
+            if target.source_account_id is None:
                 source.last_success_at = now
                 source.consecutive_failures = 0
-
-    async def _all_accounts_succeeded(self, session: AsyncSession, source_id: UUID) -> bool:
-        account_ids = list(
-            (
-                await session.scalars(
-                    select(SourceAccount.id).where(
-                        SourceAccount.source_id == source_id,
-                        SourceAccount.enabled.is_(True),
-                    )
-                )
-            ).all()
-        )
-        for account_id in account_ids:
-            latest_status = await session.scalar(
-                select(CollectionRun.status)
-                .where(
-                    CollectionRun.source_id == source_id,
-                    CollectionRun.source_account_id == account_id,
-                    CollectionRun.status != CollectionRunStatus.RUNNING,
-                )
-                .order_by(CollectionRun.started_at.desc())
-                .limit(1)
-            )
-            if latest_status != CollectionRunStatus.SUCCEEDED:
-                return False
-        return bool(account_ids)
 
     async def _record_retry(
         self, run_id: UUID, error: ClassifiedCollectionError, retry_count: int
