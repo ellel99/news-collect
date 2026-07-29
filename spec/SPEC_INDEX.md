@@ -9,7 +9,7 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
 | SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
-| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；implementation not started | SPEC-0003 |
+| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；GDELT candidate selected；implementation not started | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
 | SPEC-0006 | Normalization, Deduplication and Outbox | Planned；不得依赖具体 provider | SPEC-0004 or approved test source |
 | SPEC-0007 | Telegram Push Bot | Planned | SPEC-0006 |
@@ -26,7 +26,9 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 ### SPEC-0004 — First Approved Polling Source Pilot
 
 - 当前只进行 `spec/SPEC-0004.md` 文档审核，implementation not started。
-- 首个 provider 必须由用户在文档 Review 中明确确认；未确认前不得实现或请求真实来源。
+- 首个 provider candidate 已由用户选择为 GDELT；implementation still not started。
+- GDELT 的 endpoint、授权、许可、terms/robots 和运行参数仍须在实现前验证；不得请求真实
+  来源或开始实现。
 - 只能选择第一个合法、低成本或公开的 Polling Source 作为试点。
 - GDELT、RSS/Atom、CNBC、Reuters、NewsAPI.ai / Event Registry、Finnhub 或其他单一
   provider 都不得成为核心依赖。

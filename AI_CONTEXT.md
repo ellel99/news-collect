@@ -11,7 +11,8 @@
 - 当前 Active SPEC：`spec/SPEC-0004.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
 - 当前工作状态：SPEC-0004 docs preparation only；implementation not started
-- 下一步：SPEC-0004 文档必须先通过 Review，且首个 provider 必须由用户明确确认
+- Provider candidate：GDELT（用户已选择；不是核心依赖，授权与合同细节尚未验证）
+- 下一步：SPEC-0004 文档必须先通过 Review，并完成所有 implementation 前真实核验
 
 ## 架构修订状态
 
