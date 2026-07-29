@@ -4,14 +4,22 @@
 
 ### Documentation
 
+- 纠正 SPEC-0004 provider 决策流程：平台选择由 ChatGPT / 用户确认，Primary Provider 为
+  NewsAPI.ai / Event Registry（pending credentials），Codex 不负责重新评估或改选。
+- 记录 Marketaux 为 Secondary Financial News candidate、Finnhub 为 Market Validation
+  candidate，SEC EDGAR / EIA / Company IR / Official RSS 为 Official Evidence Layer。
+- GDELT 在最终 provider decision 前曾被探索；现已被 supersede 为 `runtime blocked /
+  future evaluation only`，不再是 SPEC-0004 primary pilot，且不得继续 smoke。
+- 本轮无代码、迁移、依赖、API request、adapter 或 collection；implementation still not
+  started。
 - 记录唯一一次 GDELT corrected smoke：超过 60 分钟冷却、使用 `timespan=15min` 和
   `maxrecords=1` 后仍返回 HTTP 429；DOC 2.0 pilot 标记为 `runtime blocked`。
 - corrected smoke 未产生有效 JSON/schema evidence；未保存完整 response、真实 title/body/
   URL 值，未访问 source page，未写代码、迁移、依赖、adapter 或运行 collection。
 - 增加 GDELT failure analysis before further smoke：官方参数审计确认 `timespan=15m` 不是
   15 分钟语法，记录 DOC rate-limit 官方边界、SSL timeout 未确认边界和下一次单请求 gate。
-- 本轮无代码、迁移、依赖、API request、adapter 或 collection；不切换 provider，
-  implementation still not started。
+- 当时的 failure-analysis 轮次无代码、迁移、依赖、API request、adapter 或 collection；
+  implementation 未开始。
 - 记录 GDELT Project DOC 2.0 bounded smoke verification：两次极小请求尝试分别观察到 HTTP
   429 和 SSL connection timeout；成功响应 schema 等仍保持 Blocked。
 - 本轮无代码、迁移、依赖、adapter、adapter key 或 collection；未访问 source page，未保存
@@ -23,8 +31,8 @@
 - 明确数值 rate limit、timeout/retry、真实响应字段和 endpoint smoke evidence 仍为
   Pending/Blocked；本轮无代码、迁移、依赖、adapter、真实 collection 或 GDELT 数据保存。
 - 激活 `SPEC-0004 — First Approved Polling Source Pilot` 进入文档审核。
-- 创建 provider-neutral Polling Source Pilot 规格草案，并将用户选择的 GDELT 记录为唯一
-  pilot candidate；implementation not started。
+- 创建 provider-neutral Polling Source Pilot 规格草案，并记录当时用户选择的 GDELT
+  candidate；该历史选择现已被最终 provider decision supersede。
 - 细化 GDELT Source Contract；未真实核验的 endpoint、认证、许可、terms/robots、rate limit、
   timeout 和验证证据保持 `Pending verification before implementation`。
 - 明确本次没有代码、迁移、schema、依赖或真实来源变更。

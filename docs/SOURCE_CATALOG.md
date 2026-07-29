@@ -21,7 +21,7 @@
 ## 1.1 供应商无关规则
 
 - 任何 provider 都必须通过 `SYSTEM_DESIGN.md` 定义的 Connector / Unified Ingestion Gateway 合同接入。
-- GDELT、NewsAPI.ai / Event Registry、Finnhub 或任何媒体/市场数据供应商都不是不可替换核心依赖。
+- GDELT、NewsAPI.ai / Event Registry、Marketaux、Finnhub 或任何媒体/市场数据供应商都不是不可替换核心依赖。
 - 下游 Normalization、Deduplication、Event、AI、Notification 不得导入具体供应商 SDK 或依赖其原始 payload。
 - Catalog 中出现 provider 只表示候选，不表示已授权、已接入、可获得全文或满足实时 SLA。
 
@@ -75,19 +75,37 @@
 
 | Code | 用途 | 候选模式 | 状态 |
 |---|---|---|---|
-| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | runtime blocked；corrected smoke HTTP 429；implementation not started |
+| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | runtime blocked / future evaluation only；不再是 SPEC-0004 primary |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
-| `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
-| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
-| `official_agencies` | 政府、监管、央行、能源机构 | Polling / Webhook（如官方支持） | planned |
-| `finnhub_candidate` | 可替换市场/财务数据候选 | Polling / Streaming（按授权） | planned；不是核心依赖 |
-| `event_registry_candidate` | NewsAPI.ai / Event Registry 候选 | Polling / Streaming（按产品） | planned；后续评估 |
+| `company_ir` | 公司官网与 Investor Relations | Polling | Official Evidence Layer；逐公司审核 |
+| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | Official Evidence Layer；独立 SPEC |
+| `eia` | U.S. Energy Information Administration | Polling / official feed | Official Evidence Layer；独立 SPEC |
+| `official_rss` | 政府、监管、公司官方 RSS | Polling | Official Evidence Layer；逐 Feed 审核 |
+| `event_registry_candidate` | NewsAPI.ai / Event Registry | Polling（当前 SPEC） | selected primary candidate；pending credentials |
+| `marketaux_candidate` | Marketaux | Polling（按授权） | secondary financial news candidate；未来独立授权 |
+| `finnhub_candidate` | Finnhub | Polling / Streaming（按授权） | market validation candidate；当前阶段不实现 |
 
 公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
 
-### GDELT SPEC-0004 核验状态
+### Confirmed Provider Decision
 
-- 用户选择 GDELT 作为唯一 Polling Source Pilot candidate；这不表示已实现或已授权新闻全文。
+- 平台选择由 ChatGPT / 用户确认，不由 Codex 决定；详见 `docs/PROVIDER_DECISION.md`。
+- SPEC-0004 Primary Provider：NewsAPI.ai / Event Registry；当前状态为 selected primary
+  candidate / pending credentials。
+- Secondary Financial News Provider：Marketaux；本 SPEC 不顺带实现。
+- Market Validation Provider：Finnhub；Market Validation 仍受 Foundation revision、
+  Freeze Review 和独立 SPEC 门禁约束。
+- Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS；逐来源合同和接入
+  仍需独立授权。
+- 继续前用户必须提供 NewsAPI.ai / Event Registry API key、plan 名称、quota/token limit、
+  allowed retention 和是否允许 internal AI analysis。
+- 只能在上述信息完成合同 Review 后另行授权 NewsAPI.ai / Event Registry bounded smoke；
+  smoke 成功前不得 adapter implementation、注册 adapter key 或运行 collection。
+
+### GDELT Historical SPEC-0004 Evidence
+
+- GDELT 在最终 provider decision 前曾作为 Polling Source Pilot candidate 被探索；该历史选择
+  已被用户确认的 NewsAPI.ai / Event Registry primary decision supersede。
 - 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family；bounded smoke 共尝试两次，
   观察到一次 HTTP 429 和一次 SSL connection timeout，未获得或保存文章数据。
 - 当前核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
@@ -103,16 +121,10 @@
   参数和真实响应字段仍是 implementation blocker。
 - 尚未实现或注册 GDELT adapter，未运行 collection；成功 JSON/schema、实际无 API key 行为、
   `maxrecords`/`timespan` 效果和长期可用性仍 Blocked。
-- 不得继续盲目重试。官方文档审计发现上次 `timespan=15m` 不是 15 分钟语法；若 Review 后
-  用户另行授权，下一次最多一次 GET，使用 `timespan=15min`、`maxrecords=1` 并经过冷却期。
-- 若下一次仍为 429 或连接失败，应把 GDELT DOC 2.0 pilot 标记为 `runtime blocked`，再由用户
-  决定是否另行评估 RSS/Atom、SEC/官方公告来源或独立 Web NGrams / GDELT dataset SPEC；
-  本轮不切换 provider。
 - Gate 已触发：冷却超过 60 分钟并改用 `timespan=15min` 后，唯一 corrected GET 仍返回
   HTTP 429，且没有有效 JSON 或字段结构。不得再次请求或开始 adapter implementation。
-- 下一步由用户/Reviewer 决定保持 blocked，还是另行修订 SPEC-0004 评估 RSS/Atom、
-  SEC/官方公告 pilot，或用独立 SPEC 评估 Web NGrams / GDELT dataset。
-- GDELT 仍未实现、不是全文授权来源，也不是核心依赖。
+- GDELT 状态固定为 `runtime blocked / future evaluation only`；不再驱动 SPEC-0004，不得继续
+  smoke，也不是全文授权来源或核心依赖。
 - 权威证据与剩余风险见 `spec/SPEC-0004.md` 的 GDELT Verification Evidence。
 
 ## 4.2 候选商业升级来源
