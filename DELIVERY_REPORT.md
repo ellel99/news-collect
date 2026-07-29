@@ -3,7 +3,7 @@
 Build：SPEC-0001 bootstrap
 Active SPEC：SPEC-0001 — Project Bootstrap
 交付日期：2026-07-29
-审核状态：REQUEST CHANGES — blockers addressed, re-review pending
+审核状态：PASS — approved for merge
 
 ## 1. 本轮目标
 
