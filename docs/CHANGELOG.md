@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SPEC-0004 Documentation Preparation
+
+### Documentation
+
+- 激活 `SPEC-0004 — First Approved Polling Source Pilot` 进入文档审核。
+- 创建 provider-neutral Polling Source Pilot 规格草案，并将用户选择的 GDELT 记录为唯一
+  pilot candidate；implementation not started。
+- 细化 GDELT Source Contract；未真实核验的 endpoint、认证、许可、terms/robots、rate limit、
+  timeout 和验证证据保持 `Pending verification before implementation`。
+- 明确本次没有代码、迁移、schema、依赖或真实来源变更。
+- Foundation v2.1-FROZEN 继续生效；SPEC-0004 Active 只表示 Docs Review，不授权实现。
+
 ## Unreleased — Architecture Documentation Alignment
 
 ### Documentation
