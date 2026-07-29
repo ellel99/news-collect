@@ -9,7 +9,7 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
 | SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
-| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；GDELT candidate selected；implementation not started | SPEC-0003 |
+| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；NewsAPI.ai / Event Registry selected primary；pending credentials；implementation not started | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
 | SPEC-0006 | Normalization, Deduplication and Outbox | Planned；不得依赖具体 provider | SPEC-0004 or approved test source |
 | SPEC-0007 | Telegram Push Bot | Planned | SPEC-0006 |
@@ -26,11 +26,16 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 ### SPEC-0004 — First Approved Polling Source Pilot
 
 - 当前只进行 `spec/SPEC-0004.md` 文档审核，implementation not started。
-- 首个 provider candidate 已由用户选择为 GDELT；implementation still not started。
-- GDELT 的 endpoint、授权、许可、terms/robots 和运行参数仍须在实现前验证；不得请求真实
-  来源或开始实现。
+- Primary Provider 已由 ChatGPT / 用户确认为 NewsAPI.ai / Event Registry；Codex 不负责
+  重新评估或改选。
+- 用户提供 API key、plan、quota/token limit、allowed retention 和 internal AI analysis
+  决策前不得 smoke；bounded smoke PASS 前不得实现。
+- Marketaux、Finnhub、EIA Open Data 和 SEC EDGAR 按 `docs/PROVIDER_DECISION.md` 的顺序进入
+  后续注册、smoke、Review 和独立 SPEC，不得由 SPEC-0004 顺带实现。
+- GDELT Project DOC 2.0 为 `runtime blocked / future evaluation only`；历史 evidence 保留，
+  但不再是 primary pilot、不得继续 smoke 或驱动实现。
 - 只能选择第一个合法、低成本或公开的 Polling Source 作为试点。
-- GDELT、RSS/Atom、CNBC、Reuters、NewsAPI.ai / Event Registry、Finnhub 或其他单一
+- GDELT、RSS/Atom、CNBC、Reuters、NewsAPI.ai / Event Registry、Marketaux、Finnhub 或其他单一
   provider 都不得成为核心依赖。
 - 必须使用 Source Adapter / Connector / Unified Ingestion Gateway 风格的边界；这里的
   Gateway 是 provider-neutral 合同边界，不代表已经批准事件总线或新增基础设施。

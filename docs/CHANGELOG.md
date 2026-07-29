@@ -12,6 +12,10 @@
   future evaluation only`，不再是 SPEC-0004 primary pilot，且不得继续 smoke。
 - 本轮无代码、迁移、依赖、API request、adapter 或 collection；implementation still not
   started。
+- 补充平台执行顺序和统一门禁：注册并保存凭证 → 单平台 bounded smoke → 用户/ChatGPT
+  Review → 确认字段/额度/许可/保存边界 → 对应 SPEC → Adapter implementation → 测试合并。
+- 定义 bounded smoke 必录字段与 PASS 标准；任何关键 schema、quota、license、retention
+  或安全门禁未满足时不得开始实现。
 - 记录唯一一次 GDELT corrected smoke：超过 60 分钟冷却、使用 `timespan=15min` 和
   `maxrecords=1` 后仍返回 HTTP 429；DOC 2.0 pilot 标记为 `runtime blocked`。
 - corrected smoke 未产生有效 JSON/schema evidence；未保存完整 response、真实 title/body/

@@ -17,9 +17,9 @@
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
 - GDELT Project DOC 2.0：runtime blocked / future evaluation only；不再是 primary pilot
-- 当前证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
+- GDELT 历史证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
   或保存文章数据
-- corrected smoke 证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
+- GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
 - 当前门禁：不得请求任何 provider API；不得继续 GDELT；不得开始 adapter implementation
 - 下一步：用户提供 NewsAPI.ai / Event Registry API key、plan、quota/token limit、allowed

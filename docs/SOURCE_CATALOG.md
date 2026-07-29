@@ -101,6 +101,10 @@
   allowed retention 和是否允许 internal AI analysis。
 - 只能在上述信息完成合同 Review 后另行授权 NewsAPI.ai / Event Registry bounded smoke；
   smoke 成功前不得 adapter implementation、注册 adapter key 或运行 collection。
+- 后续执行顺序固定为 NewsAPI.ai / Event Registry → Marketaux → Finnhub → EIA Open Data →
+  SEC EDGAR；每个平台都必须独立完成注册、bounded smoke、用户/ChatGPT Review 和对应 SPEC，
+  不得跳步或并行扩展。
+- 通用 smoke 验证字段和 PASS 标准见 `docs/PROVIDER_DECISION.md`。
 
 ### GDELT Historical SPEC-0004 Evidence
 
@@ -108,7 +112,7 @@
   已被用户确认的 NewsAPI.ai / Event Registry primary decision supersede。
 - 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family；bounded smoke 共尝试两次，
   观察到一次 HTTP 429 和一次 SSL connection timeout，未获得或保存文章数据。
-- 当前核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
+- 当时核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
   API 或条款，GDELT Cloud 需要未来独立 SPEC 或规格修订与评估。
 - 默认 `access_level = LINK_ONLY`。只允许 title、GDELT/来源 metadata、source URL、时间、
   确定性 ID/hash 和最小 raw reference；不得保存第三方新闻正文。
