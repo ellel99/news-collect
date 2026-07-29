@@ -8,7 +8,18 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0003.md`
+- 当前 Active SPEC：无
+- 最近完成：SPEC-0003，tag `spec-0003-completed`
+- 下一步：等待用户确认 SPEC-0004 文档准备；Planned 不代表 Active
+
+## 架构修订状态
+
+- 当前仍生效：Foundation v2.1-FROZEN。
+- 用户已确认长期产品目标是面向个人投资研究的实时信息采集与 AI 分析系统；这项产品目标不是当前实现状态或实现授权。
+- 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
+- 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
+- AI 分析、Event、Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义，必须完成适用的 Foundation revision、Freeze Review 和独立 SPEC 后才能实施。
+- 本轮没有 Active implementation，不得开始 SPEC-0004 或任何代码工作。
 
 ## Phase 1 允许
 
@@ -28,7 +39,7 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 4. `docs/DATA_MODEL.md`
 5. `docs/AI_RULES.md`
 6. `docs/GLOSSARY.md`
-7. 当前 Active SPEC
+7. 当前 Active SPEC；若为“无”，读取最近完成 SPEC 与 `spec/SPEC_INDEX.md`
 8. 真实代码、迁移、测试和最近交付报告
 
 不得只根据聊天记录、旧 ZIP 名称或未验证的文档描述判断当前实现状态。

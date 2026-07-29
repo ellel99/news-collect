@@ -1,6 +1,11 @@
 # Market Intelligence Collector
 
-单用户、自用的美股与 Crypto 实时市场情报系统。
+用户已确认本项目的长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
+提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。
+
+这是产品目标，不是当前实现状态或实现授权。当前生效边界仍是 Foundation v2.1-FROZEN：
+单用户、自用、美股/ETF/Crypto，且 Phase 1 禁止 AI、Event、Market Validation 和 Research
+Recommendation。
 
 系统按四个阶段演进：
 
@@ -14,7 +19,7 @@
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：`spec/SPEC-0003.md`
+- 开发入口：当前无 Active SPEC；见 `spec/SPEC_INDEX.md`
 
 Phase 1 固定主链路：
 
@@ -62,8 +67,18 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)
-- 当前实现：SPEC-0003 来源无关采集框架（仅 fake adapter，等待实现 Review）
+- Active SPEC：无
+- 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
+- 下一步：等待用户确认 SPEC-0004 文档准备，不得直接开始实现
+
+## 长期产品与架构方向
+
+已确认的产品目标是“一键了解重要事件 → AI 事实与影响分析 → 市场数据验证 → 可解释研究参考”，而不是普通新闻列表或对外转载平台。供应商无关混合采集、统一逻辑新闻记录、事件驱动处理与回补能力见 `docs/SYSTEM_DESIGN.md` 和 `docs/DATA_MODEL.md`。
+
+产品目标已经确认，但相关工程能力不代表已实现或已获准实现。AI 分析、Event、Market
+Validation、Research Recommendation、多用户、商品直接投资域和交易动作语义，必须分别
+完成 Foundation revision、Freeze Review 和独立 SPEC；当前 v2.1-FROZEN 的 Phase 1、
+禁止自动交易和合法授权边界继续生效。
 
 ## 目录
 

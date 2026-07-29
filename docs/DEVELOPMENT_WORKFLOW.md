@@ -148,3 +148,18 @@ docs: finalize SPEC-0001 delivery
 8. 上传 Review ZIP；
 9. 等待审核或修复包；
 10. 当前 SPEC PASS 后再开始下一项。
+
+## 12. Foundation 候选变更流程
+
+当新的产品或架构要求与当前冻结 Foundation 一致时，可先记录为 Proposed Decision，并在
+后续 SPEC 中按正常流程实现。当要求与冻结决策冲突，或会改变阶段边界、数据所有权、安全
+边界、许可策略、投资动作语义时，必须遵循以下顺序：
+
+1. 记录候选要求、冲突项、影响范围与待决问题。
+2. 形成下一 Foundation 版本草案，不修改当前冻结标记的效力。
+3. 完成 Freeze Review，并获得用户明确批准。
+4. 更新 Foundation 版本及对应冻结文件。
+5. 创建且激活一个实现 SPEC，之后才允许编写代码或迁移。
+
+仓库可以处于“无 Active SPEC”状态。此时只能进行经授权的文档准备、审查或历史收尾，
+不得把候选路线图、Proposed Decision 或接口预留解释为实现授权。

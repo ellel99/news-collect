@@ -18,6 +18,13 @@
 
 每个真实来源 SPEC 还必须固定：Endpoint/Feed、认证引用、轮询或流式模式、调度频率、请求超时、限流与退避、Cursor、水位、稳定外部 ID、规范化 URL、Parser 合同和版本、内容保留等级、Fallback、合约测试和真实验证证据。
 
+## 1.1 供应商无关规则
+
+- 任何 provider 都必须通过 `SYSTEM_DESIGN.md` 定义的 Connector / Unified Ingestion Gateway 合同接入。
+- GDELT、NewsAPI.ai / Event Registry、Finnhub 或任何媒体/市场数据供应商都不是不可替换核心依赖。
+- 下游 Normalization、Deduplication、Event、AI、Notification 不得导入具体供应商 SDK 或依赖其原始 payload。
+- Catalog 中出现 provider 只表示候选，不表示已授权、已接入、可获得全文或满足实时 SLA。
+
 ## 2. 新闻媒体
 
 | Code | 来源 | 官网 | 首选接入 | 默认内容范围 | 状态 |
@@ -63,6 +70,31 @@
 - U.S. Energy Information Administration；
 - OPEC；
 - 交易所和公司正式公告。
+
+## 4.1 候选低成本/公开发现来源
+
+| Code | 用途 | 候选模式 | 状态 |
+|---|---|---|---|
+| `gdelt` | 全球新闻发现与线索 | Polling / Historical Backfill | planned；能力与许可待核验 |
+| `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
+| `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
+| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
+| `official_agencies` | 政府、监管、央行、能源机构 | Polling / Webhook（如官方支持） | planned |
+| `finnhub_candidate` | 可替换市场/财务数据候选 | Polling / Streaming（按授权） | planned；不是核心依赖 |
+| `event_registry_candidate` | NewsAPI.ai / Event Registry 候选 | Polling / Streaming（按产品） | planned；后续评估 |
+
+公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
+
+## 4.2 候选商业升级来源
+
+- Reuters / LSEG 实时新闻流；
+- Factiva；
+- LexisNexis；
+- NewsAPI.ai / Event Registry 商业能力；
+- WebSocket 新闻服务、Webhook 推送源和其他商业实时流；
+- 可替换的市场行情与财务数据供应商。
+
+这些只保留 Connector 能力入口。未取得合同、授权、字段说明和测试环境前一律为 `access_tbd`，不得写成已实现或承诺 SLA。
 
 ## 5. 关联来源
 

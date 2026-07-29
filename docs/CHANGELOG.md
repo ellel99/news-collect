@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — Architecture Documentation Alignment
+
+### Documentation
+
+- 将 SPEC-0003 标记为已完成，并将仓库状态调整为暂无 Active SPEC。
+- 记录下一 Foundation 版本的候选架构方向：供应商中立混合采集、统一接入网关、
+  可替换事件总线、逻辑 Unified News Record、事件中心化研究体验、三层 AI 研究链路与
+  市场数据验证。
+- 补充候选来源目录、采集模式、恢复与时间语义、许可元数据、研究建议语义及未来 SPEC
+  拆分建议。
+- 明确上述内容仅为 Proposed Decisions；Foundation v2.1-FROZEN 仍然有效，未激活新
+  SPEC，未进行代码、迁移或 schema 变更。
+
 ## SPEC-0003 Implementation — 2026-07-29
 
 ### Fixed
