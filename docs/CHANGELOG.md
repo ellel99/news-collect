@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — SPEC-0004 Documentation Preparation
+
+### Documentation
+
+- 激活 `SPEC-0004 — First Approved Polling Source Pilot` 进入文档审核。
+- 创建 provider-neutral Polling Source Pilot 规格草案；首个 provider 仍待用户在 Review 中
+  确认，implementation not started。
+- 明确本次没有代码、迁移、schema、依赖或真实来源变更。
+- Foundation v2.1-FROZEN 继续生效；SPEC-0004 Active 只表示 Docs Review，不授权实现。
+
 ## Unreleased — Architecture Documentation Alignment
 
 ### Documentation

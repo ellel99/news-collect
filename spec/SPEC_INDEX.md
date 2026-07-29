@@ -2,14 +2,14 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：None（等待用户确认 SPEC-0004 文档准备）
+Active SPEC：SPEC-0004（Docs Review；implementation not started）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
 | SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
-| SPEC-0004 | First Approved Polling Source Pilot | Planned；provider-neutral Polling 试点 | SPEC-0003 |
+| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；implementation not started | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
 | SPEC-0006 | Normalization, Deduplication and Outbox | Planned；不得依赖具体 provider | SPEC-0004 or approved test source |
 | SPEC-0007 | Telegram Push Bot | Planned | SPEC-0006 |
@@ -17,13 +17,16 @@ Active SPEC：None（等待用户确认 SPEC-0004 文档准备）
 | SPEC-0009 | Operations, Backup, Restore and Phase 1 Acceptance | Planned | SPEC-0001–0008 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
-审查或历史收尾。`Planned` 不代表批准；只有用户明确激活且通过实现前审核的唯一 Active
-SPEC 才能授权实现。不得仅因依赖已完成、候选架构已记录或下一编号已知而开始工作。
+审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
+审核，不代表代码实现授权。只有用户明确批准当前 SPEC 文档且 Review PASS 后，才可另行授权
+实现。不得仅因依赖已完成、候选架构已记录、SPEC 已激活或下一编号已知而开始代码工作。
 
 ## Phase 1 Planned SPEC 接入约束
 
 ### SPEC-0004 — First Approved Polling Source Pilot
 
+- 当前只进行 `spec/SPEC-0004.md` 文档审核，implementation not started。
+- 首个 provider 必须由用户在文档 Review 中明确确认；未确认前不得实现或请求真实来源。
 - 只能选择第一个合法、低成本或公开的 Polling Source 作为试点。
 - GDELT、RSS/Atom、CNBC、Reuters、NewsAPI.ai / Event Registry、Finnhub 或其他单一
   provider 都不得成为核心依赖。
@@ -62,3 +65,4 @@ SPEC 才能授权实现。不得仅因依赖已完成、候选架构已记录或
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
+SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。

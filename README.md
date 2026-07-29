@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：当前无 Active SPEC；见 `spec/SPEC_INDEX.md`
+- 开发入口：[`spec/SPEC-0004.md`](spec/SPEC-0004.md)，当前仅 Docs Review，implementation not started
 
 Phase 1 固定主链路：
 
@@ -67,9 +67,9 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：无
+- Active SPEC：[`spec/SPEC-0004.md`](spec/SPEC-0004.md) — Docs Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
-- 下一步：等待用户确认 SPEC-0004 文档准备，不得直接开始实现
+- 下一步：审核 SPEC-0004 文档并由用户确认唯一 Polling Source；通过前不得实现
 
 ## 长期产品与架构方向
 
