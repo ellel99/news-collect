@@ -1,5 +1,28 @@
 # Changelog
 
+## SPEC-0001 Project Bootstrap — 2026-07-29
+
+### Fixed
+
+- `.env.example` 改为宿主机 `localhost` 配置，Compose 暴露 PostgreSQL/Redis 端口并保留容器内部服务名；
+- `session_scope` 改为异步 context manager，并增加生命周期测试；
+- `DATABASE_URL` 仅允许 SPEC 固定的 PostgreSQL asyncpg URL；
+- 完成 Compose 健康、Alembic 往返与 Celery health task 的真实运行时验收。
+
+### Added
+
+- Python 3.12 `src/` 项目骨架、FastAPI 应用与 live/ready 健康接口；
+- Pydantic Settings、结构化日志和关联 ID；
+- SQLAlchemy 2.x、Alembic 及仅含 `system_metadata` 的首条基础迁移；
+- Redis 7、Celery 5 worker、Celery Beat 与无副作用健康任务；
+- uv 锁文件、Dockerfile、Docker Compose、pytest、Ruff、mypy 与 GitHub Actions CI；
+- 安全配置模板、启动/迁移/测试/排错文档和交付报告。
+
+### Scope
+
+- 未修改 Foundation v2.1-FROZEN；
+- 未引入任何 Phase 1 业务实体、真实来源、Telegram、AI 或后续阶段实体。
+
 ## Foundation v2.1-FROZEN — 2026-07-28
 
 ### Frozen
