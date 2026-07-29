@@ -75,7 +75,7 @@
 
 | Code | 用途 | 候选模式 | 状态 |
 |---|---|---|---|
-| `gdelt` | 全球新闻发现与线索 | Polling / Historical Backfill | planned；能力与许可待核验 |
+| `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | SPEC-0004 preimplementation verification；未实现、非全文授权、非核心依赖 |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | planned；逐公司审核 |
 | `sec_edgar` | SEC 文件与公告 | Polling / Backfill | planned；独立 SPEC |
@@ -84,6 +84,24 @@
 | `event_registry_candidate` | NewsAPI.ai / Event Registry 候选 | Polling / Streaming（按产品） | planned；后续评估 |
 
 公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
+
+### GDELT SPEC-0004 核验状态
+
+- 用户选择 GDELT 作为唯一 Polling Source Pilot candidate；这不表示已实现或已授权新闻全文。
+- 试点选择官方 DOC 2.0 API 的 `ArticleList` JSON endpoint family，精确 query/endpoint 在实现前
+  contract review 中固定；本轮未请求 API 或生产数据。
+- 当前核验目标是 GDELT Project legacy / public DOC 2.0，不是 GDELT Cloud；不得混用两者的
+  API 或条款，GDELT Cloud 需要未来独立 SPEC 或规格修订与评估。
+- 默认 `access_level = LINK_ONLY`。只允许 title、GDELT/来源 metadata、source URL、时间、
+  确定性 ID/hash 和最小 raw reference；不得保存第三方新闻正文。
+- GDELT 官方 Terms 允许使用和再分发 GDELT 发布的数据集，但要求引用 GDELT 并链接官网；
+  该许可不替代原始新闻发布者的版权或访问许可。
+- DOC API 官方文档提供 `TIMESPAN`、`STARTDATETIME`、`ENDDATETIME` 和 `MAXRECORDS`，但没有
+  文档化通用 pagination cursor/offset；只能做有界时间窗与重叠恢复，不实现通用 Historical
+  Backfill。
+- 官方确认 DOC/Context APIs 会 rate limit，但未公布数值配额；numeric limit、timeout、retry
+  参数和真实响应字段仍是 implementation blocker。
+- 权威证据与剩余风险见 `spec/SPEC-0004.md` 的 GDELT Verification Evidence。
 
 ## 4.2 候选商业升级来源
 
