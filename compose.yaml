@@ -49,12 +49,12 @@ services:
 
   migrate:
     <<: *app
-    command: ["uv", "run", "alembic", "upgrade", "head"]
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
     restart: "no"
 
   api:
     <<: *app
-    command: ["uv", "run", "uvicorn", "market_intelligence.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uv", "run", "--no-sync", "uvicorn", "market_intelligence.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
@@ -70,11 +70,11 @@ services:
 
   worker:
     <<: *app
-    command: ["uv", "run", "celery", "-A", "market_intelligence.tasks.celery_app:celery_app", "worker", "--loglevel=INFO"]
+    command: ["uv", "run", "--no-sync", "celery", "-A", "market_intelligence.tasks.celery_app:celery_app", "worker", "--loglevel=INFO"]
 
   beat:
     <<: *app
-    command: ["uv", "run", "celery", "-A", "market_intelligence.tasks.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    command: ["uv", "run", "--no-sync", "celery", "-A", "market_intelligence.tasks.celery_app:celery_app", "beat", "--loglevel=INFO"]
 
 volumes:
   postgres-data:
