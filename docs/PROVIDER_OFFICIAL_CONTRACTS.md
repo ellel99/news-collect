@@ -7,6 +7,8 @@
 
 ## NewsAPI.ai / Event Registry
 
+- 当前状态：`future / blocked`；保留官方合同研究与 dry-run scaffold，但不允许真实 smoke 或
+  `--execute`。未来恢复必须经过用户/ChatGPT 独立 Review。
 - 官方资料：[API documentation](https://newsapi.ai/documentation)、
   [Article search](https://newsapi.ai/documentation?tab=searchArticles)、
   [official Python SDK](https://github.com/EventRegistry/event-registry-python)。
@@ -104,3 +106,6 @@
 5. preflight 不是 Adapter，不注册 adapter key、不写数据库、不运行 collection。
 6. PASS 只证明最小 endpoint 的结构 smoke 通过；许可、额度和留存未获用户/ChatGPT Review
    前仍不得实现。
+7. Optional plan/quota/retention/internal-AI metadata 不参与请求认证门禁；缺失时不会阻塞
+   dry-run 或获准平台的最小 smoke，但会阻塞后续合同 PASS 和 Adapter implementation。
+8. 当前执行序列仅为 Marketaux → Finnhub → EIA → SEC；NewsAPI.ai 为 future / blocked。

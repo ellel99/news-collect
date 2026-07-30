@@ -31,6 +31,8 @@ PROVIDERS: dict[str, ModuleType] = {
     "sec_edgar": sec_edgar,
 }
 ENDPOINTS = {name: str(module.ENDPOINT) for name, module in PROVIDERS.items()}
+EXECUTION_ORDER = ("marketaux", "finnhub", "eia", "sec_edgar")
+EXECUTION_ENABLED_PROVIDERS = frozenset(EXECUTION_ORDER)
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -133,6 +135,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.execute:
         _print_report(blocked_report(args.provider, request.url))
         return 0
+    if args.provider not in EXECUTION_ENABLED_PROVIDERS:
+        _print_report(blocked_report(args.provider, request.url))
+        return 2
 
     report = PROVIDERS[args.provider].execute_minimal_request(request)
     _print_report(report)

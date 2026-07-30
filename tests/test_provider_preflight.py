@@ -124,21 +124,21 @@ def test_env_file_secret_is_not_printed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     env_file = tmp_path / "provider.env"
-    env_file.write_text(f"NEWSAPI_AI_API_KEY={SECRET}\n", encoding="utf-8")
+    env_file.write_text(f"MARKETAUX_API_TOKEN={SECRET}\n", encoding="utf-8")
     safe_report = SmokeReport(
-        provider="newsapi_ai",
-        endpoint_family=newsapi_ai.ENDPOINT,
+        provider="marketaux",
+        endpoint_family=marketaux.ENDPOINT,
         http_status=200,
         valid_json=True,
-        top_level_fields=["articles"],
-        item_fields=["title"],
+        top_level_fields=["data"],
+        item_fields=["uuid"],
         result_count=1,
         rate_limit_headers_present=[],
         retry_after_present=False,
         classified_result="PASS",
     )
     monkeypatch.setattr(
-        newsapi_ai,
+        marketaux,
         "execute_minimal_request",
         lambda request: safe_report,
     )
@@ -146,7 +146,7 @@ def test_env_file_secret_is_not_printed(
         provider_smoke.main(
             [
                 "--provider",
-                "newsapi_ai",
+                "marketaux",
                 "--env-file",
                 str(env_file),
                 "--execute",
@@ -163,24 +163,53 @@ def test_execute_report_does_not_print_or_log_key(
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setenv("NEWSAPI_AI_API_KEY", SECRET)
+    monkeypatch.setenv("MARKETAUX_API_TOKEN", SECRET)
     safe_report = SmokeReport(
-        provider="newsapi_ai",
-        endpoint_family=newsapi_ai.ENDPOINT,
+        provider="marketaux",
+        endpoint_family=marketaux.ENDPOINT,
         http_status=200,
         valid_json=True,
-        top_level_fields=["articles"],
-        item_fields=["title", "url"],
+        top_level_fields=["data", "meta"],
+        item_fields=["uuid"],
         result_count=1,
         rate_limit_headers_present=[],
         retry_after_present=False,
         classified_result="PASS",
     )
     monkeypatch.setattr(
-        newsapi_ai,
+        marketaux,
         "execute_minimal_request",
         lambda request: safe_report,
     )
+    assert (
+        provider_smoke.main(
+            [
+                "--provider",
+                "marketaux",
+                "--query",
+                "technology",
+                "--limit",
+                "1",
+                "--execute",
+            ]
+        )
+        == 0
+    )
+    assert SECRET not in capsys.readouterr().out
+    assert SECRET not in caplog.text
+
+
+def test_newsapi_execute_is_future_blocked_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("NEWSAPI_AI_API_KEY", SECRET)
+
+    def unexpected_network(request: object) -> SmokeReport:
+        del request
+        raise AssertionError("future/blocked provider must not execute")
+
+    monkeypatch.setattr(newsapi_ai, "execute_minimal_request", unexpected_network)
     assert (
         provider_smoke.main(
             [
@@ -193,10 +222,51 @@ def test_execute_report_does_not_print_or_log_key(
                 "--execute",
             ]
         )
+        == 2
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["classified_result"] == "BLOCKED"
+    assert SECRET not in json.dumps(report)
+
+
+def test_optional_metadata_does_not_block_minimal_marketaux_smoke(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARKETAUX_API_TOKEN", SECRET)
+    for name in (
+        "MARKETAUX_PLAN",
+        "MARKETAUX_DAILY_LIMIT",
+        "MARKETAUX_ALLOWED_RETENTION",
+        "MARKETAUX_INTERNAL_AI_ALLOWED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    safe_report = SmokeReport(
+        provider="marketaux",
+        endpoint_family=marketaux.ENDPOINT,
+        http_status=200,
+        valid_json=True,
+        top_level_fields=["data", "meta"],
+        item_fields=["uuid"],
+        result_count=1,
+        rate_limit_headers_present=[],
+        retry_after_present=False,
+        classified_result="PASS",
+    )
+    monkeypatch.setattr(marketaux, "execute_minimal_request", lambda request: safe_report)
+    assert (
+        provider_smoke.main(
+            [
+                "--provider",
+                "marketaux",
+                "--query",
+                "technology",
+                "--limit",
+                "1",
+                "--execute",
+            ]
+        )
         == 0
     )
-    assert SECRET not in capsys.readouterr().out
-    assert SECRET not in caplog.text
 
 
 def test_cli_does_not_accept_key_argument() -> None:

@@ -13,8 +13,8 @@
 - 当前工作状态：provider decision 已 realign；provider preflight scaffold 已准备；
   SPEC-0004 implementation not started
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
-- Primary Provider：NewsAPI.ai / Event Registry（selected；pending user credentials）
-- Secondary Financial News Provider：Marketaux（candidate；不在当前实现范围）
+- 当前首个 bounded smoke candidate：Marketaux（仅 smoke；不是 Adapter implementation 授权）
+- NewsAPI.ai / Event Registry：future / blocked；不得请求或执行 smoke
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
 - GDELT Project DOC 2.0：runtime blocked / future evaluation only；不再是 primary pilot
@@ -22,13 +22,14 @@
   或保存文章数据
 - GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
-- 当前门禁：不得请求任何 provider API；不得继续 GDELT；不得开始 adapter implementation
+- 当前门禁：只有用户逐平台明确授权后才可请求当前序列中的单个 provider；不得请求
+  NewsAPI.ai 或 GDELT；不得开始 adapter implementation
 - Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
   `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
-- 下一步：用户提供 NewsAPI.ai / Event Registry API key、plan、quota/token limit、allowed
-  retention 和 internal AI analysis 决策后，另行授权 bounded smoke
-- NewsAPI.ai / Event Registry bounded smoke 成功并通过 Review 前不得 implementation
+- 当前 smoke 顺序：Marketaux → Finnhub → EIA Open Data → SEC EDGAR；每个平台完成后必须
+  停止并等待用户/ChatGPT Review
+- 下一步：仅在用户单独确认后执行一次 Marketaux bounded smoke；完成后停止
 
 ## 架构修订状态
 

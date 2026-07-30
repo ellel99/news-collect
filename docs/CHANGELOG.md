@@ -10,6 +10,8 @@
   真实 smoke、未实现 Adapter、未写数据库、迁移、schema/ORM 或 collection。
 - Review 修正：CLI 支持默认根目录 `.env` 和显式 `--env-file`（OS 环境变量优先），EIA
   参数改为官方 `data[]=price`，PASS 判定收紧为 provider schema-aware。
+- Preflight gate 调整：NewsAPI.ai 标记为 `future / blocked` 并禁止 `--execute`；当前顺序固定
+  为 Marketaux → Finnhub → EIA → SEC，optional metadata 不阻塞最小 smoke。
 - 纠正 SPEC-0004 provider 决策流程：平台选择由 ChatGPT / 用户确认，Primary Provider 为
   NewsAPI.ai / Event Registry（pending credentials），Codex 不负责重新评估或改选。
 - 记录 Marketaux 为 Secondary Financial News candidate、Finnhub 为 Market Validation

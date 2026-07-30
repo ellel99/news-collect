@@ -2,9 +2,10 @@
 
 ## Gate
 
-执行顺序固定为 NewsAPI.ai / Event Registry → Marketaux → Finnhub → EIA Open Data →
-SEC EDGAR。一次只执行一个经用户明确授权的平台。平台注册、plan/quota/retention 填写和
-用户/ChatGPT Review 未完成时，只能运行默认 dry-run。
+当前执行顺序固定为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR。一次只执行一个经
+用户明确授权的平台；前一个 smoke 完成后必须停止并等待用户/ChatGPT Review。NewsAPI.ai /
+Event Registry 为 `future / blocked`，不在当前执行序列，CLI 对其 `--execute` fail closed。
+平台注册、plan/quota/retention 填写和用户/ChatGPT Review 未完成时，只能运行默认 dry-run。
 
 ```text
 用户完成平台注册并将凭证保存在本地
@@ -38,7 +39,6 @@ SEC EDGAR。一次只执行一个经用户明确授权的平台。平台注册�
 以下命令默认不会联网，也不要求凭证：
 
 ```bash
-uv run python scripts/provider_smoke.py --provider newsapi_ai --query technology --max-results 1
 uv run python scripts/provider_smoke.py --provider marketaux --query technology --limit 1
 uv run python scripts/provider_smoke.py --provider finnhub --symbol AAPL
 uv run python scripts/provider_smoke.py --provider eia --dataset electricity --limit 1
@@ -52,7 +52,6 @@ Dry-run 返回 `BLOCKED`、空 HTTP/schema 字段是预期行为，仅证明命�
 只有用户逐平台授权后，才在已加载本地环境变量的 shell 中为对应命令添加 `--execute`：
 
 ```bash
-uv run python scripts/provider_smoke.py --provider newsapi_ai --query technology --max-results 1 --execute
 uv run python scripts/provider_smoke.py --provider marketaux --query technology --limit 1 --execute
 uv run python scripts/provider_smoke.py --provider finnhub --symbol AAPL --execute
 uv run python scripts/provider_smoke.py --provider eia --dataset electricity --limit 1 --execute
@@ -64,6 +63,9 @@ uv run python scripts/provider_smoke.py --provider sec_edgar --ticker AAPL --exe
 
 不要批量或循环执行。每条命令只构建一个最小请求；超出允许的 result bound、缺凭证或 EIA
 version / SEC ticker 不在 scaffold allowlist 时 fail closed。
+
+当前只允许在用户明确确认后单独执行 Marketaux。完成后必须停止；不得自动继续 Finnhub、
+EIA 或 SEC。NewsAPI.ai 即使存在本地 key 也不得执行。
 
 ## Report interpretation
 
