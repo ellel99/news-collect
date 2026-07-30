@@ -30,7 +30,7 @@ def build_request(
         url=ENDPOINT,
         params={
             "api_key": api_key,
-            "data[0]": "price",
+            "data[]": "price",
             "frequency": "monthly",
             "length": limit,
             "sort[0][column]": "period",
@@ -41,6 +41,7 @@ def build_request(
         secret_values=(api_key,),
         item_path=("response", "data"),
         columnar_items=False,
+        required_any_item_fields=frozenset(),
         rate_limit_headers=(),
     )
 
@@ -59,5 +60,16 @@ def summarize_response_shape(payload: object) -> tuple[list[str], list[str], int
     return base.summarize_response_shape(payload, item_path=("response", "data"))
 
 
-def classify_smoke_result(status: int | None, *, valid_json: bool) -> SmokeResult:
-    return base.classify_smoke_result(status, valid_json=valid_json)
+def classify_smoke_result(
+    status: int | None,
+    *,
+    valid_json: bool,
+    result_count: int | None = None,
+    item_fields: list[str] | None = None,
+) -> SmokeResult:
+    return base.classify_smoke_result(
+        status,
+        valid_json=valid_json,
+        result_count=result_count,
+        item_fields=item_fields,
+    )

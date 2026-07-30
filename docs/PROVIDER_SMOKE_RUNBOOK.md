@@ -18,14 +18,20 @@ SEC EDGAR。一次只执行一个经用户明确授权的平台。平台注册�
 
 ## Local credentials
 
-1. 复制 `.env.example` 为本地 `.env`，或从
+1. 在仓库根目录复制环境模板：
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   填写本地 `.env`。CLI 默认尝试读取仓库根目录 `.env`；不存在时忽略。也可用
+   `--env-file <path>` 指向另一个本地环境文件。已存在的 OS 环境变量优先于文件值。
+2. 或从
    `docs/PROVIDER_CREDENTIALS_TEMPLATE.md` 复制为仓库根目录
    `PROVIDER_CREDENTIALS_PRIVATE.md`。
-2. 只在本地 secret storage / `.env` 中填真实值。两个私有文件均被 Git ignore；运行前仍用
+3. 只在本地 secret storage / `.env` 中填真实值。两个私有文件均被 Git ignore；运行前仍用
    `git status --short` 确认。
-3. 不把 key 放入命令行、截图、日志、issue、PR 或聊天。
-4. `.env` 不会被普通 shell 自动加载。可由用户在受控 shell 中导出；不要把包含 secret 的
-   shell 命令粘贴到 Review。
+4. 不把 key 放入命令行、截图、日志、issue、PR 或聊天。
 
 ## Dry-run
 
@@ -53,6 +59,9 @@ uv run python scripts/provider_smoke.py --provider eia --dataset electricity --l
 uv run python scripts/provider_smoke.py --provider sec_edgar --ticker AAPL --execute
 ```
 
+如果已按上文填写仓库根目录 `.env`，无需手工 `export`。使用其他本地文件时，在命令末尾增加
+`--env-file /path/to/private.env`；该参数只能传文件路径，不能传 key/token。
+
 不要批量或循环执行。每条命令只构建一个最小请求；超出允许的 result bound、缺凭证或 EIA
 version / SEC ticker 不在 scaffold allowlist 时 fail closed。
 
@@ -60,7 +69,9 @@ version / SEC ticker 不在 scaffold allowlist 时 fail closed。
 
 输出是单行 redacted JSON：
 
-- `PASS`：2xx、有效 JSON，且可提取结构；仍需合同和 Review gate。
+- `PASS`：2xx、有效 JSON、result count 大于零，并满足 provider-specific schema：
+  list provider 必须有 item fields；Finnhub 必须出现 quote 候选字段；SEC 必须出现
+  `filings.recent` columnar fields。仍需合同和 Review gate。
 - `BLOCKED`：缺凭证、401/402/403/429、5xx、timeout/connection failure；停止，不自动重试。
 - `FAIL`：其他 HTTP 错误或成功响应不是有效 JSON；停止并审查合同或 endpoint。
 
@@ -70,7 +81,8 @@ version / SEC ticker 不在 scaffold allowlist 时 fail closed。
 ## PASS criteria
 
 1. 获得预期 endpoint 的 2xx 和有效 JSON。
-2. 顶层/item 字段结构符合 `PROVIDER_OFFICIAL_CONTRACTS.md`。
+2. 顶层/item path 和字段结构符合 `PROVIDER_OFFICIAL_CONTRACTS.md`；2xx + JSON 但 path
+   缺失、列表为空或 item fields 为空时不得 PASS。
 3. result bound 生效，报告未包含内容值或 secret。
 4. plan、quota、rate limit、allowed retention、internal AI/redistribution 边界已另行核对。
 5. 用户和 ChatGPT 审核 report 并明确给出下一步授权。

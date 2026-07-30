@@ -34,6 +34,9 @@ def build_request(
         secret_values=(user_agent, contact),
         item_path=("filings", "recent"),
         columnar_items=True,
+        required_any_item_fields=frozenset(
+            {"accessionNumber", "filingDate", "form", "primaryDocument"}
+        ),
         rate_limit_headers=(),
     )
 
@@ -57,5 +60,19 @@ def summarize_response_shape(payload: object) -> tuple[list[str], list[str], int
     )
 
 
-def classify_smoke_result(status: int | None, *, valid_json: bool) -> SmokeResult:
-    return base.classify_smoke_result(status, valid_json=valid_json)
+def classify_smoke_result(
+    status: int | None,
+    *,
+    valid_json: bool,
+    result_count: int | None = None,
+    item_fields: list[str] | None = None,
+) -> SmokeResult:
+    return base.classify_smoke_result(
+        status,
+        valid_json=valid_json,
+        result_count=result_count,
+        item_fields=item_fields,
+        required_any_item_fields=frozenset(
+            {"accessionNumber", "filingDate", "form", "primaryDocument"}
+        ),
+    )

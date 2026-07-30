@@ -23,6 +23,7 @@ class RequestSpec:
     secret_values: tuple[str, ...]
     item_path: tuple[str, ...]
     columnar_items: bool
+    required_any_item_fields: frozenset[str]
     rate_limit_headers: tuple[str, ...]
 
 
@@ -91,12 +92,23 @@ def summarize_response_shape(
     return top_level_fields, [], None
 
 
-def classify_smoke_result(status: int | None, *, valid_json: bool) -> SmokeResult:
+def classify_smoke_result(
+    status: int | None,
+    *,
+    valid_json: bool,
+    result_count: int | None = None,
+    item_fields: list[str] | None = None,
+    required_any_item_fields: frozenset[str] = frozenset(),
+) -> SmokeResult:
     if status is None or status in {401, 402, 403, 429} or (status >= 500):
         return "BLOCKED"
-    if 200 <= status < 300 and valid_json:
-        return "PASS"
-    return "FAIL"
+    if not (200 <= status < 300) or not valid_json:
+        return "FAIL"
+    if result_count is None or result_count <= 0 or not item_fields:
+        return "FAIL"
+    if required_any_item_fields and required_any_item_fields.isdisjoint(item_fields):
+        return "FAIL"
+    return "PASS"
 
 
 def execute_minimal_request(
@@ -158,7 +170,13 @@ def execute_minimal_request(
         result_count=count,
         rate_limit_headers_present=rate_headers,
         retry_after_present="retry-after" in header_names,
-        classified_result=classify_smoke_result(response.status_code, valid_json=valid_json),
+        classified_result=classify_smoke_result(
+            response.status_code,
+            valid_json=valid_json,
+            result_count=count,
+            item_fields=item_fields,
+            required_any_item_fields=request.required_any_item_fields,
+        ),
     )
 
 

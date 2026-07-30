@@ -90,6 +90,74 @@ def test_default_cli_dry_run_does_not_call_network(
     assert report["http_status"] is None
 
 
+def test_env_file_loads_and_os_environment_has_priority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_file = tmp_path / "provider.env"
+    env_file.write_text(
+        'NEWSAPI_AI_API_KEY=file-secret\nNEWSAPI_AI_PLAN="file-plan"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NEWSAPI_AI_API_KEY", "shell-secret")
+    monkeypatch.delenv("NEWSAPI_AI_PLAN", raising=False)
+    loaded = provider_smoke._load_environment(env_file)
+    assert loaded["NEWSAPI_AI_API_KEY"] == "shell-secret"
+    assert loaded["NEWSAPI_AI_PLAN"] == "file-plan"
+
+
+def test_default_root_env_file_is_optional(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_env = tmp_path / ".env"
+    default_env.write_text("NEWSAPI_AI_PLAN=local-plan\n", encoding="utf-8")
+    monkeypatch.setattr(provider_smoke, "DEFAULT_ENV_FILE", default_env)
+    monkeypatch.delenv("NEWSAPI_AI_PLAN", raising=False)
+    assert provider_smoke._load_environment(None)["NEWSAPI_AI_PLAN"] == "local-plan"
+
+
+def test_env_file_secret_is_not_printed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    env_file = tmp_path / "provider.env"
+    env_file.write_text(f"NEWSAPI_AI_API_KEY={SECRET}\n", encoding="utf-8")
+    safe_report = SmokeReport(
+        provider="newsapi_ai",
+        endpoint_family=newsapi_ai.ENDPOINT,
+        http_status=200,
+        valid_json=True,
+        top_level_fields=["articles"],
+        item_fields=["title"],
+        result_count=1,
+        rate_limit_headers_present=[],
+        retry_after_present=False,
+        classified_result="PASS",
+    )
+    monkeypatch.setattr(
+        newsapi_ai,
+        "execute_minimal_request",
+        lambda request: safe_report,
+    )
+    assert (
+        provider_smoke.main(
+            [
+                "--provider",
+                "newsapi_ai",
+                "--env-file",
+                str(env_file),
+                "--execute",
+            ]
+        )
+        == 0
+    )
+    assert SECRET not in capsys.readouterr().out
+    assert SECRET not in caplog.text
+
+
 def test_execute_report_does_not_print_or_log_key(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -267,6 +335,8 @@ def test_official_request_contracts() -> None:
     )
     assert eia_request.url == "https://api.eia.gov/v2/electricity/retail-sales/data/"
     assert eia_request.params["api_key"] == SECRET
+    assert eia_request.params["data[]"] == "price"
+    assert "data[0]" not in eia_request.params
     assert eia_request.params["length"] == 1
 
     sec_request = sec_edgar.build_request(
@@ -293,3 +363,113 @@ def test_sec_columnar_summary_records_fields_and_count_only() -> None:
     assert item == ["accessionNumber", "primaryDocument"]
     assert count == 1
     assert "REAL COMPANY VALUE" not in json.dumps([top, item, count])
+
+
+@pytest.mark.parametrize(
+    ("module", "request_spec", "payload"),
+    [
+        (
+            newsapi_ai,
+            newsapi_ai.build_request(
+                {"NEWSAPI_AI_API_KEY": SECRET},
+                query="technology",
+                max_results=1,
+                execute=True,
+            ),
+            {"articles": {"results": [{"uri": "hidden", "title": "hidden"}]}},
+        ),
+        (
+            marketaux,
+            marketaux.build_request(
+                {"MARKETAUX_API_TOKEN": SECRET},
+                query="technology",
+                limit=1,
+                execute=True,
+            ),
+            {"meta": {"returned": 1}, "data": [{"uuid": "hidden"}]},
+        ),
+        (
+            finnhub,
+            finnhub.build_request(
+                {"FINNHUB_API_KEY": SECRET},
+                symbol="AAPL",
+                execute=True,
+            ),
+            {"c": 1.0, "t": 1},
+        ),
+        (
+            eia,
+            eia.build_request(
+                {"EIA_API_KEY": SECRET, "EIA_API_VERSION": "v2"},
+                dataset="electricity",
+                limit=1,
+                execute=True,
+            ),
+            {"response": {"data": [{"period": "hidden", "price": "hidden"}]}},
+        ),
+        (
+            sec_edgar,
+            sec_edgar.build_request(
+                {
+                    "SEC_USER_AGENT": "news-collect",
+                    "SEC_CONTACT_EMAIL": "owner@example.invalid",
+                },
+                ticker="AAPL",
+                execute=True,
+            ),
+            {"filings": {"recent": {"accessionNumber": ["hidden"], "form": ["10-K"]}}},
+        ),
+    ],
+)
+def test_provider_schema_aware_success(
+    module: object,
+    request_spec: object,
+    payload: object,
+) -> None:
+    transport = httpx.MockTransport(lambda incoming: _response(payload))
+    report = module.execute_minimal_request(request_spec, transport=transport)
+    assert report.classified_result == "PASS"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"meta": {"returned": 0}},
+        {"meta": {"returned": 0}, "data": []},
+        {"meta": {"returned": 1}, "data": [{}]},
+    ],
+)
+def test_2xx_json_without_list_item_shape_cannot_pass(payload: object) -> None:
+    request = marketaux.build_request(
+        {"MARKETAUX_API_TOKEN": SECRET},
+        query="technology",
+        limit=1,
+        execute=True,
+    )
+    transport = httpx.MockTransport(lambda incoming: _response(payload))
+    report = marketaux.execute_minimal_request(request, transport=transport)
+    assert report.classified_result == "FAIL"
+
+
+def test_finnhub_requires_quote_candidate_fields() -> None:
+    request = finnhub.build_request(
+        {"FINNHUB_API_KEY": SECRET},
+        symbol="AAPL",
+        execute=True,
+    )
+    transport = httpx.MockTransport(lambda incoming: _response({"unexpected": 1}))
+    report = finnhub.execute_minimal_request(request, transport=transport)
+    assert report.classified_result == "FAIL"
+
+
+def test_sec_requires_recent_filing_candidate_fields() -> None:
+    request = sec_edgar.build_request(
+        {"SEC_USER_AGENT": "news-collect", "SEC_CONTACT_EMAIL": "owner@example.invalid"},
+        ticker="AAPL",
+        execute=True,
+    )
+    transport = httpx.MockTransport(
+        lambda incoming: _response({"filings": {"recent": {"unexpected": ["hidden"]}}})
+    )
+    report = sec_edgar.execute_minimal_request(request, transport=transport)
+    assert report.classified_result == "FAIL"

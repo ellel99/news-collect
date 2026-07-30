@@ -10,7 +10,9 @@
 - 官方资料：[API documentation](https://newsapi.ai/documentation)、
   [Article search](https://newsapi.ai/documentation?tab=searchArticles)、
   [official Python SDK](https://github.com/EventRegistry/event-registry-python)。
-- 认证：`apiKey`；用户注册后获得。脚手架通过 POST JSON 发送，避免把 key 放入命令行和 URL。
+- 认证：官方 REST API 使用 `apiKey`，`getArticles` 支持 GET / POST。脚手架选择 POST JSON
+  body，避免把 key 放入命令行和 URL；第一次真实 bounded smoke 必须验证这一认证方式。
+  如果认证失败，必须停止并交由用户/ChatGPT Review，不得自动 fallback 到 GET 或其他方式。
 - 最小 endpoint：`POST https://eventregistry.org/api/v1/article/getArticles`。
 - 最小参数：`action=getArticles`、`keyword`、`articlesPage=1`、`articlesCount=1`、
   `articlesSortBy=date`、`dataType=["news"]`、`forceMaxDataTimeWindow=7`、
@@ -62,7 +64,7 @@
 - 认证：API v2 必须使用注册 key；官方明确 key 必须在 URL query 中，不能放入 header。
 - 最小 endpoint：
   `GET https://api.eia.gov/v2/electricity/retail-sales/data/`。
-- 最小参数：`api_key`、`data[0]=price`、`frequency=monthly`、`length=1`、
+- 最小参数：`api_key`、`data[]=price`、`frequency=monthly`、`length=1`、
   `sort[0][column]=period`、`sort[0][direction]=desc`。
 - 官方响应合同：顶层含 `response`、`request`、`apiVersion`；数据位于
   `response.data`，smoke 检查 `period`、facet metadata 和请求的 `price` 字段，并只记录
