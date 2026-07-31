@@ -12,8 +12,8 @@
 
 | Role | Confirmed Provider / Layer | Current Engineering Status |
 |---|---|---|
-| SPEC-0004 Primary Provider | NewsAPI.ai / Event Registry | selected primary candidate；pending user credentials and contract data |
-| Secondary Financial News Provider | Marketaux | secondary candidate；不在当前 SPEC-0004 implementation 范围 |
+| Bounded smoke evidence | Marketaux / Finnhub / EIA / SEC EDGAR | 用户逐次授权的 redacted structural smoke 均 PASS；不等于合同或实现授权 |
+| Future news provider | NewsAPI.ai / Event Registry | future / blocked；不在当前 smoke 序列 |
 | Market Validation Provider | Finnhub | market validation candidate；Market Validation 实现仍需适用的 Foundation revision、Freeze Review 和独立 SPEC |
 | Official Evidence Layer | SEC EDGAR / EIA / Company IR / Official RSS | confirmed evidence-source layer；逐来源授权、合同与独立 SPEC 仍待完成 |
 | Historical evaluated provider | GDELT Project DOC 2.0 | runtime blocked；future evaluation only；不再是 SPEC-0004 primary pilot |
@@ -23,15 +23,9 @@ GDELT 的既有官方文档核验、两轮 bounded smoke 和 failure analysis �
 
 ## Required User Inputs Before Continuing
 
-用户必须提供并确认：
-
-1. NewsAPI.ai / Event Registry API key（只能通过批准的 secret channel，不得提交到 Git）。
-2. plan 名称。
-3. quota / token limit。
-4. allowed retention，包括允许保存的字段、期限、内部处理和再分发边界。
-5. 是否允许 internal AI analysis。
-
-在以上信息齐备并完成合同 Review 前，不得请求 NewsAPI.ai / Event Registry API。
+NewsAPI.ai / Event Registry 当前为 `future / blocked`，无论是否存在本地 key 都不得请求。
+当前四个平台的认证信息和 optional metadata 只允许保存在未跟踪的本地 `.env`；metadata 缺失
+不阻塞最小 smoke 请求，但任何合同、retention 或 quota 未确认都会阻塞后续实现。
 
 ## Next Authorized Sequence
 
@@ -49,20 +43,17 @@ GDELT 的既有官方文档核验、两轮 bounded smoke 和 failure analysis �
 
 平台执行顺序：
 
-1. NewsAPI.ai / Event Registry。
-2. Marketaux。
-3. Finnhub。
-4. EIA Open Data。
-5. SEC EDGAR。
+1. Marketaux。
+2. Finnhub。
+3. EIA Open Data。
+4. SEC EDGAR。
 
 顺序只规定注册、合同核验、bounded smoke 和后续 SPEC 的先后，不授权并行接入或越过阶段
 边界。尤其 Finnhub 的 Market Validation implementation 仍须适用的 Foundation revision、
 Freeze Review 和独立 SPEC。
 
-当前只允许完成 provider-decision 文档纠偏及 Review。用户提供 credentials、plan、quota、
-allowed retention 和 internal AI analysis 决策后，才能另行授权 NewsAPI.ai / Event
-Registry bounded smoke。其余平台必须等待前一平台 Review 结论与用户明确授权，不得由
-SPEC-0004 顺带 smoke 或实现。
+四个平台的一次性 bounded smoke 已完成，现在必须停止并等待用户/ChatGPT Review；
+不得重试、扩大范围或自动继续。NewsAPI.ai / Event Registry 和 GDELT 均不得请求。
 
 ## Bounded Smoke Contract
 

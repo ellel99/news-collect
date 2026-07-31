@@ -78,31 +78,27 @@
 | `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | runtime blocked / future evaluation only；不再是 SPEC-0004 primary |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | Official Evidence Layer；逐公司审核 |
-| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | Official Evidence Layer；独立 SPEC |
-| `eia` | U.S. Energy Information Administration | Polling / official feed | Official Evidence Layer；独立 SPEC |
+| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | structural smoke PASS；contract Review pending；独立 SPEC |
+| `eia` | U.S. Energy Information Administration | Polling / official feed | structural smoke PASS；contract Review pending；独立 SPEC |
 | `official_rss` | 政府、监管、公司官方 RSS | Polling | Official Evidence Layer；逐 Feed 审核 |
-| `event_registry_candidate` | NewsAPI.ai / Event Registry | Polling（当前 SPEC） | selected primary candidate；pending credentials |
-| `marketaux_candidate` | Marketaux | Polling（按授权） | secondary financial news candidate；未来独立授权 |
-| `finnhub_candidate` | Finnhub | Polling / Streaming（按授权） | market validation candidate；当前阶段不实现 |
+| `event_registry_candidate` | NewsAPI.ai / Event Registry | Polling（未来评估） | future / blocked；不在当前 smoke 序列 |
+| `marketaux_candidate` | Marketaux | Polling（按授权） | redacted structural smoke PASS；contract Review pending；implementation 未开始 |
+| `finnhub_candidate` | Finnhub | Polling / Streaming（按授权） | structural smoke PASS；market validation implementation 仍禁止 |
 
 公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
 
 ### Confirmed Provider Decision
 
 - 平台选择由 ChatGPT / 用户确认，不由 Codex 决定；详见 `docs/PROVIDER_DECISION.md`。
-- SPEC-0004 Primary Provider：NewsAPI.ai / Event Registry；当前状态为 selected primary
-  candidate / pending credentials。
-- Secondary Financial News Provider：Marketaux；本 SPEC 不顺带实现。
+- Marketaux、Finnhub、EIA 和 SEC EDGAR 的用户授权 bounded smoke 均获得脱敏结构性
+  PASS；不代表合同 PASS、Adapter 或 implementation 授权。
+- NewsAPI.ai / Event Registry：future / blocked；不得执行真实 smoke 或请求 API。
 - Market Validation Provider：Finnhub；Market Validation 仍受 Foundation revision、
   Freeze Review 和独立 SPEC 门禁约束。
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS；逐来源合同和接入
   仍需独立授权。
-- 继续前用户必须提供 NewsAPI.ai / Event Registry API key、plan 名称、quota/token limit、
-  allowed retention 和是否允许 internal AI analysis。
-- 只能在上述信息完成合同 Review 后另行授权 NewsAPI.ai / Event Registry bounded smoke；
-  smoke 成功前不得 adapter implementation、注册 adapter key 或运行 collection。
-- 后续执行顺序固定为 NewsAPI.ai / Event Registry → Marketaux → Finnhub → EIA Open Data →
-  SEC EDGAR；每个平台都必须独立完成注册、bounded smoke、用户/ChatGPT Review 和对应 SPEC，
+- 后续执行顺序固定为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR；每个平台都必须
+  独立完成注册、bounded smoke、用户/ChatGPT Review 和对应 SPEC，
   不得跳步或并行扩展。
 - 通用 smoke 验证字段和 PASS 标准见 `docs/PROVIDER_DECISION.md`。
 

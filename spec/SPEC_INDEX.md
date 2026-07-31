@@ -9,7 +9,7 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
 | SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
-| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；NewsAPI.ai / Event Registry selected primary；pending credentials；implementation not started | SPEC-0003 |
+| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；NewsAPI.ai future / blocked；Marketaux first smoke candidate；implementation not started | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
 | SPEC-0006 | Normalization, Deduplication and Outbox | Planned；不得依赖具体 provider | SPEC-0004 or approved test source |
 | SPEC-0007 | Telegram Push Bot | Planned | SPEC-0006 |
@@ -26,12 +26,10 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 ### SPEC-0004 — First Approved Polling Source Pilot
 
 - 当前只进行 `spec/SPEC-0004.md` 文档审核，implementation not started。
-- Primary Provider 已由 ChatGPT / 用户确认为 NewsAPI.ai / Event Registry；Codex 不负责
-  重新评估或改选。
-- 用户提供 API key、plan、quota/token limit、allowed retention 和 internal AI analysis
-  决策前不得 smoke；bounded smoke PASS 前不得实现。
-- Marketaux、Finnhub、EIA Open Data 和 SEC EDGAR 按 `docs/PROVIDER_DECISION.md` 的顺序进入
-  后续注册、smoke、Review 和独立 SPEC，不得由 SPEC-0004 顺带实现。
+- NewsAPI.ai / Event Registry 当前为 future / blocked，不得 smoke。
+- 当前 preflight 顺序为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR；一次只允许用户
+  明确授权的一个 smoke，完成后必须停止 Review。
+- bounded smoke PASS 前不得实现；四个平台均不得由 preflight scaffold 顺带实现。
 - GDELT Project DOC 2.0 为 `runtime blocked / future evaluation only`；历史 evidence 保留，
   但不再是 primary pilot、不得继续 smoke 或驱动实现。
 - 只能选择第一个合法、低成本或公开的 Polling Source 作为试点。

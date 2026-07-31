@@ -1,0 +1,9 @@
+provider: finnhub
+enabled: false
+credential_env: FINNHUB_API_KEY
+optional_contract_metadata:
+  plan_env: FINNHUB_PLAN
+  rate_limit_env: FINNHUB_RATE_LIMIT
+  allowed_retention_env: FINNHUB_ALLOWED_RETENTION
+smoke:
+  symbol: AAPL

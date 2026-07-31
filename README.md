@@ -69,10 +69,10 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 - 当前阶段：Phase 1 — Information Collection & Push
 - Active SPEC：[`spec/SPEC-0004.md`](spec/SPEC-0004.md) — Docs Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
-- Primary Provider：NewsAPI.ai / Event Registry（用户/ChatGPT 已确认；pending credentials）
-- 下一步：用户提供 API key、plan、quota/token limit、allowed retention 和 internal AI
-  analysis 决策；完成合同 Review 后才可另行授权 bounded smoke
-- bounded smoke PASS 前不得 implementation；GDELT runtime blocked / future evaluation only
+- 当前首个 bounded smoke candidate：Marketaux；执行后必须停止并等待用户/ChatGPT Review
+- 当前顺序：Marketaux → Finnhub → EIA Open Data → SEC EDGAR
+- NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
+- bounded smoke PASS 前不得 implementation
 
 ## 长期产品与架构方向
 

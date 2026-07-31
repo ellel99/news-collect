@@ -4,6 +4,22 @@
 
 ### Documentation
 
+- 增加 provider preflight scaffold：五个平台的官方合同索引、凭证空模板、bounded smoke
+  runbook、placeholder-only provider 配置与默认 dry-run CLI。
+- 增加完全 mock 的 preflight 单元测试；本轮未使用真实 API key、未请求外部 API、未运行
+  真实 smoke、未实现 Adapter、未写数据库、迁移、schema/ORM 或 collection。
+- Review 修正：CLI 支持默认根目录 `.env` 和显式 `--env-file`（OS 环境变量优先），EIA
+  参数改为官方 `data[]=price`，PASS 判定收紧为 provider schema-aware。
+- Preflight gate 调整：NewsAPI.ai 标记为 `future / blocked` 并禁止 `--execute`；当前顺序固定
+  为 Marketaux → Finnhub → EIA → SEC，optional metadata 不阻塞最小 smoke。
+- 记录用户单独授权的一次 Marketaux bounded smoke 的脱敏结构结果：HTTP 200、有效 JSON、
+  `data` / `meta`、result count 1、预期字段与 rate/usage-limit headers，structural PASS。
+- 未保存 token、完整 response、真实 title/body/URL 或 raw payload；Finnhub、EIA、SEC 未执行，
+  Adapter、数据库、迁移、schema、ORM 和 collection 均未开始。
+- 后续在用户明确的一次性串行授权下，Finnhub、EIA Open Data 和 SEC EDGAR 各完成
+  一次 bounded smoke，脱敏结构结果均为 PASS。
+- 四个 smoke 证据均未保存 key/token/contact email、完整 response、raw payload 或真实
+  title/body/URL/quote/EIA/filing value；NewsAPI.ai 与 GDELT 未执行。
 - 纠正 SPEC-0004 provider 决策流程：平台选择由 ChatGPT / 用户确认，Primary Provider 为
   NewsAPI.ai / Event Registry（pending credentials），Codex 不负责重新评估或改选。
 - 记录 Marketaux 为 Secondary Financial News candidate、Finnhub 为 Market Validation

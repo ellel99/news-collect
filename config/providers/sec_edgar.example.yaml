@@ -1,0 +1,6 @@
+provider: sec_edgar
+enabled: false
+user_agent_env: SEC_USER_AGENT
+contact_email_env: SEC_CONTACT_EMAIL
+smoke:
+  ticker: AAPL
