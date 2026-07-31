@@ -12,6 +12,10 @@
   参数改为官方 `data[]=price`，PASS 判定收紧为 provider schema-aware。
 - Preflight gate 调整：NewsAPI.ai 标记为 `future / blocked` 并禁止 `--execute`；当前顺序固定
   为 Marketaux → Finnhub → EIA → SEC，optional metadata 不阻塞最小 smoke。
+- 记录用户单独授权的一次 Marketaux bounded smoke 的脱敏结构结果：HTTP 200、有效 JSON、
+  `data` / `meta`、result count 1、预期字段与 rate/usage-limit headers，structural PASS。
+- 未保存 token、完整 response、真实 title/body/URL 或 raw payload；Finnhub、EIA、SEC 未执行，
+  Adapter、数据库、迁移、schema、ORM 和 collection 均未开始。
 - 纠正 SPEC-0004 provider 决策流程：平台选择由 ChatGPT / 用户确认，Primary Provider 为
   NewsAPI.ai / Event Registry（pending credentials），Codex 不负责重新评估或改选。
 - 记录 Marketaux 为 Secondary Financial News candidate、Finnhub 为 Market Validation

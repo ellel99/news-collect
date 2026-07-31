@@ -5,7 +5,9 @@
 当前执行顺序固定为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR。一次只执行一个经
 用户明确授权的平台；前一个 smoke 完成后必须停止并等待用户/ChatGPT Review。NewsAPI.ai /
 Event Registry 为 `future / blocked`，不在当前执行序列，CLI 对其 `--execute` fail closed。
-平台注册、plan/quota/retention 填写和用户/ChatGPT Review 未完成时，只能运行默认 dry-run。
+平台注册、runtime credential 配置和用户逐平台授权未完成时，只能运行默认 dry-run。
+plan / quota / retention / internal AI allowed 属于 optional contract review metadata：缺失不阻塞
+最小 bounded smoke，但会阻塞后续合同 PASS、Adapter implementation 和正式采集。
 
 ```text
 用户完成平台注册并将凭证保存在本地
@@ -86,8 +88,21 @@ EIA 或 SEC。NewsAPI.ai 即使存在本地 key 也不得执行。
 2. 顶层/item path 和字段结构符合 `PROVIDER_OFFICIAL_CONTRACTS.md`；2xx + JSON 但 path
    缺失、列表为空或 item fields 为空时不得 PASS。
 3. result bound 生效，报告未包含内容值或 secret。
-4. plan、quota、rate limit、allowed retention、internal AI/redistribution 边界已另行核对。
-5. 用户和 ChatGPT 审核 report 并明确给出下一步授权。
+4. 用户和 ChatGPT 审核 redacted structural report。
+
+以上只定义 structural smoke PASS。进入合同 PASS、Adapter implementation 或正式采集前，还
+必须另行核对 plan、quota、rate limit、allowed retention、internal AI/redistribution 边界，
+且获得用户明确授权。
 
 任何关键合同仍 Pending、认证/额度错误、429/timeout、schema 不足或安全输出违规，均不得开始
 Adapter implementation。
+
+## Marketaux bounded smoke evidence
+
+- 执行状态：用户单独授权的一次 bounded smoke 已完成。
+- 结果：HTTP 200、有效 JSON、`data` / `meta` 顶层结构、1 个结果、预期 article 字段结构和
+  rate/usage-limit headers 均已观察到；classified result 为 `PASS`。
+- 安全边界：只记录 redacted structural result；未记录 token、完整 response、真实
+  title/body/URL 或 raw payload。
+- 当前 gate：仅 structural smoke PASS；合同 PASS、Adapter implementation 和正式采集仍未
+  授权。Finnhub、EIA、SEC 尚未执行。

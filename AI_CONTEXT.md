@@ -13,7 +13,8 @@
 - 当前工作状态：provider decision 已 realign；provider preflight scaffold 已准备；
   SPEC-0004 implementation not started
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
-- 当前首个 bounded smoke candidate：Marketaux（仅 smoke；不是 Adapter implementation 授权）
+- Marketaux bounded smoke：用户单独授权的一次 redacted structural smoke 已 PASS；合同 PASS、
+  Adapter implementation 和正式采集仍未授权
 - NewsAPI.ai / Event Registry：future / blocked；不得请求或执行 smoke
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
@@ -29,7 +30,8 @@
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
 - 当前 smoke 顺序：Marketaux → Finnhub → EIA Open Data → SEC EDGAR；每个平台完成后必须
   停止并等待用户/ChatGPT Review
-- 下一步：仅在用户单独确认后执行一次 Marketaux bounded smoke；完成后停止
+- 下一步：停止并等待用户/ChatGPT 审核 Marketaux structural smoke；不得自动继续 Finnhub、
+  EIA 或 SEC
 
 ## 架构修订状态
 
