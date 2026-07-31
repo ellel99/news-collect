@@ -78,20 +78,20 @@
 | `gdelt` | 全球新闻发现与线索 | Polling；仅有限时间窗回补 | runtime blocked / future evaluation only；不再是 SPEC-0004 primary |
 | `rss_atom` | 媒体、公司、机构 Feed | Polling | planned；逐 Feed 审核 |
 | `company_ir` | 公司官网与 Investor Relations | Polling | Official Evidence Layer；逐公司审核 |
-| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | Official Evidence Layer；独立 SPEC |
-| `eia` | U.S. Energy Information Administration | Polling / official feed | Official Evidence Layer；独立 SPEC |
+| `sec_edgar` | SEC 文件与公告 | Polling / Backfill | structural smoke PASS；contract Review pending；独立 SPEC |
+| `eia` | U.S. Energy Information Administration | Polling / official feed | structural smoke PASS；contract Review pending；独立 SPEC |
 | `official_rss` | 政府、监管、公司官方 RSS | Polling | Official Evidence Layer；逐 Feed 审核 |
 | `event_registry_candidate` | NewsAPI.ai / Event Registry | Polling（未来评估） | future / blocked；不在当前 smoke 序列 |
 | `marketaux_candidate` | Marketaux | Polling（按授权） | redacted structural smoke PASS；contract Review pending；implementation 未开始 |
-| `finnhub_candidate` | Finnhub | Polling / Streaming（按授权） | market validation candidate；当前阶段不实现 |
+| `finnhub_candidate` | Finnhub | Polling / Streaming（按授权） | structural smoke PASS；market validation implementation 仍禁止 |
 
 公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
 
 ### Confirmed Provider Decision
 
 - 平台选择由 ChatGPT / 用户确认，不由 Codex 决定；详见 `docs/PROVIDER_DECISION.md`。
-- Marketaux 的用户授权 bounded smoke 已获得脱敏结构性 PASS；不代表合同 PASS、Adapter 或
-  implementation 授权。
+- Marketaux、Finnhub、EIA 和 SEC EDGAR 的用户授权 bounded smoke 均获得脱敏结构性
+  PASS；不代表合同 PASS、Adapter 或 implementation 授权。
 - NewsAPI.ai / Event Registry：future / blocked；不得执行真实 smoke 或请求 API。
 - Market Validation Provider：Finnhub；Market Validation 仍受 Foundation revision、
   Freeze Review 和独立 SPEC 门禁约束。

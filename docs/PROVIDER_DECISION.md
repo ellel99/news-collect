@@ -12,7 +12,7 @@
 
 | Role | Confirmed Provider / Layer | Current Engineering Status |
 |---|---|---|
-| Current bounded smoke candidate | Marketaux | local metadata prepared；真实 smoke 仍需逐次用户确认 |
+| Bounded smoke evidence | Marketaux / Finnhub / EIA / SEC EDGAR | 用户逐次授权的 redacted structural smoke 均 PASS；不等于合同或实现授权 |
 | Future news provider | NewsAPI.ai / Event Registry | future / blocked；不在当前 smoke 序列 |
 | Market Validation Provider | Finnhub | market validation candidate；Market Validation 实现仍需适用的 Foundation revision、Freeze Review 和独立 SPEC |
 | Official Evidence Layer | SEC EDGAR / EIA / Company IR / Official RSS | confirmed evidence-source layer；逐来源授权、合同与独立 SPEC 仍待完成 |
@@ -52,9 +52,8 @@ NewsAPI.ai / Event Registry 当前为 `future / blocked`，无论是否存在本
 边界。尤其 Finnhub 的 Market Validation implementation 仍须适用的 Foundation revision、
 Freeze Review 和独立 SPEC。
 
-当前只有 Marketaux 可以在用户下一次明确确认后执行一次 bounded smoke。其余平台必须等待
-前一平台 Review 结论与用户明确授权，不得并行或自动继续。NewsAPI.ai / Event Registry 和
-GDELT 均不得请求。
+四个平台的一次性 bounded smoke 已完成，现在必须停止并等待用户/ChatGPT Review；
+不得重试、扩大范围或自动继续。NewsAPI.ai / Event Registry 和 GDELT 均不得请求。
 
 ## Bounded Smoke Contract
 

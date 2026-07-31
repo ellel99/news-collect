@@ -66,8 +66,8 @@ uv run python scripts/provider_smoke.py --provider sec_edgar --ticker AAPL --exe
 不要批量或循环执行。每条命令只构建一个最小请求；超出允许的 result bound、缺凭证或 EIA
 version / SEC ticker 不在 scaffold allowlist 时 fail closed。
 
-当前只允许在用户明确确认后单独执行 Marketaux。完成后必须停止；不得自动继续 Finnhub、
-EIA 或 SEC。NewsAPI.ai 即使存在本地 key 也不得执行。
+四个 Provider 均已在用户逐次明确授权下完成一次 bounded smoke。不得自动重试、
+扩大范围或再次执行。NewsAPI.ai 即使存在本地 key 也不得执行。
 
 ## Report interpretation
 
@@ -97,12 +97,15 @@ EIA 或 SEC。NewsAPI.ai 即使存在本地 key 也不得执行。
 任何关键合同仍 Pending、认证/额度错误、429/timeout、schema 不足或安全输出违规，均不得开始
 Adapter implementation。
 
-## Marketaux bounded smoke evidence
+## Bounded smoke evidence
 
-- 执行状态：用户单独授权的一次 bounded smoke 已完成。
-- 结果：HTTP 200、有效 JSON、`data` / `meta` 顶层结构、1 个结果、预期 article 字段结构和
-  rate/usage-limit headers 均已观察到；classified result 为 `PASS`。
-- 安全边界：只记录 redacted structural result；未记录 token、完整 response、真实
-  title/body/URL 或 raw payload。
-- 当前 gate：仅 structural smoke PASS；合同 PASS、Adapter implementation 和正式采集仍未
-  授权。Finnhub、EIA、SEC 尚未执行。
+| Provider | Redacted structural result | Remaining gate |
+|---|---|---|
+| Marketaux | PASS；HTTP 200；valid JSON；`data` / `meta`；result count 1；article field names 与 rate/usage-limit header names 可见 | Contract PASS / Adapter / collection 未授权 |
+| Finnhub | PASS；HTTP 200；valid JSON；quote field names `c/d/dp/h/l/o/pc/t`；result count 1；rate-limit header names 可见 | Market Validation 仍受 Foundation revision、Freeze Review 和独立 SPEC 限制 |
+| EIA Open Data | PASS；HTTP 200；valid JSON；`response.data` item field names 可见；result count 1 | Contract PASS / Adapter / collection 未授权 |
+| SEC EDGAR | PASS；HTTP 200；valid JSON；`filings.recent` columnar field names 可见；result count 1002 | 响应范围较大，后续合同必须收紧最小化策略；Adapter / collection 未授权 |
+
+上述证据只记录 redacted structural report；未记录 key/token/contact email、完整 response、
+真实 title/body/URL/quote/EIA/filing value 或 raw payload。所有 Provider 现在都必须停止并
+等待用户/ChatGPT Review。
