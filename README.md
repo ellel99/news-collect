@@ -67,12 +67,12 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0004.md`](spec/SPEC-0004.md) — Docs Review
+- Active SPEC：[`spec/SPEC-0006-raw-capture-replay-evaluation.md`](spec/SPEC-0006-raw-capture-replay-evaluation.md) — Scaffold Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
-- 当前首个 bounded smoke candidate：Marketaux；执行后必须停止并等待用户/ChatGPT Review
-- 当前顺序：Marketaux → Finnhub → EIA Open Data → SEC EDGAR
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
-- bounded smoke PASS 前不得 implementation
+- 四个平台 structural smoke 已 PASS；当前只准备 gitignored local raw capture/audit/replay
+  scaffold，本轮不执行真实 capture
+- SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向
 

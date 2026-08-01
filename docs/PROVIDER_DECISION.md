@@ -55,6 +55,10 @@ Freeze Review 和独立 SPEC。
 四个平台的一次性 bounded smoke 已完成，现在必须停止并等待用户/ChatGPT Review；
 不得重试、扩大范围或自动继续。NewsAPI.ai / Event Registry 和 GDELT 均不得请求。
 
+下一阶段仅准备 SPEC-0006 local raw capture/audit/replay scaffold。Raw captures 必须保存在
+gitignored `local_evaluation/`，不得进入 Git/PR/chat；本轮不授权任何真实 capture。未来每次
+capture 仍须用户明确指定 Provider、selector 与 limit。
+
 ## Bounded Smoke Contract
 
 每个平台必须独立执行；一次授权只覆盖一个明确 endpoint family、有限请求数量和最小结果数。

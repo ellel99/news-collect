@@ -4,6 +4,12 @@
 
 ### Documentation
 
+- 激活 `SPEC-0006 — Raw Capture & Replay Evaluation`，保持 SPEC-0005 X Source 范围不变；
+  原 Normalization/Dedup/Outbox Planned topic 保留并等待重新编号。
+- 增加默认 dry-run 的本地 raw capture、content-free audit/replay summary 脚手架和 mock-only
+  tests；`local_evaluation/` 全部 gitignored。
+- 本轮没有真实 capture、外部 Provider 请求、raw capture 提交、Adapter、DB/migration/schema/
+  ORM、collection、AI API 或投资建议。
 - 增加 provider preflight scaffold：五个平台的官方合同索引、凭证空模板、bounded smoke
   runbook、placeholder-only provider 配置与默认 dry-run CLI。
 - 增加完全 mock 的 preflight 单元测试；本轮未使用真实 API key、未请求外部 API、未运行

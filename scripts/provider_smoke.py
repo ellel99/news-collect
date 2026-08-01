@@ -10,18 +10,38 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
-from market_intelligence.providers.preflight import eia, finnhub, marketaux, newsapi_ai, sec_edgar
+from market_intelligence.providers.preflight import (
+    eia,
+    finnhub,
+    local_env,
+    marketaux,
+    newsapi_ai,
+    sec_edgar,
+)
 from market_intelligence.providers.preflight.base import (
     MissingCredentialError,
     RequestSpec,
     SmokeReport,
     blocked_report,
 )
+
+DEFAULT_ENV_FILE = local_env.DEFAULT_ENV_FILE
+
+
+def _read_env_file(path: Path, *, required: bool) -> dict[str, str]:
+    return local_env.read_env_file(path, required=required)
+
+
+def _load_environment(env_file: Path | None) -> dict[str, str]:
+    path = env_file or DEFAULT_ENV_FILE
+    values = _read_env_file(path, required=env_file is not None)
+    values.update(os.environ)
+    return values
+
 
 PROVIDERS: dict[str, ModuleType] = {
     "eia": eia,
@@ -33,8 +53,6 @@ PROVIDERS: dict[str, ModuleType] = {
 ENDPOINTS = {name: str(module.ENDPOINT) for name, module in PROVIDERS.items()}
 EXECUTION_ORDER = ("marketaux", "finnhub", "eia", "sec_edgar")
 EXECUTION_ENABLED_PROVIDERS = frozenset(EXECUTION_ORDER)
-DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
-ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,38 +67,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--execute", action="store_true")
     return parser
-
-
-def _read_env_file(path: Path, *, required: bool) -> dict[str, str]:
-    if not path.exists():
-        if required:
-            raise ValueError("the requested environment file does not exist")
-        return {}
-    values: dict[str, str] = {}
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line.removeprefix("export ").lstrip()
-        if "=" not in line:
-            raise ValueError(f"invalid environment entry on line {line_number}")
-        name, value = line.split("=", 1)
-        name = name.strip()
-        if not ENV_NAME.fullmatch(name):
-            raise ValueError(f"invalid environment name on line {line_number}")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[name] = value
-    return values
-
-
-def _load_environment(env_file: Path | None) -> dict[str, str]:
-    path = env_file or DEFAULT_ENV_FILE
-    values = _read_env_file(path, required=env_file is not None)
-    values.update(os.environ)
-    return values
 
 
 def _build_request(args: argparse.Namespace, environ: dict[str, str]) -> RequestSpec:

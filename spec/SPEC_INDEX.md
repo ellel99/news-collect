@@ -2,17 +2,17 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0004（Docs Review；implementation not started）
+Active SPEC：SPEC-0006（Scaffold Review；real capture not started）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
 | SPEC-0001 | Project Bootstrap | Completed | Foundation v2.1-FROZEN |
 | SPEC-0002 | Source Registry and Phase 1 Data Model | Completed | SPEC-0001 |
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
-| SPEC-0004 | First Approved Polling Source Pilot | Active — Docs Review；NewsAPI.ai future / blocked；Marketaux first smoke candidate；implementation not started | SPEC-0003 |
+| SPEC-0004 | First Approved Polling Source Pilot | Inactive — preflight evaluation completed；Adapter implementation not started；future implementation requires reactivation | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
-| SPEC-0006 | Normalization, Deduplication and Outbox | Planned；不得依赖具体 provider | SPEC-0004 or approved test source |
-| SPEC-0007 | Telegram Push Bot | Planned | SPEC-0006 |
+| SPEC-0006 | Raw Capture & Replay Evaluation | Active — Scaffold Review；real capture not started | SPEC-0004 evaluation evidence |
+| SPEC-0007 | Telegram Push Bot | Planned；依赖未来 Normalization/Dedup/Outbox SPEC | dependency number TBD |
 | SPEC-0008 | Telegram Management Bot | Planned | SPEC-0002/0003/0007 |
 | SPEC-0009 | Operations, Backup, Restore and Phase 1 Acceptance | Planned | SPEC-0001–0008 |
 
@@ -49,11 +49,14 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
   idempotency、限流、内容保留和 backfill 限制必须由该 SPEC 明确。
 - 不得以 X 的实现绕过 SPEC-0004 的 provider-neutral 原则或扩大 Phase 1 范围。
 
-### SPEC-0006 — Normalization, Deduplication and Outbox
+### Future topic — Normalization, Deduplication and Outbox（编号待定）
 
 - Normalization、Deduplication 与 Outbox 只能依赖统一内部合同，不得直接依赖具体 provider、
   provider SDK 或 provider raw payload。
 - provider 特有映射必须留在对应 Connector/Adapter 内；不得把来源分支扩散到下游主链路。
+
+该主题仍为 Planned，但因用户明确将编号 `SPEC-0006` 用于 Raw Capture & Replay Evaluation，
+其新编号待未来文档准备时确定。`Planned` 不表示授权，不得由当前 replay scaffold 顺带实现。
 
 ## 候选规划（非 Active）
 
@@ -70,4 +73,4 @@ Active SPEC：SPEC-0004（Docs Review；implementation not started）
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。
+除当前 Active 的 SPEC-0006 外，SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。
