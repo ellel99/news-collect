@@ -1,6 +1,6 @@
 # SPEC-0017 — Four Provider Replay Normalization Candidate
 
-状态：Active — Implementation Review
+状态：Completed — local replay-only verification approved
 阶段：Phase 1 — Local Evaluation Tooling
 负责人：Project Owner
 创建日期：2026-08-02
@@ -176,12 +176,12 @@ provider-specific summaries、common envelope coverage、provider type counts、
 
 ## 15. 验收标准
 
-- [ ] 单文件与四 Provider 目录模式符合合同。
-- [ ] common envelope 只含 safe metadata/booleans/hash/errors。
-- [ ] provider-specific summary 保留四类语义差异。
-- [ ] 所有安全与 fail-closed 测试 PASS。
-- [ ] 无真实 API、capture、raw output、Adapter、DB、collection 或 AI。
-- [ ] Foundation、Ruff、mypy、pytest、package review PASS。
+- [x] 单文件与四 Provider 目录模式符合合同。
+- [x] common envelope 只含 safe metadata/booleans/hash/errors。
+- [x] provider-specific summary 保留四类语义差异。
+- [x] 所有安全与 fail-closed 测试 PASS。
+- [x] 无真实 API、capture、raw output、Adapter、DB、collection 或 AI。
+- [x] Foundation、Ruff、mypy、pytest、package review PASS。
 
 ## 16. Verification Evidence
 
@@ -192,6 +192,42 @@ provider-specific summaries、common envelope coverage、provider type counts、
 | Foundation | `python3 scripts/validate-foundation.py` | PASS |
 | Quality | Ruff / mypy / pytest | PASS — 121 tests |
 | Package safety | `scripts/package-review.sh /tmp/news_collect_spec0017_review.zip` | PASS |
+
+### 16.1 Local replay-only verification summary
+
+本地真实 replay 只读取 gitignored captures，输出 content-free summary；没有任何 raw content、
+secret 或真实字段值进入 Git、PR 或 chat。
+
+| Metric | Result |
+|---|---:|
+| capture files seen | 4 |
+| providers seen | Marketaux, Finnhub, EIA, SEC EDGAR |
+| total input items | 19 |
+| total candidate items | 19 |
+| content values emitted | false |
+| errors | none |
+
+Provider type counts：
+
+| Type | Count |
+|---|---:|
+| `marketaux_news` | 3 |
+| `finnhub_quote` | 1 |
+| `eia_energy_timeseries` | 5 |
+| `sec_filing` | 10 |
+
+Common envelope coverage：
+
+| Coverage | Count |
+|---|---:|
+| provider item ID available | 19 / 19 |
+| event time available | 19 / 19 |
+| dedup key available | 19 / 19 |
+| entity available | 18 / 19 |
+| official source | 15 / 19 |
+| market data | 1 / 19 |
+| news signal | 3 / 19 |
+| disclosure | 10 / 19 |
 
 ## 17. 回滚
 
@@ -204,16 +240,32 @@ provider-specific summaries、common envelope coverage、provider type counts、
 - `content_text_available`/`numeric_value_available` 只表达存在性，不输出或分析值。
 - 目录模式是本地 evaluation，不是 batch job、scheduler 或 collection runner。
 
+### 18.1 Provider findings
+
+- Marketaux：3/3 candidates；uuid、title、URL、published time、snippet、description、source、
+  language 均为 3/3，entities 为 2/3，keywords 为 1/3。可作为后续 news evidence mapping
+  输入，但 entities/keywords 不得成为必填依赖。
+- Finnhub：1/1 candidate；symbol、quote timestamp 与 `c/d/dp/h/l/o/pc` coverage 均为 1/1。
+  只能作为 market data evidence，不是新闻源，不直接产生投资建议。
+- EIA：5/5 candidates；period、geography、sector 均为 5/5，numeric value field 为 4/5。
+  官方能源时间序列合同必须允许 numeric presence/value nullable。
+- SEC EDGAR：10/10 candidates；accession、form、filing date、acceptance time、ticker 均为
+  10/10。披露 metadata 结构完整，但 capture 不包含 filing body。
+
+SPEC-0017 只证明 normalization candidate coverage 与安全摘要可行；它不是正式 normalization
+pipeline，不定义持久化、canonicalization、dedup、Event 或 AI 行为。
+
 ## 19. Review History
 
 | Round | Result | Findings | Resolution |
 |---|---|---|---|
-| 1 | Pending | Initial SPEC and scaffold | Pending review |
+| 1 | PASS | SPEC/scaffold and mock-only tests | Merged in PR #16 |
+| 2 | PASS | Four-provider local replay-only summary | 19/19 candidates; content-free output approved |
 
 ## 20. 架构治理检查
 
 - Foundation：v2.1-FROZEN，未修改。
-- Active SPEC：SPEC-0017。
+- Completion state：SPEC-0017 Completed；下一 Active SPEC 由索引决定。
 - SPEC-0005 X Source 范围未修改。
 - SPEC-0006 capture 边界未扩大。
 - 无未来阶段实体、AI、Event、Portfolio 或交易语义。

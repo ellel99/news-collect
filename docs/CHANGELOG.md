@@ -4,6 +4,11 @@
 
 ### Documentation
 
+- 将 SPEC-0017 标记 Completed，记录四 Provider local replay-only verification：4 captures、19/19
+  candidates、content values emitted=false；raw captures 仍仅在 gitignored local storage。
+- 激活 docs-only `SPEC-0018 — Normalized Evidence Contract`，定义 common evidence envelope 与
+  四类 provider-specific evidence payload contract；无代码、API、capture、Adapter、DB、
+  collection、正式 normalization/dedup、Event 或 AI。
 - 激活 `SPEC-0017 — Four Provider Replay Normalization Candidate`，并将经审核的 SPEC-0006
   标记 Completed；SPEC-0005 X Source 范围保持不变。
 - 新增 mock-only `provider_normalize_replay.py`：从 gitignored local capture 生成 common
