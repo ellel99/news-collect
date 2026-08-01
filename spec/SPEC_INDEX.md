@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0017（Implementation Review；replay-only candidate）
+Active SPEC：SPEC-0018（Docs Review；contract design only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -15,7 +15,8 @@ Active SPEC：SPEC-0017（Implementation Review；replay-only candidate）
 | SPEC-0007 | Telegram Push Bot | Planned；依赖未来 Normalization/Dedup/Outbox SPEC | dependency number TBD |
 | SPEC-0008 | Telegram Management Bot | Planned | SPEC-0002/0003/0007 |
 | SPEC-0009 | Operations, Backup, Restore and Phase 1 Acceptance | Planned | SPEC-0001–0008 |
-| SPEC-0017 | Four Provider Replay Normalization Candidate | Active — Implementation Review；content-free local replay only | SPEC-0006 |
+| SPEC-0017 | Four Provider Replay Normalization Candidate | Completed — local replay-only verification approved | SPEC-0006 |
+| SPEC-0018 | Normalized Evidence Contract | Active — Docs Review；no implementation authorized | SPEC-0017 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -59,6 +60,7 @@ Active SPEC：SPEC-0017（Implementation Review；replay-only candidate）
 该主题仍为 Planned，但因用户明确将编号 `SPEC-0006` 用于 Raw Capture & Replay Evaluation，
 其新编号待未来文档准备时确定。`Planned` 不表示授权，不得由当前 replay scaffold 顺带实现。
 SPEC-0017 只生成 normalization candidate coverage，不替代或激活该正式 pipeline 主题。
+SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalization pipeline。
 
 ## 候选规划（非 Active）
 
@@ -73,6 +75,10 @@ SPEC-0017 只生成 normalization candidate coverage，不替代或激活该正�
 | SPEC-0014 Market Data Validation Adapters | 定义可替换行情/财务数据 adapter 与市场验证合同 | SPEC-0013 |
 | SPEC-0015 Research Recommendation Contract | 定义研究参考状态、置信度、风险、催化剂和失效条件；不得自动执行 | SPEC-0013、SPEC-0014、AI boundary Freeze Review |
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
+| SPEC-0019 Evidence Contract Implementation Scaffold | 实现经审核的 evidence contract runtime scaffold | SPEC-0018 Review PASS and explicit approval |
+| SPEC-0020 Provider Adapter Mapping to Evidence | 将获批 Provider 映射到 evidence contract | SPEC-0019 and provider contract review |
+| SPEC-0021 Evidence Persistence / DB Schema | 设计并实现 evidence persistence | SPEC-0019/0020 and explicit schema approval |
+| SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-除当前 Active 的 SPEC-0017 外，SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。
+除当前 Active 的 SPEC-0018 外，SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。

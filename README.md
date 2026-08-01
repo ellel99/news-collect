@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0004.md`](spec/SPEC-0004.md)，当前仅 Docs Review，implementation not started
+- 开发入口：[`spec/SPEC-0018-normalized-evidence-contract.md`](spec/SPEC-0018-normalized-evidence-contract.md)，当前仅 Docs Review，不授权实现
 
 Phase 1 固定主链路：
 
@@ -67,11 +67,11 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0017-four-provider-replay-normalization-candidate.md`](spec/SPEC-0017-four-provider-replay-normalization-candidate.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0018-normalized-evidence-contract.md`](spec/SPEC-0018-normalized-evidence-contract.md) — Docs Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
-- 四个平台 bounded raw capture/audit/replay 已 PASS；当前只实现 content-free、replay-only
-  normalization candidate summary，不请求 Provider、不读取数据库
+- SPEC-0017 四 Provider replay-only candidate 已 Completed；当前只设计 Normalized Evidence
+  Contract，不实现 Adapter、DB、collection、正式 normalization/dedup、Event 或 AI
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向
