@@ -98,6 +98,11 @@ def replay_summary(capture: dict[str, Any]) -> dict[str, object]:
     }.get(provider, ())
     item_fields = {key for item in items for key in item}
     context_fields = set(context)
+    errors: list[str] = []
+    if provider not in {"marketaux", "finnhub", "eia", "sec_edgar"}:
+        errors.append("unknown_provider")
+    if not items:
+        errors.append("no_input_items")
     return {
         "provider": provider,
         "input_items": len(items),
@@ -112,9 +117,8 @@ def replay_summary(capture: dict[str, Any]) -> dict[str, object]:
         "timestamp_fields_available": sorted(
             field for field in timestamp_candidates if field in item_fields
         ),
-        "errors": (
-            [] if provider in {"marketaux", "finnhub", "eia", "sec_edgar"} else ["unknown_provider"]
-        ),
+        "replay_ready": bool(items) and not errors,
+        "errors": errors,
     }
 
 
@@ -133,8 +137,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not isinstance(loaded, dict):
         print(json.dumps({"errors": ["capture_must_be_object"]}, sort_keys=True))
         return 2
-    print(json.dumps(replay_summary(loaded), sort_keys=True))
-    return 0
+    summary = replay_summary(loaded)
+    print(json.dumps(summary, sort_keys=True))
+    return 0 if summary["replay_ready"] else 2
 
 
 if __name__ == "__main__":

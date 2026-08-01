@@ -40,6 +40,7 @@ def test_replay_summary_contains_no_raw_content() -> None:
     assert summary["input_items"] == 1
     assert summary["normalized_items"] == 0
     assert summary["dedup_key_available_count"] == 1
+    assert summary["replay_ready"] is True
     assert "REAL RAW TITLE" not in serialized
     assert "REAL RAW BODY" not in serialized
     assert "raw-url" not in serialized
@@ -75,3 +76,22 @@ def test_sec_replay_uses_columnar_rows_without_values_in_summary() -> None:
     assert summary["dedup_key_available_count"] == 1
     assert "secret-accession" not in serialized
     assert "secret-document" not in serialized
+
+
+def test_unknown_provider_is_not_replay_ready() -> None:
+    summary = provider_replay.replay_summary(
+        {"provider": "unknown", "response_body": {"items": [{"value": "SECRET"}]}}
+    )
+    serialized = json.dumps(summary)
+    assert summary["replay_ready"] is False
+    assert "unknown_provider" in summary["errors"]
+    assert "SECRET" not in serialized
+
+
+def test_empty_items_are_not_replay_ready() -> None:
+    summary = provider_replay.replay_summary(
+        {"provider": "marketaux", "response_body": {"data": []}}
+    )
+    assert summary["input_items"] == 0
+    assert summary["replay_ready"] is False
+    assert "no_input_items" in summary["errors"]

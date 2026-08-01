@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _load_script(name: str) -> ModuleType:
     path = Path(__file__).parents[1] / "scripts" / f"{name}.py"
@@ -89,3 +91,15 @@ def test_audit_marks_out_of_limit_capture_not_replay_ready(tmp_path: Path) -> No
     report = provider_capture_audit.audit_capture(path)
     assert report["within_limit"] is False
     assert report["replay_ready"] is False
+
+
+def test_empty_capture_directory_fails_closed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = provider_capture_audit.main(["--capture-dir", str(tmp_path)])
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert output == {"reports": [], "errors": ["no_captures_found"]}
+    assert output["reports"] == []
+    assert output["errors"]

@@ -178,7 +178,11 @@ def audit_capture(path: Path) -> dict[str, object]:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     capture_dir = args.capture_dir.resolve()
-    reports = [audit_capture(path) for path in sorted(capture_dir.glob("*.json"))]
+    capture_files = sorted(capture_dir.glob("*.json"))
+    if not capture_files:
+        print(json.dumps({"reports": [], "errors": ["no_captures_found"]}, sort_keys=True))
+        return 2
+    reports = [audit_capture(path) for path in capture_files]
     print(json.dumps({"reports": reports}, sort_keys=True))
     return 0 if all(report["replay_ready"] for report in reports) else 2
 

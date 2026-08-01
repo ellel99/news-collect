@@ -4,6 +4,8 @@
 
 ### Documentation
 
+- 修复 SPEC-0006 review blockers：空 capture audit 目录现在 fail closed，replay summary 增加
+  `replay_ready`，且该标记不代表 normalization 已实现。
 - 激活 `SPEC-0006 — Raw Capture & Replay Evaluation`，保持 SPEC-0005 X Source 范围不变；
   原 Normalization/Dedup/Outbox Planned topic 保留并等待重新编号。
 - 增加默认 dry-run 的本地 raw capture、content-free audit/replay summary 脚手架和 mock-only

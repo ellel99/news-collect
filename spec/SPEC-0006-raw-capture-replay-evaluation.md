@@ -106,12 +106,17 @@ Raw capture 禁止：
   `has_authorization_header`、`within_limit`、`replay_ready`、errors。
 
 Report 禁止输出 title/body/URL/quote/EIA/filing value、raw response、secret 或 `.env`。
+Capture 目录为空时不是 PASS：必须输出 `no_captures_found`，并以 exit code `2` fail closed。
 
 ### FR-04 Replay summary
 
 `provider_replay.py` 只能读取一个 local capture，不请求网络、不调用 AI、不写数据库。初期只
 输出：provider、input items、`normalized_items=0`、missing required fields、dedup-key
-availability count、entity/timestamp field availability 和 errors。
+availability count、entity/timestamp field availability、`replay_ready` 和 errors。
+
+`replay_ready=true` 只表示 capture 含有至少一个可作为后续 replay 输入的 item，且 summary
+未发现错误；它不表示 normalization、dedup 或任何下游 pipeline 已实现。未知 Provider 或空
+items 必须令 `replay_ready=false`，并输出 content-free error code。
 
 未来可由独立 SPEC 扩展 normalization、dedup、entity mapping、clustering、importance、impact、
 Market Validation 或 scoring；本 SPEC 不实现也不宣称这些能力。
@@ -185,7 +190,9 @@ local_evaluation/audit_reports/
 - Marketaux/Finnhub/EIA/SEC limits fail closed；SEC arrays 截断 `<=10`。
 - `local_evaluation/` 被 gitignore，且无文件进入 tracking。
 - Audit 不含内容/secret，能检测 risk，输出 hash/size/count/field names。
-- Replay 不导入网络 client，summary 不含 raw content。
+- Audit 空目录以 `no_captures_found` 和 exit code `2` fail closed。
+- Replay 不导入网络 client，summary 不含 raw content；正常 capture 为 replay-ready，未知
+  Provider 或空 items 不得 replay-ready。
 
 ## 16. 验收标准
 
@@ -203,7 +210,7 @@ local_evaluation/audit_reports/
 |---|---|---|---|
 | No real capture/API request | mock-only tests and delivery declaration | PASS — zero real requests | 2026-08-01 |
 | Foundation | `python3 scripts/validate-foundation.py` | PASS | 2026-08-01 |
-| Quality | Ruff / format / mypy / pytest | PASS — 104 tests | 2026-08-01 |
+| Quality | Ruff / format / mypy / pytest | PASS — 107 tests | 2026-08-01 |
 | Package safety | `bash scripts/package-review.sh /tmp/news_collect_spec0006_review.zip` | PASS | 2026-08-01 |
 
 ## 18. Commit Evidence
