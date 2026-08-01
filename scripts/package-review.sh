@@ -19,7 +19,7 @@ else
   if grep -RInE --exclude-dir=.git --exclude-dir=.venv --exclude-dir=venv --exclude='*.zip' -- "${PATTERN}" "${PROJECT_ROOT}" >/dev/null; then echo 'possible secret detected' >&2; exit 1; fi
 fi
 mkdir -p "${STAGE_DIR}"
-rsync -a "${PROJECT_ROOT}/" "${STAGE_DIR}/" --exclude '.git/' --exclude '.idea/' --exclude '.vscode/' --exclude '.venv/' --exclude 'venv/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.mypy_cache/' --exclude '.ruff_cache/' --exclude 'node_modules/' --exclude 'dist/' --exclude 'build/' --exclude 'target/' --exclude 'logs/' --exclude 'tmp/' --exclude 'runtime-data/' --exclude 'local-data/' --exclude 'postgres-data/' --exclude 'redis-data/' --exclude 'backups/' --exclude '.DS_Store' --exclude '*.log' --exclude '*.zip'
+rsync -a "${PROJECT_ROOT}/" "${STAGE_DIR}/" --exclude '.git/' --exclude '.idea/' --exclude '.vscode/' --exclude '.venv/' --exclude 'venv/' --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude '.mypy_cache/' --exclude '.ruff_cache/' --exclude 'node_modules/' --exclude 'dist/' --exclude 'build/' --exclude 'target/' --exclude 'logs/' --exclude 'tmp/' --exclude 'runtime-data/' --exclude 'local-data/' --exclude 'local_evaluation/' --exclude 'postgres-data/' --exclude 'redis-data/' --exclude 'backups/' --exclude '.DS_Store' --exclude '*.log' --exclude '*.zip'
 if [[ -f "${PROJECT_ROOT}/.env.example" && ! -f "${STAGE_DIR}/.env.example" ]]; then echo '.env.example excluded unexpectedly' >&2; exit 1; fi
 rm -f "${OUTPUT_PATH}"
 (cd "${TEMP_DIR}" && zip -qr "${OUTPUT_PATH}" "${PROJECT_NAME}")

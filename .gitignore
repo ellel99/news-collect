@@ -28,6 +28,10 @@ local-data/
 postgres-data/
 redis-data/
 backups/
+local_evaluation/
+local_evaluation/raw_provider_captures/
+local_evaluation/replay_outputs/
+local_evaluation/audit_reports/
 
 # Build / package
 dist/
