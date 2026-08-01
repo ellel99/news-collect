@@ -8,9 +8,10 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0006-raw-capture-replay-evaluation.md`
+- 当前 Active SPEC：`spec/SPEC-0017-four-provider-replay-normalization-candidate.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0006 Raw Capture & Replay Evaluation scaffold review；real capture not started
+- 当前工作状态：SPEC-0017 Four Provider Replay Normalization Candidate implementation review；
+  replay-only、content-free、no external API
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
@@ -27,12 +28,12 @@
 - Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
   `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
-- 当前 smoke 顺序：Marketaux → Finnhub → EIA Open Data → SEC EDGAR；每个平台完成后必须
-  停止并等待用户/ChatGPT Review
-- 下一步：审核本地 capture/audit/replay scaffold；不得执行真实 capture，除非用户在 Review
-  PASS 后逐次明确授权
+- 四 Provider bounded capture/audit/replay 已通过 Review；raw captures 保持 gitignored local-only
+- 下一步：只审核 SPEC-0017 mock-only replay normalization candidate；不得执行新的 Provider 请求或
+  `provider_capture.py --execute`
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
-- `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat
+- `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
+  candidate 输出只能包含 counts、booleans、field coverage 与 hash
 
 ## 架构修订状态
 

@@ -1,10 +1,10 @@
 # SPEC-0006 — Raw Capture & Replay Evaluation
 
-状态：Active — Scaffold Review（real capture not started）
+状态：Completed — four-provider bounded capture/audit/replay approved
 阶段：Phase 1 — Evaluation Tooling
 负责人：Project Owner
 创建日期：2026-08-01
-最后更新：2026-08-01
+最后更新：2026-08-02
 
 ## 1. 目标
 
@@ -182,8 +182,8 @@ local_evaluation/audit_reports/
 - [x] T02 — 添加 dry-run capture scaffold 与本地路径门禁。
 - [x] T03 — 添加 content-free audit/replay summary。
 - [x] T04 — 添加 mock-only tests。
-- [ ] T05 — 用户/ChatGPT Review SPEC 与脚手架。
-- [ ] T06 — Review PASS 后另行授权单次真实 capture；本轮不执行。
+- [x] T05 — 用户/ChatGPT Review SPEC 与脚手架。
+- [x] T06 — 四 Provider 分别经用户单次授权完成 bounded capture/audit/replay。
 
 ## 15. 测试要求
 
@@ -199,19 +199,20 @@ local_evaluation/audit_reports/
 
 ## 16. 验收标准
 
-- [ ] 所有脚本默认无网络，测试全部 mock-only。
-- [ ] 真实 capture 请求数为 0。
-- [ ] `local_evaluation/` gitignored 且 Git tracking 为空。
-- [ ] Secret/raw content safety tests PASS。
-- [ ] Provider limit 与 SEC truncation tests PASS。
-- [ ] 无 Adapter、DB、migration、schema/ORM、collection、AI API 或投资建议。
-- [ ] Foundation validator、Ruff、mypy、pytest、package review PASS。
+- [x] 所有脚本默认无网络，测试全部 mock-only。
+- [x] 脚手架交付阶段真实 capture 请求数为 0；Review 后四次 runtime capture 均逐次授权。
+- [x] `local_evaluation/` gitignored 且 Git tracking 为空。
+- [x] Secret/raw content safety tests PASS。
+- [x] Provider limit 与 SEC truncation tests PASS。
+- [x] 无 Adapter、DB、migration、schema/ORM、collection、AI API 或投资建议。
+- [x] Foundation validator、Ruff、mypy、pytest、package review PASS。
 
 ## 17. Verification Evidence
 
 | Requirement | Evidence | Result | Date |
 |---|---|---|---|
-| No real capture/API request | mock-only tests and delivery declaration | PASS — zero real requests | 2026-08-01 |
+| Scaffold delivery network boundary | mock-only tests and delivery declaration | PASS — zero real requests during code delivery | 2026-08-01 |
+| Bounded runtime verification | four individually authorized captures; audit/replay summaries | PASS — local-only, no raw capture committed | 2026-08-02 |
 | Foundation | `python3 scripts/validate-foundation.py` | PASS | 2026-08-01 |
 | Quality | Ruff / format / mypy / pytest | PASS — 107 tests | 2026-08-01 |
 | Package safety | `bash scripts/package-review.sh /tmp/news_collect_spec0006_review.zip` | PASS | 2026-08-01 |
@@ -222,7 +223,8 @@ local_evaluation/audit_reports/
 
 ## 19. 实现结果
 
-SPEC 与脚手架已完成，等待 Review；没有真实 capture。
+SPEC、脚手架与四 Provider bounded local capture/audit/replay 已完成并通过 Review。Raw captures
+仍仅存在于 gitignored 本地目录，未进入 Git/PR/chat。
 
 ## 20. 与 SPEC 的偏差
 
@@ -240,7 +242,8 @@ SPEC 与脚手架已完成，等待 Review；没有真实 capture。
 
 | Round | Result | Findings | Resolution |
 |---|---|---|---|
-| 1 | Pending | Initial scaffold | Pending review |
+| 1 | PASS | Initial scaffold and review fixes | Completed |
+| 2 | PASS | Four-provider bounded local capture/audit/replay | Approved; local data not committed |
 
 ## 23. 架构与治理检查
 
