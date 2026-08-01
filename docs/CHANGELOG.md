@@ -4,6 +4,11 @@
 
 ### Documentation
 
+- 将 SPEC-0018 标记 `Completed — Docs Review approved`，并激活 SPEC-0019 Evidence Contract
+  Implementation Scaffold。
+- 新增纯标准库 `market_intelligence.evidence` enums、frozen dataclasses、静态 mappings 与
+  content-safe validation helpers；无 IO、网络、local capture、Adapter、DB、collection、正式
+  normalization/dedup、Event 或 AI。
 - 将 SPEC-0017 标记 Completed，记录四 Provider local replay-only verification：4 captures、19/19
   candidates、content values emitted=false；raw captures 仍仅在 gitignored local storage。
 - 激活 docs-only `SPEC-0018 — Normalized Evidence Contract`，定义 common evidence envelope 与

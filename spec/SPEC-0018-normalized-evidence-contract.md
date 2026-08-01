@@ -1,6 +1,6 @@
 # SPEC-0018 — Normalized Evidence Contract
 
-状态：Active — Docs Review
+状态：Completed — Docs Review approved
 阶段：Phase 1 — Contract Design
 负责人：Project Owner
 创建日期：2026-08-02
@@ -221,12 +221,12 @@ Mapping 只是合同提案；不得据此注册 Adapter 或创建 persistence en
 
 ## 16. 验收标准（Docs Review）
 
-- [ ] 两层合同的职责与边界明确。
-- [ ] 四 Provider payload contract 保留语义差异。
-- [ ] nullable 与 fail-closed 规则覆盖 SPEC-0017 findings。
-- [ ] 明确没有数据库、Adapter、collection、正式 normalization/dedup/Event/AI 实现。
-- [ ] 后续候选 SPEC 未激活。
-- [ ] Foundation validator 与 docs/package checks PASS。
+- [x] 两层合同的职责与边界明确。
+- [x] 四 Provider payload contract 保留语义差异。
+- [x] nullable 与 fail-closed 规则覆盖 SPEC-0017 findings。
+- [x] 明确没有数据库、Adapter、collection、正式 normalization/dedup/Event/AI 实现。
+- [x] 后续候选 SPEC 未激活。
+- [x] Foundation validator 与 docs/package checks PASS。
 
 ## 17. Verification Evidence
 
@@ -238,21 +238,24 @@ Mapping 只是合同提案；不得据此注册 Adapter 或创建 persistence en
 | Repository regression | Ruff format/check and pytest | PASS — 121 tests |
 | Package safety | `scripts/package-review.sh /tmp/news_collect_spec0018_review.zip` | PASS |
 
-## 18. 后续候选（全部非 Active）
+## 18. 后续工作
 
-- SPEC-0019 — Evidence Contract Implementation Scaffold；
+- SPEC-0019 — Evidence Contract Implementation Scaffold，由独立 Active SPEC 承接；
 - SPEC-0020 — Provider Adapter Mapping to Evidence；
 - SPEC-0021 — Evidence Persistence / DB Schema；
 - SPEC-0022 — Dedup and Event Candidate Layer。
 
-这些只是候选规划。必须逐一完成文档准备、Review 与用户明确授权，且任何 Event/AI/Market
-Validation 范围仍受 Foundation revision/Freeze Review 约束。
+SPEC-0020–0022 仍只是候选规划。必须逐一完成文档准备、Review 与用户明确授权，且任何
+Event/AI/Market Validation 范围仍受 Foundation revision/Freeze Review 约束。
 
 ## 19. Review History
 
 | Round | Result | Findings | Resolution |
 |---|---|---|---|
-| 1 | Pending | Initial docs-only contract | Pending review |
+| 1 | PASS | Two-layer normalized evidence contract | Approved and merged in PR #17 |
+
+SPEC-0018 Completed 只表示合同设计通过。它不授权直接实现 Adapter、DB/schema、collection、
+正式 normalization、dedup、Event 或 AI；最小纯代码合同边界由 SPEC-0019 单独承接。
 
 ## 20. 回滚
 
@@ -263,6 +266,6 @@ Validation 范围仍受 Foundation revision/Freeze Review 约束。
 
 - Foundation：v2.1-FROZEN，未修改。
 - Phase：Phase 1 Contract Design。
-- Active SPEC：SPEC-0018 Docs Review；不授权实现。
+- Completion state：SPEC-0018 Completed；实现授权仅来自后续独立 Active SPEC。
 - SPEC-0005 X Source 范围不变；SPEC-0006/0017 Completed。
 - 无 Adapter、DB、migration、schema/ORM、collection、正式 normalization/dedup、Event 或 AI。
