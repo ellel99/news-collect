@@ -180,6 +180,8 @@ def map_finnhub_quote_to_evidence(
         for field in _NUMERIC_QUOTE_FIELDS
     )
     symbol = context.get("symbol")
+    timestamp = item.get("t")
+    provider_id_value = (symbol, timestamp) if _present(symbol) and _present(timestamp) else None
     return _base(
         item=item,
         context=context,
@@ -187,8 +189,8 @@ def map_finnhub_quote_to_evidence(
         item_type=ProviderItemType.FINNHUB_QUOTE,
         source_type=SourceType.MARKET_DATA,
         evidence_kind=EvidenceKind.MARKET_DATA,
-        provider_id_value=(symbol, item.get("t")) if _present(symbol) else None,
-        event_time=_parse_datetime(item.get("t")),
+        provider_id_value=provider_id_value,
+        event_time=_parse_datetime(timestamp),
         numeric_presence=NumericPresence(
             has_numeric_value=numeric_count > 0, numeric_field_count=numeric_count
         ),
@@ -204,6 +206,14 @@ def map_eia_energy_row_to_evidence(
         isinstance(item.get(field), (int, float)) and not isinstance(item.get(field), bool)
         for field in ("price", "value")
     )
+    period = item.get("period")
+    geography = item.get("stateid") or item.get("stateDescription")
+    sector = item.get("sectorid") or item.get("sectorName")
+    provider_id_value = (
+        (period, geography, sector)
+        if _present(period) and _present(geography) and _present(sector)
+        else None
+    )
     return _base(
         item=item,
         context=context,
@@ -211,8 +221,8 @@ def map_eia_energy_row_to_evidence(
         item_type=ProviderItemType.EIA_ENERGY_TIMESERIES,
         source_type=SourceType.OFFICIAL_ENERGY,
         evidence_kind=EvidenceKind.ENERGY_OFFICIAL,
-        provider_id_value=(item.get("period"), item.get("sectorid"), item.get("stateid")),
-        event_time=_parse_datetime(item.get("period")),
+        provider_id_value=provider_id_value,
+        event_time=_parse_datetime(period),
         numeric_presence=NumericPresence(
             has_numeric_value=numeric_count > 0,
             numeric_field_count=numeric_count,

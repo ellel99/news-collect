@@ -19,6 +19,7 @@ Depends on：SPEC-0019（Completed）
 本 SPEC 不是 Provider Adapter、AdapterRegistry、collection、scheduler、DB、migration、schema、
 ORM、persistence、正式 normalization pipeline、dedup、clustering、Event、AI、投资建议或 Telegram。
 不得请求 API、执行 capture、读取 `.env`、读取 `local_evaluation/` 或真实 raw capture。
+本 scaffold 也不是 Phase 1 禁止的正式 Evidence Entity、Event Evidence Layer 或 Analysis 层。
 
 ## 3. 接口
 
@@ -41,6 +42,8 @@ ORM、persistence、正式 normalization pipeline、dedup、clustering、Event�
 - content/value 只转换为 presence/count，不进入 envelope。
 - 缺 provider item ID 时返回 `blocked` 与固定安全错误；缺 event time 时保持 `None`，由 validator
   返回 `event_time_missing`，不得猜测。
+- Marketaux 必须有 uuid；Finnhub 必须同时有 context symbol 与 timestamp；EIA 必须有 period、
+  geography 与 sector；SEC EDGAR 必须有 accessionNumber。任何一项不满足均不得静默形成 ID。
 
 ## 5. Provider 映射
 
@@ -83,8 +86,8 @@ reportDate；ticker/form 只生成安全哈希 refs；primaryDocument 只映射 
 
 | Requirement | Evidence | Result |
 |---|---|---|
-| Pure mapping | source audit + mock-only mapping tests | PASS — 9 focused tests |
-| Full regression | `.venv/bin/pytest` | PASS — 150 tests |
+| Pure mapping | source audit + mock-only mapping tests | PASS — 14 focused tests |
+| Full regression | `.venv/bin/pytest` | PASS — 155 tests |
 | Static quality | Ruff check/format + mypy | PASS |
 | Foundation | `python3 scripts/validate-foundation.py` | PASS |
 | Package safety | `scripts/package-review.sh /tmp/news_collect_spec0020_review.zip` | PASS |

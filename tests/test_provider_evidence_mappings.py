@@ -134,6 +134,35 @@ def test_missing_provider_item_id_is_blocked_with_safe_error() -> None:
     assert validate_evidence_envelope(envelope) == []
 
 
+@pytest.mark.parametrize(
+    ("item", "context"),
+    [
+        ({"t": 1785664800}, {"observed_at": OBSERVED_AT}),
+        ({"c": 1.0}, {"observed_at": OBSERVED_AT, "symbol": "PRIVATE-SYMBOL"}),
+    ],
+)
+def test_finnhub_missing_symbol_or_timestamp_is_blocked(
+    item: dict[str, object], context: dict[str, object]
+) -> None:
+    envelope = map_finnhub_quote_to_evidence(item, context)
+    assert envelope.processing_status is ProcessingStatus.BLOCKED
+    assert [error.code for error in envelope.errors] == ["provider_item_id_missing"]
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"sectorid": "sector", "stateid": "state"},
+        {"period": "2026-07", "sectorid": "sector"},
+        {"period": "2026-07", "stateid": "state"},
+    ],
+)
+def test_eia_incomplete_provider_scope_id_is_blocked(item: dict[str, object]) -> None:
+    envelope = map_eia_energy_row_to_evidence(item, {"observed_at": OBSERVED_AT})
+    assert envelope.processing_status is ProcessingStatus.BLOCKED
+    assert [error.code for error in envelope.errors] == ["provider_item_id_missing"]
+
+
 def test_missing_event_time_is_not_inferred() -> None:
     envelope = map_eia_energy_row_to_evidence(
         {"period": "unparseable", "sectorid": "sector", "stateid": "state"},

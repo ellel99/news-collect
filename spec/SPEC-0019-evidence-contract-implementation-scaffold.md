@@ -190,3 +190,4 @@ Unknown item type 必须 fail closed，使用固定安全错误，不回显输�
 - SPEC-0005 X Source 范围不变；SPEC-0006/0017/0018 Completed。
 - 无 Adapter、DB、migration、schema/ORM、collection、正式 normalization/dedup、Event 或 AI。
 - 本 SPEC 只完成 pure evidence contract scaffold；未请求 API、读取 raw capture 或实现任何后续流程。
+- Evidence Contract Scaffold 不是正式 Evidence Entity、Event Evidence Layer 或 AI Evidence Analysis。
