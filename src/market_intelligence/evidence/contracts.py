@@ -30,6 +30,7 @@ SAFE_ERROR_MESSAGES = frozenset(
         "Numeric field count cannot be negative.",
         "Provider does not match the provider item type.",
         "Provider item hash is missing or invalid.",
+        "Provider item ID is unavailable.",
         "Raw payload reference is unsafe.",
         "Source type does not match the provider item type.",
         "The embedded error is not content-safe.",

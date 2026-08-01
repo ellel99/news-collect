@@ -4,6 +4,12 @@
 
 ### Documentation
 
+- 将 SPEC-0019 标记 `Completed — Implementation Review approved`，并激活 SPEC-0020 Provider
+  Evidence Mapping Scaffold。
+- 新增四 Provider pure in-memory evidence mapping 与 mock-only tests；输出只包含 presence、count、
+  hash 和 opaque refs，无 API、raw capture/local evaluation、Adapter、DB、collection、正式
+  normalization/dedup、Event 或 AI。
+
 - 将 SPEC-0018 标记 `Completed — Docs Review approved`，并激活 SPEC-0019 Evidence Contract
   Implementation Scaffold。
 - 新增纯标准库 `market_intelligence.evidence` enums、frozen dataclasses、静态 mappings 与
