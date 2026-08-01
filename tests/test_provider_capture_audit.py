@@ -81,6 +81,20 @@ def test_audit_detects_secret_and_request_url_risks(tmp_path: Path) -> None:
     assert "do-not-leak" not in serialized
 
 
+def test_audit_detects_secret_marker_in_any_nested_string(tmp_path: Path) -> None:
+    capture = _capture()
+    capture["response_body"] = {
+        "request": {"query": "frequency=monthly&api_key=do-not-leak"},
+        "data": [],
+    }
+    path = tmp_path / "capture.json"
+    path.write_text(json.dumps(capture), encoding="utf-8")
+    report = provider_capture_audit.audit_capture(path)
+    assert report["has_raw_request_url_with_secret"] is True
+    assert report["replay_ready"] is False
+    assert "do-not-leak" not in json.dumps(report)
+
+
 def test_audit_marks_out_of_limit_capture_not_replay_ready(tmp_path: Path) -> None:
     capture = _capture()
     request = capture["request"]

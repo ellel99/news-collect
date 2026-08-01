@@ -39,18 +39,15 @@ def _walk(value: object) -> Iterator[tuple[str, object]]:
 
 
 def _has_secret(capture: object) -> bool:
-    return any(
-        key.lower() in FORBIDDEN_SECRET_KEYS and value not in (None, "", [], {})
-        for key, value in _walk(capture)
-    )
+    return any(key.lower() in FORBIDDEN_SECRET_KEYS for key, _value in _walk(capture))
 
 
 def _has_secret_url(capture: object) -> bool:
-    for key, value in _walk(capture):
-        if key.lower() in {"request_url", "url"} and isinstance(value, str):
-            lowered = value.lower()
-            if any(marker in lowered for marker in SECRET_QUERY_MARKERS):
-                return True
+    for _key, value in _walk(capture):
+        if isinstance(value, str) and any(
+            marker in value.lower() for marker in SECRET_QUERY_MARKERS
+        ):
+            return True
     endpoint = capture.get("endpoint_family") if isinstance(capture, dict) else None
     return isinstance(endpoint, str) and any(
         marker in endpoint.lower() for marker in SECRET_QUERY_MARKERS
