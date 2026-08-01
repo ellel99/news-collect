@@ -4,6 +4,11 @@
 
 ### Documentation
 
+- 激活 `SPEC-0017 — Four Provider Replay Normalization Candidate`，并将经审核的 SPEC-0006
+  标记 Completed；SPEC-0005 X Source 范围保持不变。
+- 新增 mock-only `provider_normalize_replay.py`：从 gitignored local capture 生成 common
+  envelope coverage 与 provider-specific content-free summary；无 API、capture、Adapter、DB、
+  collection、正式 normalization/dedup 或 AI。
 - 强化 EIA raw capture 写盘前 secret sanitization：递归移除回显 credential fields 和含 secret
   query marker 的字符串，清理失败则不写 capture；audit 继续 fail closed。
 - 修复 SPEC-0006 review blockers：空 capture audit 目录现在 fail closed，replay summary 增加

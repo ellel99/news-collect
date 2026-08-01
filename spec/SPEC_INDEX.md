@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0006（Scaffold Review；real capture not started）
+Active SPEC：SPEC-0017（Implementation Review；replay-only candidate）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -11,10 +11,11 @@ Active SPEC：SPEC-0006（Scaffold Review；real capture not started）
 | SPEC-0003 | Collection Framework, Scheduler, Cursor and Retry | Completed | SPEC-0002 |
 | SPEC-0004 | First Approved Polling Source Pilot | Inactive — preflight evaluation completed；Adapter implementation not started；future implementation requires reactivation | SPEC-0003 |
 | SPEC-0005 | Approved X Source and Account Collection | Planned；统一 Connector/Adapter 边界 | SPEC-0003 |
-| SPEC-0006 | Raw Capture & Replay Evaluation | Active — Scaffold Review；real capture not started | SPEC-0004 evaluation evidence |
+| SPEC-0006 | Raw Capture & Replay Evaluation | Completed — four-provider bounded capture/audit/replay approved | SPEC-0004 evaluation evidence |
 | SPEC-0007 | Telegram Push Bot | Planned；依赖未来 Normalization/Dedup/Outbox SPEC | dependency number TBD |
 | SPEC-0008 | Telegram Management Bot | Planned | SPEC-0002/0003/0007 |
 | SPEC-0009 | Operations, Backup, Restore and Phase 1 Acceptance | Planned | SPEC-0001–0008 |
+| SPEC-0017 | Four Provider Replay Normalization Candidate | Active — Implementation Review；content-free local replay only | SPEC-0006 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -57,6 +58,7 @@ Active SPEC：SPEC-0006（Scaffold Review；real capture not started）
 
 该主题仍为 Planned，但因用户明确将编号 `SPEC-0006` 用于 Raw Capture & Replay Evaluation，
 其新编号待未来文档准备时确定。`Planned` 不表示授权，不得由当前 replay scaffold 顺带实现。
+SPEC-0017 只生成 normalization candidate coverage，不替代或激活该正式 pipeline 主题。
 
 ## 候选规划（非 Active）
 
@@ -73,4 +75,4 @@ Active SPEC：SPEC-0006（Scaffold Review；real capture not started）
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-除当前 Active 的 SPEC-0006 外，SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。
+除当前 Active 的 SPEC-0017 外，SPEC-0005 及之后所有 Planned/candidate SPEC 均未激活。
