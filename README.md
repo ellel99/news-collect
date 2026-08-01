@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0019-evidence-contract-implementation-scaffold.md`](spec/SPEC-0019-evidence-contract-implementation-scaffold.md)，仅实现 pure evidence contract scaffold
+- 开发入口：[`spec/SPEC-0020-provider-evidence-mapping-scaffold.md`](spec/SPEC-0020-provider-evidence-mapping-scaffold.md)，仅实现 pure in-memory provider evidence mapping scaffold
 
 Phase 1 固定主链路：
 
@@ -67,11 +67,11 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0019-evidence-contract-implementation-scaffold.md`](spec/SPEC-0019-evidence-contract-implementation-scaffold.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0020-provider-evidence-mapping-scaffold.md`](spec/SPEC-0020-provider-evidence-mapping-scaffold.md) — Implementation Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
-- SPEC-0018 Normalized Evidence Contract 已 Completed；当前只实现标准库 enum/dataclass/pure
-  validation scaffold，不实现 Adapter、DB、collection、正式 normalization/dedup、Event 或 AI
+- SPEC-0019 Evidence Contract Implementation Scaffold 已 Completed；当前只实现 pure in-memory
+  provider evidence mapping，不实现 Adapter、DB、collection、正式 normalization/dedup、Event 或 AI
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向
