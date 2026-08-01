@@ -11,7 +11,7 @@ from types import ModuleType
 import httpx
 import pytest
 
-from market_intelligence.providers.preflight import marketaux
+from market_intelligence.providers.preflight import eia, marketaux
 
 SECRET = "capture-secret-must-not-leak"
 
@@ -26,6 +26,8 @@ def _load_script(name: str) -> ModuleType:
 
 
 provider_capture = _load_script("provider_capture")
+provider_capture_audit = _load_script("provider_capture_audit")
+provider_replay = _load_script("provider_replay")
 
 
 def _args(provider: str, *, limit: int = 1) -> argparse.Namespace:
@@ -154,6 +156,93 @@ def test_sec_recent_columns_are_truncated_to_ten() -> None:
     recent = sanitized["filings"]["recent"]
     assert len(recent["accessionNumber"]) == 10
     assert len(recent["form"]) == 10
+
+
+def test_eia_echoed_secrets_are_removed_before_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture_root = tmp_path / "local_evaluation" / "raw_provider_captures"
+    monkeypatch.setattr(provider_capture, "CAPTURE_ROOT", capture_root)
+    request = eia.build_request(
+        {"EIA_API_KEY": SECRET, "EIA_API_VERSION": "v2"},
+        dataset="electricity",
+        limit=1,
+        execute=True,
+    )
+    row = {
+        "period": "2026-01",
+        "price": "mock-value",
+        "sectorid": "RES",
+        "stateid": "US",
+    }
+    payload = {
+        "request": {
+            "api_key": SECRET,
+            "url": f"https://api.eia.gov/v2/example?api_key={SECRET}",
+            "params": {"frequency": "monthly"},
+        },
+        "response": {"data": [row]},
+    }
+    transport = httpx.MockTransport(lambda incoming: httpx.Response(200, json=payload))
+    report = provider_capture.create_capture(
+        request,
+        context={"dataset": "electricity"},
+        limit=1,
+        transport=transport,
+        captured_at=datetime(2026, 8, 2, tzinfo=UTC),
+    )
+    capture_file = tmp_path / str(report["capture_file"])
+    loaded = json.loads(capture_file.read_text(encoding="utf-8"))
+    serialized_capture = json.dumps(loaded)
+    assert loaded["response_body"]["request"] == {"params": {"frequency": "monthly"}}
+    assert loaded["response_body"]["response"]["data"] == [row]
+    assert SECRET not in serialized_capture
+    assert "api_key=" not in serialized_capture
+
+    audit = provider_capture_audit.audit_capture(capture_file)
+    serialized_audit = json.dumps(audit)
+    assert audit["has_secret_detected"] is False
+    assert audit["has_raw_request_url_with_secret"] is False
+    assert audit["replay_ready"] is True
+    assert SECRET not in serialized_audit
+    assert "mock-value" not in serialized_audit
+
+    replay = provider_replay.replay_summary(loaded)
+    serialized_replay = json.dumps(replay)
+    assert replay["replay_ready"] is True
+    assert replay["input_items"] == 1
+    assert SECRET not in serialized_replay
+    assert "mock-value" not in serialized_replay
+
+
+def test_capture_fails_closed_when_sanitizer_leaves_secret_risk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture_root = tmp_path / "local_evaluation" / "raw_provider_captures"
+    monkeypatch.setattr(provider_capture, "CAPTURE_ROOT", capture_root)
+    monkeypatch.setattr(
+        provider_capture,
+        "sanitize_response_body",
+        lambda payload, *, provider, limit: {"api_key": SECRET},
+    )
+    request = eia.build_request(
+        {"EIA_API_KEY": SECRET, "EIA_API_VERSION": "v2"},
+        dataset="electricity",
+        limit=1,
+        execute=True,
+    )
+    transport = httpx.MockTransport(lambda incoming: httpx.Response(200, json={"response": {}}))
+    with pytest.raises(ValueError, match="could not be sanitized"):
+        provider_capture.create_capture(
+            request,
+            context={"dataset": "electricity"},
+            limit=1,
+            transport=transport,
+            captured_at=datetime(2026, 8, 2, tzinfo=UTC),
+        )
+    assert not capture_root.exists()
 
 
 def test_local_evaluation_is_ignored_and_not_tracked() -> None:

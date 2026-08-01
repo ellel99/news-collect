@@ -36,6 +36,8 @@ SAFE_RESPONSE_HEADERS = frozenset(
 )
 SECRET_PARAM_NAMES = frozenset({"api_key", "api_token", "token"})
 SECRET_HEADER_NAMES = frozenset({"authorization", "user-agent", "x-finnhub-token"})
+FORBIDDEN_RESPONSE_KEYS = SECRET_PARAM_NAMES | frozenset({"authorization", "x-finnhub-token"})
+SECRET_QUERY_MARKERS = ("api_key=", "api_token=", "token=")
 SEC_CIK_BY_TICKER = {
     "AAPL": "0000320193",
     "MSFT": "0000789019",
@@ -160,7 +162,45 @@ def _truncate_list_body(payload: object, *, provider: str, limit: int) -> object
     return payload
 
 
+def _contains_secret_marker(value: str) -> bool:
+    lowered = value.lower()
+    return any(marker in lowered for marker in SECRET_QUERY_MARKERS)
+
+
+def _sanitize_provider_payload(payload: object) -> object:
+    if isinstance(payload, dict):
+        sanitized: dict[str, object] = {}
+        for key, value in payload.items():
+            if str(key).lower() in FORBIDDEN_RESPONSE_KEYS:
+                continue
+            if isinstance(value, str) and _contains_secret_marker(value):
+                continue
+            sanitized[str(key)] = _sanitize_provider_payload(value)
+        return sanitized
+    if isinstance(payload, list):
+        return [
+            _sanitize_provider_payload(value)
+            for value in payload
+            if not (isinstance(value, str) and _contains_secret_marker(value))
+        ]
+    return payload
+
+
+def _has_secret_risk(payload: object) -> bool:
+    if isinstance(payload, dict):
+        return any(
+            str(key).lower() in FORBIDDEN_RESPONSE_KEYS
+            or (isinstance(value, str) and _contains_secret_marker(value))
+            or _has_secret_risk(value)
+            for key, value in payload.items()
+        )
+    if isinstance(payload, list):
+        return any(_has_secret_risk(value) for value in payload)
+    return isinstance(payload, str) and _contains_secret_marker(payload)
+
+
 def sanitize_response_body(payload: object, *, provider: str, limit: int) -> object:
+    payload = _sanitize_provider_payload(payload)
     if provider == "sec_edgar":
         return _truncate_sec_body(payload, limit=limit)
     return _truncate_list_body(payload, provider=provider, limit=limit)
@@ -217,6 +257,8 @@ def create_capture(
     except ValueError as exc:
         raise ValueError("provider response is not JSON; capture not written") from exc
     body = sanitize_response_body(payload, provider=request.provider, limit=limit)
+    if _has_secret_risk(body):
+        raise ValueError("provider response could not be sanitized; capture not written")
     capture: dict[str, object] = {
         "capture_version": CAPTURE_VERSION,
         "provider": request.provider,

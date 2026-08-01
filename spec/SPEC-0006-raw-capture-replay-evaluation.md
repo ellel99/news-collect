@@ -66,6 +66,9 @@ smoke。Smoke 只证明最小响应结构可见，不提供可重复的 parser f
 - 不自动循环、调度、分页或 follow article / filing links。
 - 输出只能写入 `local_evaluation/raw_provider_captures/`。
 - stdout 只输出 path/hash/size/status 等安全元数据，不输出 response body。
+- Provider response 写盘前必须递归移除 secret-named fields 和含 secret query marker 的字符串；
+  清理后仍有风险时必须 fail closed，不写 capture。EIA 回显的 request metadata 适用同一规则，
+  但 `response.data` 的非 secret rows 必须保持原始结构。
 
 Raw capture 允许字段：
 

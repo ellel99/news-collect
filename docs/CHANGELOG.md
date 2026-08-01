@@ -4,6 +4,8 @@
 
 ### Documentation
 
+- 强化 EIA raw capture 写盘前 secret sanitization：递归移除回显 credential fields 和含 secret
+  query marker 的字符串，清理失败则不写 capture；audit 继续 fail closed。
 - 修复 SPEC-0006 review blockers：空 capture audit 目录现在 fail closed，replay summary 增加
   `replay_ready`，且该标记不代表 normalization 已实现。
 - 激活 `SPEC-0006 — Raw Capture & Replay Evaluation`，保持 SPEC-0005 X Source 范围不变；
