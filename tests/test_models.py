@@ -10,6 +10,7 @@ PHASE1_TABLES = {
     "notifications",
     "outbox_messages",
     "audit_logs",
+    "evidence_items",
 }
 
 FUTURE_TABLE_NAMES = {

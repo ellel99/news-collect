@@ -1,6 +1,6 @@
 # SPEC-0021 — Evidence Persistence / DB Schema Design
 
-Status：Active — Docs Review
+Status：Completed — Docs Review approved
 
 Phase：Phase 1 — Schema Design Only
 
@@ -149,20 +149,27 @@ schema allowlist/denylist、content/value/secret rejection、nullable non-conten
 
 ## 12. 验收标准
 
-- [ ] 用户/ChatGPT 审核独立表、required/nullable relations 与禁字段边界。
-- [ ] 用户/ChatGPT 审核候选唯一性、retention/license/access 门禁。
-- [ ] 明确记录 Docs Review PASS 不授权 migration/ORM/persistence。
-- [ ] 本 PR 只有文档变更，无 API、capture、Adapter、DB 或后续阶段实现。
+- [x] 用户/ChatGPT 审核独立表、required/nullable relations 与禁字段边界。
+- [x] 用户/ChatGPT 审核候选唯一性、retention/license/access 门禁。
+- [x] 明确记录 Docs Review PASS 不授权 migration/ORM/persistence。
+- [x] 文档审核 PR 只有文档变更，无 API、capture、Adapter、DB 或后续阶段实现。
 
 ## 13. Verification Evidence
 
 由本 PR 的文档 diff、Foundation validator、现有回归测试和 package review 记录证明。没有读取或
 提交 raw capture/`local_evaluation/`，也没有请求 Provider。
 
-## 14. 已知问题 / 待 Reviewer 决策
+## 14. Review History
+
+- PASS：PR #20 已完成 Docs Review 并批准 `evidence_items` schema design。
+- 后续独立实现只授权 `evidence_items` migration、SQLAlchemy ORM 与 PostgreSQL schema tests。
+- 不授权 Provider Adapter、AdapterRegistry、collection、scheduler、正式 normalization、dedup、
+  clustering、Event 或 AI。
+
+## 15. 已知问题 / 待 Reviewer 决策
 
 - provider revision 是否应允许同一 provider item ID 对应多个 hashes；
 - `dedup_candidate_key` 是否进入首版表；
 - FK delete behavior 与一致性约束由 DB 还是 application enforcement；
 - 各 Provider 最终 retention duration 与 license evidence；
-- Docs Review 后采用 `SPEC-0021-implementation` 还是新的 SPEC 编号。
+- 实现由 `SPEC-0021-implementation-evidence-persistence-schema.md` 独立承接。
