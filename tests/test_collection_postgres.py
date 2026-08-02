@@ -43,6 +43,13 @@ from market_intelligence.db.models import (
     SourceAccount,
     SourceType,
 )
+from market_intelligence.providers.contracts import (
+    ProviderTransportResponse,
+    ProviderTransportTimeout,
+)
+from market_intelligence.providers.marketaux import MarketauxAdapter
+from market_intelligence.providers.registry import ProviderAdapterRegistry
+from market_intelligence.providers.transport import MockProviderTransport
 
 POSTGRES_TEST_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -81,16 +88,18 @@ async def create_source(
     *,
     authorization_status: AuthorizationStatus = AuthorizationStatus.AUTHORIZED,
     options: dict[str, Any] | None = None,
+    access_method: str = "fake",
+    enabled: bool = True,
 ) -> tuple[Source, SourceAccount]:
     async with factory.begin() as session:
         source = Source(
             code=f"fake-{uuid.uuid4().hex}",
             name="Synthetic Fixture",
             source_type=SourceType.RSS,
-            access_method="fake",
+            access_method=access_method,
             authorization_status=authorization_status,
             retention_class="metadata_only",
-            enabled=True,
+            enabled=enabled,
             schedule_seconds=30,
         )
         session.add(source)
@@ -118,7 +127,36 @@ def settings() -> Settings:
         COLLECTION_TASK_DEADLINE_SECONDS=5,
         COLLECTION_STALE_RUN_AFTER_SECONDS=10,
         COLLECTION_LOCK_TTL_SECONDS=4,
+        COLLECTION_BATCH_LIMIT=3,
         _env_file=None,
+    )
+
+
+def provider_runtime(
+    response: ProviderTransportResponse | Exception,
+) -> tuple[ProviderAdapterRegistry, MockProviderTransport]:
+    registry = ProviderAdapterRegistry()
+    registry.register("marketaux", MarketauxAdapter())
+    return registry, MockProviderTransport([response])
+
+
+def marketaux_response(
+    *, status_code: int = 200, item_id: str = "marketaux-item-1"
+) -> ProviderTransportResponse:
+    return ProviderTransportResponse(
+        status_code=status_code,
+        received_at=datetime.now(UTC),
+        body={
+            "data": [
+                {
+                    "uuid": item_id,
+                    "published_at": "2026-08-02T10:00:00Z",
+                    "title": "synthetic fixture",
+                    "url": "https://example.invalid/synthetic",
+                }
+            ]
+        },
+        headers={},
     )
 
 
@@ -158,6 +196,189 @@ async def test_runner_persists_raw_item_and_cursor_atomically(
         assert run.new_count == 0 and run.duplicate_count == 0
         assert cursor is not None and cursor.cursor_value == "2"
         assert len(raw_items) == 2
+
+
+@pytest.mark.asyncio
+async def test_runner_uses_provider_registry_and_checkpoints_after_raw_item(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(marketaux_response())
+    outcome = await CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    ).run(make_target(source, account))
+
+    assert outcome.status == CollectionRunStatus.SUCCEEDED.value
+    assert len(transport.calls) == 1
+    async with factory() as session:
+        raw_items = list(
+            (
+                await session.scalars(
+                    select(RawItem).where(RawItem.collection_run_id == outcome.collection_run_id)
+                )
+            ).all()
+        )
+        cursor = await session.scalar(
+            select(CollectionCursor).where(CollectionCursor.source_account_id == account.id)
+        )
+        assert len(raw_items) == 1
+        assert raw_items[0].external_id == "marketaux-item-1"
+        assert cursor is not None
+        assert cursor.cursor_type == "provider_cursor_v1"
+        assert cursor.cursor_value is not None
+
+
+@pytest.mark.asyncio
+async def test_provider_raw_item_failure_does_not_advance_cursor(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(marketaux_response(item_id="x" * 300))
+    outcome = await CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    ).run(make_target(source, account))
+
+    assert outcome.status == "retry"
+    async with factory() as session:
+        assert await session.scalar(select(text("count(*)")).select_from(RawItem)) == 0
+        assert await session.scalar(select(text("count(*)")).select_from(CollectionCursor)) == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_safe_error_fails_run_without_raw_item(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(marketaux_response(status_code=429))
+    runner = CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    )
+    outcome = await runner.run(
+        make_target(source, account), attempt=settings().COLLECTION_MAX_RETRIES
+    )
+
+    assert outcome.status == "failed"
+    async with factory() as session:
+        run = await session.get(CollectionRun, outcome.collection_run_id)
+        assert run is not None
+        assert run.error_code == CollectionErrorCode.RATE_LIMITED.value
+        assert await session.scalar(select(text("count(*)")).select_from(RawItem)) == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_timeout_maps_to_safe_collection_error(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(ProviderTransportTimeout())
+    runner = CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    )
+    outcome = await runner.run(
+        make_target(source, account), attempt=settings().COLLECTION_MAX_RETRIES
+    )
+
+    assert outcome.status == "failed"
+    async with factory() as session:
+        run = await session.get(CollectionRun, outcome.collection_run_id)
+        assert run is not None
+        assert run.error_code == CollectionErrorCode.TIMEOUT.value
+        assert run.error_message_redacted == "provider_request_timed_out"
+        assert await session.scalar(select(text("count(*)")).select_from(RawItem)) == 0
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_provider_source_does_not_call_adapter(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        authorization_status=AuthorizationStatus.PLANNED,
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(marketaux_response())
+    runner = CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    )
+    with pytest.raises(ClassifiedCollectionError) as caught:
+        await runner.run(make_target(source, account))
+    assert caught.value.code == CollectionErrorCode.CONFIG_INVALID
+    assert transport.calls == []
+    await assert_no_collection_output(factory)
+
+
+@pytest.mark.asyncio
+async def test_disabled_provider_source_does_not_call_adapter(
+    collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
+) -> None:
+    factory, redis = collection_runtime
+    source, account = await create_source(
+        factory,
+        access_method="marketaux",
+        enabled=False,
+        options={"query": "synthetic"},
+    )
+    provider_registry, transport = provider_runtime(marketaux_response())
+    runner = CollectionRunner(
+        factory,
+        redis,
+        build_fake_registry(),
+        settings(),
+        provider_registry=provider_registry,
+        provider_transport=transport,
+    )
+    with pytest.raises(ClassifiedCollectionError) as caught:
+        await runner.run(make_target(source, account))
+    assert caught.value.code == CollectionErrorCode.CONFIG_INVALID
+    assert transport.calls == []
+    await assert_no_collection_output(factory)
 
 
 @pytest.mark.asyncio

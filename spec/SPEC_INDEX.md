@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0025（Implementation Review；Provider Adapter Scaffold only）
+Active SPEC：SPEC-0026（Implementation Review；Collection Runner Adapter Registry mock integration only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -24,7 +24,8 @@ Active SPEC：SPEC-0025（Implementation Review；Provider Adapter Scaffold only
 | SPEC-0023 | Evidence Write Path Design | Completed — Docs Review approved | SPEC-0019/0020/0021 |
 | SPEC-0023 implementation | Evidence Write Path Implementation | Completed — Implementation Review approved | SPEC-0023 Docs Review |
 | SPEC-0024 | Provider Adapter Integration Design | Completed — Docs Review approved | SPEC-0003/0020/0023 implementation |
-| SPEC-0025 | Provider Adapter Scaffold Implementation | Active — Implementation Review | SPEC-0024 Docs Review |
+| SPEC-0025 | Provider Adapter Scaffold Implementation | Completed — Implementation Review approved | SPEC-0024 Docs Review |
+| SPEC-0026 | Collection Runner Adapter Registry Integration | Active — Implementation Review | SPEC-0025 implementation |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -86,8 +87,9 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-SPEC-0021 implementation、SPEC-0023 Docs Review/implementation 与 SPEC-0024 Docs Review 均已
-Completed。当前唯一 Active SPEC 是 SPEC-0025，只实现 provider contracts、fail-closed registry、
-mock transport 与 Marketaux mocked scaffold；不授权真实 API Adapter、collection integration 或
-credential wiring。SPEC-0005 及其他 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup
-and Event Candidate Layer 且未启动。
+SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review 与
+SPEC-0025 implementation 均已 Completed。当前唯一 Active SPEC 是 SPEC-0026，只实现 collection
+runner 到 AdapterRegistry 的 mocked integration、RawItem persistence 与成功后的 cursor checkpoint；
+不授权真实 API Adapter、scheduler、RawItem → Evidence orchestration 或 credential wiring。
+SPEC-0005 及其他 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate
+Layer 且未启动。

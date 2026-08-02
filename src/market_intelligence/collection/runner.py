@@ -24,6 +24,7 @@ from market_intelligence.collection.locking import (
     retry_marker_key,
     target_lock_key,
 )
+from market_intelligence.collection.provider_adapter import ProviderCollectionAdapter
 from market_intelligence.collection.registry import AdapterRegistry
 from market_intelligence.collection.retry import RetryPolicy
 from market_intelligence.core.config import Settings
@@ -37,6 +38,8 @@ from market_intelligence.db.models import (
     Source,
     SourceAccount,
 )
+from market_intelligence.providers.contracts import ProviderTransport
+from market_intelligence.providers.registry import ProviderAdapterRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,12 +58,16 @@ class CollectionRunner:
         settings: Settings,
         *,
         random_source: Random | None = None,
+        provider_registry: ProviderAdapterRegistry | None = None,
+        provider_transport: ProviderTransport | None = None,
     ) -> None:
         self.factory = factory
         self.redis = redis
         self.registry = registry
         self.settings = settings
         self.random = random_source or Random()
+        self.provider_registry = provider_registry
+        self.provider_transport = provider_transport
         self.retry_policy = RetryPolicy(
             settings.COLLECTION_MAX_RETRIES,
             settings.COLLECTION_RETRY_BASE_SECONDS,
@@ -84,7 +91,7 @@ class CollectionRunner:
         run_id = collection_run_id
         try:
             run_id = run_id or await self._create_run(target)
-            adapter = self.registry.resolve(target.access_method)
+            adapter = self._resolve_adapter(target.access_method)
             deadline = datetime.now(UTC) + timedelta(
                 seconds=self.settings.COLLECTION_TASK_DEADLINE_SECONDS
             )
@@ -158,7 +165,7 @@ class CollectionRunner:
             await lock.release()
 
     async def _validate_target(self, target: CollectionTarget) -> None:
-        if target.access_method != "fake" or not self.registry.supports(target.access_method):
+        if not self._supports_access_method(target.access_method):
             raise ClassifiedCollectionError(
                 CollectionErrorCode.CONFIG_INVALID, "access method is not registered"
             )
@@ -192,6 +199,28 @@ class CollectionRunner:
                         CollectionErrorCode.CONFIG_INVALID,
                         "source-level collection is forbidden when accounts exist",
                     )
+
+    def _supports_access_method(self, access_method: str) -> bool:
+        if access_method == "fake":
+            return self.registry.supports(access_method)
+        return (
+            self.provider_registry is not None
+            and self.provider_transport is not None
+            and self.provider_registry.supports(access_method)
+        )
+
+    def _resolve_adapter(self, access_method: str) -> CollectionAdapter:
+        if access_method == "fake":
+            return self.registry.resolve(access_method)
+        if self.provider_registry is None or self.provider_transport is None:
+            raise ClassifiedCollectionError(
+                CollectionErrorCode.CONFIG_INVALID,
+                "provider adapter integration is not configured",
+            )
+        return ProviderCollectionAdapter(
+            self.provider_registry.get(access_method),
+            self.provider_transport,
+        )
 
     async def _create_run(self, target: CollectionTarget) -> UUID:
         async with self.factory.begin() as session:
