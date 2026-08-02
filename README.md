@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0021-implementation-evidence-persistence-schema.md`](spec/SPEC-0021-implementation-evidence-persistence-schema.md)，只实现 `evidence_items` schema、ORM 与 PostgreSQL tests
+- 开发入口：[`spec/SPEC-0023-evidence-write-path-design.md`](spec/SPEC-0023-evidence-write-path-design.md)，仅进行 docs-only Evidence Write Path design
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0021-implementation-evidence-persistence-schema.md`](spec/SPEC-0021-implementation-evidence-persistence-schema.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0023-evidence-write-path-design.md`](spec/SPEC-0023-evidence-write-path-design.md) — Docs Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019/0020 pure contract 与 mapping scaffold 已 Completed；当前只设计 evidence persistence
