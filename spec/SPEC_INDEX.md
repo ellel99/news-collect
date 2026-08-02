@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0020（Implementation Review；pure in-memory provider evidence mapping only）
+Active SPEC：SPEC-0021（Docs Review；evidence persistence schema design only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -18,7 +18,8 @@ Active SPEC：SPEC-0020（Implementation Review；pure in-memory provider eviden
 | SPEC-0017 | Four Provider Replay Normalization Candidate | Completed — local replay-only verification approved | SPEC-0006 |
 | SPEC-0018 | Normalized Evidence Contract | Completed — Docs Review approved | SPEC-0017 |
 | SPEC-0019 | Evidence Contract Implementation Scaffold | Completed — Implementation Review approved | SPEC-0018 |
-| SPEC-0020 | Provider Evidence Mapping Scaffold | Active — Implementation Review；pure/IO-free/no DB | SPEC-0019 |
+| SPEC-0020 | Provider Evidence Mapping Scaffold | Completed — Implementation Review approved | SPEC-0019 |
+| SPEC-0021 | Evidence Persistence / DB Schema Design | Active — Docs Review；docs-only/no migration/ORM | SPEC-0019/0020 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -77,8 +78,8 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0014 Market Data Validation Adapters | 定义可替换行情/财务数据 adapter 与市场验证合同 | SPEC-0013 |
 | SPEC-0015 Research Recommendation Contract | 定义研究参考状态、置信度、风险、催化剂和失效条件；不得自动执行 | SPEC-0013、SPEC-0014、AI boundary Freeze Review |
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
-| SPEC-0021 Evidence Persistence / DB Schema | 设计并实现 evidence persistence | SPEC-0019/0020 and explicit schema approval |
 | SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-除当前 Active 的 SPEC-0020 外，SPEC-0005 及其他 Planned/candidate SPEC 均未激活。
+除当前 Active 的 SPEC-0021 Docs Review 外，SPEC-0005 及其他 Planned/candidate SPEC 均未激活。
+SPEC-0021 Docs Review PASS 也不授权 migration、ORM 或 persistence implementation。
