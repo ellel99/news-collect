@@ -8,10 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0023-evidence-write-path-design.md`
+- 当前 Active SPEC：`spec/SPEC-0023-implementation-evidence-write-path.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0023 Evidence Write Path Docs Review；只允许 docs-only design，不得实现
-  repository/service、修改 migration/ORM 或接入任何 runtime flow
+- 当前工作状态：SPEC-0023 Evidence Write Path Implementation Review；只允许实现
+  `CommonEvidenceEnvelope` → `evidence_items` repository/service、provenance pre-check、
+  provider-scoped idempotency、per-row savepoint 和 safe summary
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
@@ -32,15 +33,15 @@
 - SPEC-0017 local replay-only normalization candidate 已通过 Review 并 Completed；19/19 candidates，
   `content_values_emitted=false`
 - SPEC-0018 Normalized Evidence Contract Docs Review 已通过并 Completed；仅表示合同设计通过
-- SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review 与
-  SPEC-0021 schema implementation 均已 Completed；当前只设计 `CommonEvidenceEnvelope` 安全写入
-  `evidence_items` 的 Write Path，不得写实现、请求 Provider、读取 local capture，或实现
-  Adapter/collection/正式 normalization/dedup/Event/AI
+- SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review/schema
+  implementation 与 SPEC-0023 Docs Review 均已 Completed；当前只实现
+  `CommonEvidenceEnvelope` 安全写入 `evidence_items`，不得修改 migration/ORM/schema、请求
+  Provider、读取 local capture，或实现 Adapter/collection/正式 normalization/dedup/Event/AI
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
-- SPEC-0023 只设计未来 Write Path；SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X
-  Source 范围不变
+- SPEC-0023 implementation 只写既有 `evidence_items`；SPEC-0022 仍为非 Active Dedup/Event
+  candidate，SPEC-0005 X Source 范围不变
 
 ## 架构修订状态
 

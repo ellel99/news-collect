@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — SPEC-0023 Evidence Write Path Implementation
+
+- 将 SPEC-0023 Docs Review 标记为 Completed，并激活独立 Evidence Write Path Implementation
+  Review。
+- 新增 `CommonEvidenceEnvelope` → `evidence_items` 安全写入 service/repository：unsafe reference
+  置 `NULL` 并 blocked、provenance pre-check、provider-scoped duplicate/conflict、per-row savepoint
+  与计数守恒 summary。
+- 新增 synthetic-only PostgreSQL tests 与 source audit；无 migration/ORM/schema、API/capture、
+  Adapter、collection、正式 normalization/dedup/Event 或 AI，SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0023 Evidence Write Path Design
 
 - 将 SPEC-0021 schema implementation 标记为 `Completed — Implementation Review approved`；
