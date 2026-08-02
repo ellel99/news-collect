@@ -1,6 +1,6 @@
 # SPEC-0020 — Provider Evidence Mapping Scaffold
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Provider Mapping Scaffold
 
@@ -96,5 +96,16 @@ reportDate；ticker/form 只生成安全哈希 refs；primaryDocument 只映射 
 
 ## 9. 后续候选（非 Active）
 
-SPEC-0021 Evidence Persistence / DB Schema 与 SPEC-0022 Dedup and Event Candidate Layer 均未激活。
+SPEC-0021 Evidence Persistence / DB Schema Design 已进入独立 Docs Review；SPEC-0022 Dedup and
+Event Candidate Layer 仍未激活。
 SPEC-0005 X Source and Account Collection 范围保持不变。
+
+## 10. Review History
+
+| Round | Result | Findings | Resolution |
+|---|---|---|---|
+| 1 | PASS | Pure mapping、identity gates 与 content/value safety 通过审核 | Completed — Implementation Review approved |
+
+本 SPEC 只完成 pure in-memory provider mapping scaffold。未请求 API、读取 raw capture、实现
+Adapter、写入 DB、集成 collection，或实现 formal normalization、dedup、Event、AI。Evidence
+Mapping Scaffold 不是正式 Evidence Entity、Event Evidence Layer 或 AI Evidence Analysis。

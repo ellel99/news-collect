@@ -4,6 +4,12 @@
 
 ### Documentation
 
+- 将 SPEC-0020 标记 `Completed — Implementation Review approved`，并激活 docs-only SPEC-0021
+  Evidence Persistence / DB Schema Design。
+- 记录候选 `evidence_items` 字段、provenance、nullable content relation、禁字段、唯一性、license/
+  retention 与 migration gate；本轮无 migration、ORM、DB/persistence implementation、API、capture、
+  Adapter、collection、formal normalization/dedup、Event 或 AI。
+
 - 将 SPEC-0019 标记 `Completed — Implementation Review approved`，并激活 SPEC-0020 Provider
   Evidence Mapping Scaffold。
 - 新增四 Provider pure in-memory evidence mapping 与 mock-only tests；输出只包含 presence、count、
