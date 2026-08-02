@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SPEC-0024 Provider Adapter Integration Design
+
+- 将 SPEC-0023 Evidence Write Path implementation 标记为 `Completed — Implementation Review
+  approved`，记录 PR #23 已交付安全 sanitize、provenance、provider-scoped idempotency、per-row
+  savepoint、no silent data loss 与 PostgreSQL tests。
+- 激活 docs-only SPEC-0024，设计 Marketaux、Finnhub、EIA Open Data、SEC EDGAR Adapter 的
+  input/output、secret、rate/retry/timeout、cursor、RawItem retention、mapping handoff 与 collection
+  runner integration 边界。
+- 明确 Adapter 只负责 fetch + sanitized RawItemEnvelope，不得直接调用 EvidenceWriteService；本轮
+  无 Python、Adapter/registry、collection、API/capture、migration/ORM/schema、正式
+  normalization/dedup/Event 或 AI，SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0023 Evidence Write Path Implementation
 
 - 将 SPEC-0023 Docs Review 标记为 Completed，并激活独立 Evidence Write Path Implementation

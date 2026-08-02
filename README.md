@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0023-implementation-evidence-write-path.md`](spec/SPEC-0023-implementation-evidence-write-path.md)，仅实现 `CommonEvidenceEnvelope` → `evidence_items` Write Path
+- 开发入口：[`spec/SPEC-0024-provider-adapter-integration-design.md`](spec/SPEC-0024-provider-adapter-integration-design.md)，仅进行 docs-only Provider Adapter Integration design
 
 Phase 1 固定主链路：
 
@@ -67,16 +67,15 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0023-implementation-evidence-write-path.md`](spec/SPEC-0023-implementation-evidence-write-path.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0024-provider-adapter-integration-design.md`](spec/SPEC-0024-provider-adapter-integration-design.md) — Docs Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021
   schema design 与 `evidence_items` migration、ORM、PostgreSQL schema tests implementation 已
-  Completed，SPEC-0023 Write Path Docs Review 也已 Completed。当前只实现
-  `CommonEvidenceEnvelope` → `evidence_items` 的安全 repository/service、provenance、幂等、逐行
-  savepoint 与 safe summary；不修改 migration、ORM 或 DB schema，不请求 API，不读取 raw
-  capture/`local_evaluation/`，不实现 Adapter、collection、formal normalization、dedup、Event 或
-  AI；SPEC-0022 未启动
+  Completed，SPEC-0023 Write Path Docs Review 与 implementation 也已 Completed。当前只设计
+  Marketaux、Finnhub、EIA Open Data、SEC EDGAR 的 Provider Adapter Integration；不写 Python、
+  AdapterRegistry 或 collection integration，不修改 migration、ORM 或 DB schema，不请求 API，不读取
+  raw capture/`local_evaluation/`，不实现 formal normalization、dedup、Event 或 AI；SPEC-0022 未启动
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向

@@ -1,6 +1,6 @@
 # SPEC-0023 — Evidence Write Path Implementation
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Evidence Write Path Implementation
 
@@ -173,8 +173,25 @@ raw capture/`local_evaluation/`。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #23、CI、209 tests 与安全 review package | Implementation Review approved and merged |
 
 ## 15. 后续门禁
 
-本 SPEC PASS 前不得开始其他 SPEC。PASS 也不授权 SPEC-0022、Adapter、collection、正式
-normalization、dedup、Event 或 AI；任何后续能力必须由用户单独激活和审核。
+本 SPEC 已 PASS 并合并，但不授权 SPEC-0022、Adapter、collection、正式 normalization、dedup、
+Event 或 AI；任何后续能力必须由用户单独激活和审核。
+
+## 16. Completed Implementation
+
+PR #23 已完成并合并：
+
+- `EvidenceWriteService` 与 `EvidenceWriteRepository`；
+- `EvidenceWriteRequest`、`EvidenceWriteOutcome`、`EvidenceWriteSummary` 和安全错误/status；
+- unsafe `raw_payload_reference` 插入前 sanitize、`NULL` 替换、blocked 状态与固定安全错误；
+- Source/SourceAccount/RawItem/ContentItem provenance pre-check；
+- provider-scoped idempotency、exact duplicate 与 identity conflict handling；
+- per-row savepoint、no silent data loss 与 summary count conservation；
+- synthetic-only PostgreSQL integration/source-audit tests。
+
+PR #23 没有实现 Provider Adapter、AdapterRegistry、collection runner integration、scheduler、正式
+normalization、dedup/Event、AI、Telegram 或 investment recommendation；没有 migration、ORM 或
+DB schema 变化，也没有请求 Provider API 或读取 raw capture/`local_evaluation/`。
