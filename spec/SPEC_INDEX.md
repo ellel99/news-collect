@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0023（Docs Review；Evidence Write Path design only）
+Active SPEC：SPEC-0023 implementation（Implementation Review；Evidence Write Path only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -21,7 +21,8 @@ Active SPEC：SPEC-0023（Docs Review；Evidence Write Path design only）
 | SPEC-0020 | Provider Evidence Mapping Scaffold | Completed — Implementation Review approved | SPEC-0019 |
 | SPEC-0021 | Evidence Persistence / DB Schema Design | Completed — Docs Review approved | SPEC-0019/0020 |
 | SPEC-0021 implementation | Evidence Persistence Schema Implementation | Completed — Implementation Review approved | SPEC-0021 Docs Review |
-| SPEC-0023 | Evidence Write Path Design | Active — Docs Review；docs-only/no implementation | SPEC-0019/0020/0021 |
+| SPEC-0023 | Evidence Write Path Design | Completed — Docs Review approved | SPEC-0019/0020/0021 |
+| SPEC-0023 implementation | Evidence Write Path Implementation | Active — Implementation Review | SPEC-0023 Docs Review |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -83,7 +84,8 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-SPEC-0021 implementation 已通过 Review 并 Completed。当前唯一 Active SPEC 是 docs-only
-SPEC-0023，只设计 Evidence Write Path 的安全验证、provenance、idempotency、事务和 failure
-contract，不授权实现。SPEC-0005 及其他 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为
-Dedup and Event Candidate Layer 且未启动。
+SPEC-0021 implementation 与 SPEC-0023 Docs Review 已通过 Review 并 Completed。当前唯一 Active
+SPEC 是 SPEC-0023 implementation，只实现 `CommonEvidenceEnvelope` → `evidence_items` 的安全
+写入、provenance、provider-scoped idempotency、per-row savepoint 与 failure summary。SPEC-0005
+及其他 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate Layer 且
+未启动。

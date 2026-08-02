@@ -1,6 +1,6 @@
 # SPEC-0023 — Evidence Write Path Design
 
-Status：Active — Docs Review
+Status：Completed — Docs Review approved
 
 Phase：Phase 1 — Evidence Write Path Design Only
 
@@ -227,20 +227,27 @@ PostgreSQL 语义不可由 SQLite 替代。
 
 ## 14. 验收标准（Docs Review）
 
-- [ ] 输入/输出和单表写入边界经 Reviewer 批准。
-- [ ] unsafe reference 预校验、安全替换/null、status/error 行为经 Reviewer 批准。
-- [ ] provenance、idempotency/conflict、savepoint 与 summary 守恒规则经 Reviewer 批准。
-- [ ] error/log allowlist 和禁止输出边界经 Reviewer 批准。
-- [ ] 明确 docs-only，无 migration、ORM、repository/service 或运行时集成。
-- [ ] SPEC-0022 未激活，Foundation v2.1-FROZEN 未修改。
+- [x] 输入/输出和单表写入边界经 Reviewer 批准。
+- [x] unsafe reference 预校验、安全替换/null、status/error 行为经 Reviewer 批准。
+- [x] provenance、idempotency/conflict、savepoint 与 summary 守恒规则经 Reviewer 批准。
+- [x] error/log allowlist 和禁止输出边界经 Reviewer 批准。
+- [x] 明确 docs-only，无 migration、ORM、repository/service 或运行时集成。
+- [x] SPEC-0022 未激活，Foundation v2.1-FROZEN 未修改。
 
 ## 15. Verification Evidence
 
-以本 PR Markdown-only diff、Foundation validator、现有回归测试和安全 review package 为证。
-没有请求 API、读取 raw capture/`local_evaluation/` 或实现 Write Path。
+PR #22 已通过 Docs Review 并合并。该 Review 只批准 Write Path 设计，没有请求 API、读取 raw
+capture/`local_evaluation/` 或实现 Write Path。
 
 ## 16. 后续门禁
 
-Docs Review PASS 只批准设计，不授权实现。Evidence Write Path 必须在用户/ChatGPT 明确批准的独立
-Implementation Review 中实现；不得以本设计开始 SPEC-0022、Adapter、collection、正式
+Docs Review PASS 只批准设计。用户随后单独授权
+`spec/SPEC-0023-implementation-evidence-write-path.md`，其实现范围仅为
+`CommonEvidenceEnvelope` → `evidence_items`；不得据此开始 SPEC-0022、Adapter、collection、正式
 normalization、dedup、Event 或 AI。
+
+## 17. Review History
+
+| Round | Result | Evidence | Resolution |
+|---|---|---|---|
+| 1 | PASS | PR #22、CI、Foundation validator 与 docs review package | Docs Review approved and merged；只批准 Write Path 设计 |
