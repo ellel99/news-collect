@@ -6,6 +6,8 @@
   implementation review。
 - 新增单一 `0003` migration 与 `EvidenceItem` ORM，只创建 `evidence_items`，保留既有表。
 - 增加 PostgreSQL schema、FK、allowlist、flags、JSONB shape、internal reference 与唯一性测试。
+- 加固 `raw_payload_reference` secret marker 拒绝规则，并通过 composite FK 在数据库层强制
+  `evidence_items` 与 `raw_items` 的 Source provenance 一致。
 - 本轮无外部 API、capture/raw local data、Adapter、collection、正式 normalization、dedup、
   clustering、Event 或 AI；SPEC-0022 未启动，Foundation v2.1-FROZEN 不变。
 

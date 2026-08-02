@@ -117,6 +117,7 @@ async def test_evidence_migration_upgrade_downgrade_reupgrade() -> None:
             table for table in Base.metadata.sorted_tables if table.name != "evidence_items"
         ]
         Base.metadata.create_all(sync_connection, tables=existing_tables)
+        sync_connection.execute(text("DROP INDEX uq_raw_items_id_source_id"))
         revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0003")
         assert revision is not None
         assert revision.down_revision == "0002"
@@ -124,8 +125,14 @@ async def test_evidence_migration_upgrade_downgrade_reupgrade() -> None:
         with Operations.context(MigrationContext.configure(sync_connection)):
             module.upgrade()
             assert inspect(sync_connection).has_table("evidence_items")
+            assert "uq_raw_items_id_source_id" in {
+                index["name"] for index in inspect(sync_connection).get_indexes("raw_items")
+            }
             module.downgrade()
             assert not inspect(sync_connection).has_table("evidence_items")
+            assert "uq_raw_items_id_source_id" not in {
+                index["name"] for index in inspect(sync_connection).get_indexes("raw_items")
+            }
             module.upgrade()
             assert inspect(sync_connection).has_table("evidence_items")
 
@@ -247,6 +254,11 @@ async def test_evidence_table_columns_and_nullability(
     assert nullable["raw_item_id"] is False
     assert nullable["content_item_id"] is True
     assert set(EvidenceItem.__table__.columns.keys()) == EXPECTED_COLUMNS
+    assert any(
+        {element.parent.name for element in constraint.elements} == {"raw_item_id", "source_id"}
+        and {element.column.table.name for element in constraint.elements} == {"raw_items"}
+        for constraint in EvidenceItem.__table__.foreign_key_constraints
+    )
 
 
 @pytest.mark.asyncio
@@ -333,6 +345,35 @@ async def test_external_raw_payload_references_are_rejected(
 
 
 @pytest.mark.asyncio
+async def test_internal_raw_payload_reference_is_accepted(
+    evidence_connection: AsyncConnection,
+) -> None:
+    values = await complete_values(
+        evidence_connection, raw_payload_reference="internal://safe/reference"
+    )
+    assert await insert_evidence(evidence_connection, values)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "internal://capture/api_key=secret",
+        "capture://provider/api_token=secret",
+        "local-ref://provider/token=secret",
+        "internal://authorization=secret",
+        "internal://x-finnhub-token=secret",
+    ],
+)
+async def test_raw_payload_reference_secret_markers_are_rejected(
+    evidence_connection: AsyncConnection, reference: str
+) -> None:
+    values = await complete_values(evidence_connection, raw_payload_reference=reference)
+    with pytest.raises(IntegrityError):
+        await insert_evidence(evidence_connection, values)
+
+
+@pytest.mark.asyncio
 async def test_provider_hash_unique_index(evidence_connection: AsyncConnection) -> None:
     item_hash = "a" * 64
     first = await complete_values(evidence_connection, provider_item_hash=item_hash)
@@ -358,3 +399,18 @@ async def test_raw_item_foreign_key_is_enforced(evidence_connection: AsyncConnec
     values = await complete_values(evidence_connection, raw_item_id=uuid.uuid4())
     with pytest.raises(IntegrityError):
         await insert_evidence(evidence_connection, values)
+
+
+@pytest.mark.asyncio
+async def test_raw_item_and_source_provenance_must_match(
+    evidence_connection: AsyncConnection,
+) -> None:
+    matching = await complete_values(evidence_connection)
+    assert await insert_evidence(evidence_connection, matching)
+    await evidence_connection.commit()
+
+    mismatched = await complete_values(evidence_connection)
+    other_provenance = await provenance_fixture(evidence_connection)
+    mismatched["raw_item_id"] = other_provenance["raw_item_id"]
+    with pytest.raises(IntegrityError):
+        await insert_evidence(evidence_connection, mismatched)

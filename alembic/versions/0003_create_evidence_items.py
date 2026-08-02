@@ -14,6 +14,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.create_index(
+        "uq_raw_items_id_source_id",
+        "raw_items",
+        ["id", "source_id"],
+        unique=True,
+    )
     op.create_table(
         "evidence_items",
         sa.Column(
@@ -42,7 +48,6 @@ def upgrade() -> None:
         sa.Column(
             "raw_item_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("raw_items.id", ondelete="RESTRICT"),
             nullable=False,
         ),
         sa.Column(
@@ -198,6 +203,21 @@ def upgrade() -> None:
             "AND raw_payload_reference NOT LIKE 'https://%')",
             name="ck_evidence_items_raw_payload_reference_not_http",
         ),
+        sa.CheckConstraint(
+            "raw_payload_reference IS NULL OR ("
+            "lower(raw_payload_reference) NOT LIKE '%api_key=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%api_token=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%token=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%authorization%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%x-finnhub-token%')",
+            name="ck_evidence_items_raw_payload_reference_no_secret_markers",
+        ),
+        sa.ForeignKeyConstraint(
+            ["raw_item_id", "source_id"],
+            ["raw_items.id", "raw_items.source_id"],
+            name="fk_evidence_items_raw_item_source",
+            ondelete="RESTRICT",
+        ),
     )
     op.create_index(
         "uq_evidence_items_provider_hash",
@@ -226,3 +246,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("evidence_items")
+    op.drop_index("uq_raw_items_id_source_id", table_name="raw_items")

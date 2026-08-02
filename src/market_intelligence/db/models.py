@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -319,6 +320,7 @@ class RawItem(Base):
         Index("ix_raw_items_source_fetched", "source_id", "fetched_at"),
         Index("ix_raw_items_payload_hash", "payload_hash"),
         Index("ix_raw_items_parse_status", "parse_status"),
+        Index("uq_raw_items_id_source_id", "id", "source_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -355,7 +357,9 @@ class RawItem(Base):
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="raw_items")
     collection_run: Mapped[CollectionRun] = relationship(back_populates="raw_items")
     content_item: Mapped[ContentItem | None] = relationship(back_populates="raw_item")
-    evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="raw_item")
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(
+        back_populates="raw_item", overlaps="evidence_items"
+    )
 
 
 class ContentItem(Base):
@@ -537,6 +541,21 @@ class EvidenceItem(Base):
             "AND raw_payload_reference NOT LIKE 'https://%')",
             name="ck_evidence_items_raw_payload_reference_not_http",
         ),
+        CheckConstraint(
+            "raw_payload_reference IS NULL OR ("
+            "lower(raw_payload_reference) NOT LIKE '%api_key=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%api_token=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%token=%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%authorization%' AND "
+            "lower(raw_payload_reference) NOT LIKE '%x-finnhub-token%')",
+            name="ck_evidence_items_raw_payload_reference_no_secret_markers",
+        ),
+        ForeignKeyConstraint(
+            ["raw_item_id", "source_id"],
+            ["raw_items.id", "raw_items.source_id"],
+            name="fk_evidence_items_raw_item_source",
+            ondelete="RESTRICT",
+        ),
         Index(
             "uq_evidence_items_provider_hash",
             "provider",
@@ -573,9 +592,7 @@ class EvidenceItem(Base):
     source_account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source_accounts.id", ondelete="RESTRICT")
     )
-    raw_item_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("raw_items.id", ondelete="RESTRICT")
-    )
+    raw_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     content_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("content_items.id", ondelete="RESTRICT")
     )
@@ -609,9 +626,15 @@ class EvidenceItem(Base):
         onupdate=text("CURRENT_TIMESTAMP"),
     )
 
-    source: Mapped[Source] = relationship(back_populates="evidence_items")
+    source: Mapped[Source] = relationship(
+        back_populates="evidence_items", overlaps="evidence_items"
+    )
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="evidence_items")
-    raw_item: Mapped[RawItem] = relationship(back_populates="evidence_items")
+    raw_item: Mapped[RawItem] = relationship(
+        back_populates="evidence_items",
+        foreign_keys=[raw_item_id, source_id],
+        overlaps="evidence_items,source",
+    )
     content_item: Mapped[ContentItem | None] = relationship(back_populates="evidence_items")
 
 
