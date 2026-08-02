@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0021（Docs Review；evidence persistence schema design only）
+Active SPEC：SPEC-0021 implementation（Implementation Review；evidence_items schema only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -19,7 +19,8 @@ Active SPEC：SPEC-0021（Docs Review；evidence persistence schema design only�
 | SPEC-0018 | Normalized Evidence Contract | Completed — Docs Review approved | SPEC-0017 |
 | SPEC-0019 | Evidence Contract Implementation Scaffold | Completed — Implementation Review approved | SPEC-0018 |
 | SPEC-0020 | Provider Evidence Mapping Scaffold | Completed — Implementation Review approved | SPEC-0019 |
-| SPEC-0021 | Evidence Persistence / DB Schema Design | Active — Docs Review；docs-only/no migration/ORM | SPEC-0019/0020 |
+| SPEC-0021 | Evidence Persistence / DB Schema Design | Completed — Docs Review approved | SPEC-0019/0020 |
+| SPEC-0021 implementation | Evidence Persistence Schema Implementation | Active — Implementation Review；schema/ORM/PostgreSQL tests only | SPEC-0021 Docs Review |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -81,5 +82,7 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
-除当前 Active 的 SPEC-0021 Docs Review 外，SPEC-0005 及其他 Planned/candidate SPEC 均未激活。
-SPEC-0021 Docs Review PASS 也不授权 migration、ORM 或 persistence implementation。
+除当前 Active 的 SPEC-0021 implementation 外，SPEC-0005 及其他 Planned/candidate SPEC 均未激活。
+SPEC-0021 Docs Review 已完成；当前独立实现授权只覆盖 `evidence_items` migration、ORM 与
+PostgreSQL schema tests，不授权 Adapter、collection、正式 normalization、dedup、Event 或 AI。
+SPEC-0022 仍未激活。

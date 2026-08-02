@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CHAR,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -169,6 +170,7 @@ class Source(Base):
     collection_runs: Mapped[list[CollectionRun]] = relationship(back_populates="source")
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="source")
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source")
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source")
 
 
 class SourceAccount(Base):
@@ -221,6 +223,7 @@ class SourceAccount(Base):
     collection_runs: Mapped[list[CollectionRun]] = relationship(back_populates="source_account")
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="source_account")
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source_account")
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source_account")
 
 
 class CollectionCursor(Base):
@@ -352,6 +355,7 @@ class RawItem(Base):
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="raw_items")
     collection_run: Mapped[CollectionRun] = relationship(back_populates="raw_items")
     content_item: Mapped[ContentItem | None] = relationship(back_populates="raw_item")
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="raw_item")
 
 
 class ContentItem(Base):
@@ -447,6 +451,168 @@ class ContentItem(Base):
     source: Mapped[Source] = relationship(back_populates="content_items")
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="content_items")
     notifications: Mapped[list[Notification]] = relationship(back_populates="content_item")
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="content_item")
+
+
+class EvidenceItem(Base):
+    __tablename__ = "evidence_items"
+    __table_args__ = (
+        CheckConstraint("evidence_version > 0", name="ck_evidence_items_evidence_version_positive"),
+        CheckConstraint(
+            "provider_item_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_evidence_items_provider_item_hash_lower_hex",
+        ),
+        CheckConstraint(
+            "provider IN ('marketaux', 'finnhub', 'eia', 'sec_edgar')",
+            name="ck_evidence_items_provider_allowlist",
+        ),
+        CheckConstraint(
+            "provider_item_type IN "
+            "('marketaux_news', 'finnhub_quote', 'eia_energy_timeseries', 'sec_filing')",
+            name="ck_evidence_items_provider_item_type_allowlist",
+        ),
+        CheckConstraint(
+            "evidence_kind IN ('news', 'market_data', 'energy_official', 'disclosure')",
+            name="ck_evidence_items_evidence_kind_allowlist",
+        ),
+        CheckConstraint(
+            "source_type IN ('news', 'market_data', 'official_energy', 'disclosure')",
+            name="ck_evidence_items_source_type_allowlist",
+        ),
+        CheckConstraint(
+            "access_level IN "
+            "('public_fulltext', 'public_summary', 'subscription_required', 'licensed', "
+            "'link_only', 'blocked', 'unknown')",
+            name="ck_evidence_items_access_level_allowlist",
+        ),
+        CheckConstraint(
+            "processing_status IN ('pending', 'validated', 'blocked', 'invalid')",
+            name="ck_evidence_items_processing_status_allowlist",
+        ),
+        CheckConstraint(
+            "(provider_item_type = 'marketaux_news' AND news_signal_flag "
+            "AND NOT official_source_flag AND NOT market_data_flag AND NOT disclosure_flag) OR "
+            "(provider_item_type = 'finnhub_quote' AND market_data_flag "
+            "AND NOT official_source_flag AND NOT disclosure_flag AND NOT news_signal_flag) OR "
+            "(provider_item_type = 'eia_energy_timeseries' AND official_source_flag "
+            "AND NOT market_data_flag AND NOT disclosure_flag AND NOT news_signal_flag) OR "
+            "(provider_item_type = 'sec_filing' AND official_source_flag AND disclosure_flag "
+            "AND NOT market_data_flag AND NOT news_signal_flag)",
+            name="ck_evidence_items_flags_consistent",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(content_presence) = 'object'",
+            name="ck_evidence_items_content_presence_object",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(numeric_presence) = 'object'",
+            name="ck_evidence_items_numeric_presence_object",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(entity_refs) = 'array'",
+            name="ck_evidence_items_entity_refs_array",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(asset_refs) = 'array'",
+            name="ck_evidence_items_asset_refs_array",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(topic_refs) = 'array'",
+            name="ck_evidence_items_topic_refs_array",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(errors) = 'array'",
+            name="ck_evidence_items_errors_array",
+        ),
+        CheckConstraint(
+            "raw_payload_reference IS NULL OR "
+            "raw_payload_reference LIKE 'internal://%' OR "
+            "raw_payload_reference LIKE 'capture://%' OR "
+            "raw_payload_reference LIKE 'local-ref://%'",
+            name="ck_evidence_items_raw_payload_reference_internal",
+        ),
+        CheckConstraint(
+            "raw_payload_reference IS NULL OR "
+            "(raw_payload_reference NOT LIKE 'http://%' "
+            "AND raw_payload_reference NOT LIKE 'https://%')",
+            name="ck_evidence_items_raw_payload_reference_not_http",
+        ),
+        Index(
+            "uq_evidence_items_provider_hash",
+            "provider",
+            "provider_item_hash",
+            unique=True,
+        ),
+        Index(
+            "uq_evidence_items_provider_item_id",
+            "provider",
+            "provider_item_id",
+            unique=True,
+            postgresql_where=text("provider_item_id IS NOT NULL"),
+        ),
+        Index("ix_evidence_items_raw_item_id", "raw_item_id"),
+        Index("ix_evidence_items_source_id", "source_id"),
+        Index("ix_evidence_items_source_account_id", "source_account_id"),
+        Index("ix_evidence_items_content_item_id", "content_item_id"),
+        Index("ix_evidence_items_event_time", "event_time"),
+        Index("ix_evidence_items_observed_at", "observed_at"),
+        Index("ix_evidence_items_processing_status", "processing_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    evidence_version: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(64))
+    provider_item_type: Mapped[str] = mapped_column(String(64))
+    evidence_kind: Mapped[str] = mapped_column(String(64))
+    source_type: Mapped[str] = mapped_column(String(64))
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT")
+    )
+    source_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_accounts.id", ondelete="RESTRICT")
+    )
+    raw_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raw_items.id", ondelete="RESTRICT")
+    )
+    content_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("content_items.id", ondelete="RESTRICT")
+    )
+    provider_item_id: Mapped[str | None] = mapped_column(String(255))
+    provider_item_hash: Mapped[str] = mapped_column(CHAR(64))
+    event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    access_level: Mapped[str] = mapped_column(String(64))
+    processing_status: Mapped[str] = mapped_column(String(64))
+    official_source_flag: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    market_data_flag: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    disclosure_flag: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    news_signal_flag: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    content_presence: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb")
+    )
+    numeric_presence: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb")
+    )
+    entity_refs: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    asset_refs: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    topic_refs: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    raw_payload_reference: Mapped[str | None] = mapped_column(String(512))
+    errors: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+    source: Mapped[Source] = relationship(back_populates="evidence_items")
+    source_account: Mapped[SourceAccount | None] = relationship(back_populates="evidence_items")
+    raw_item: Mapped[RawItem] = relationship(back_populates="evidence_items")
+    content_item: Mapped[ContentItem | None] = relationship(back_populates="evidence_items")
 
 
 class Notification(Base):

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — SPEC-0021 Evidence Persistence Schema Implementation
+
+- 将 SPEC-0021 schema design 标记为 `Completed — Docs Review approved`，并激活独立
+  implementation review。
+- 新增单一 `0003` migration 与 `EvidenceItem` ORM，只创建 `evidence_items`，保留既有表。
+- 增加 PostgreSQL schema、FK、allowlist、flags、JSONB shape、internal reference 与唯一性测试。
+- 本轮无外部 API、capture/raw local data、Adapter、collection、正式 normalization、dedup、
+  clustering、Event 或 AI；SPEC-0022 未启动，Foundation v2.1-FROZEN 不变。
+
 ## Unreleased — SPEC-0004 Documentation Preparation
 
 ### Documentation
