@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0027 RawItem to Evidence Pipeline Orchestration
+
+- 将 SPEC-0026 Collection Runner Adapter Registry Integration 标记为 `Completed — Implementation
+  Review approved`，并激活 SPEC-0027 Implementation Review。
+- 新增 content-free `EvidencePipelineService`，严格验证 Marketaux synthetic projection，通过既有
+  provider mapper 生成 `CommonEvidenceEnvelope`，并只委托 `EvidenceWriteService` persistence。
+- 新增 PostgreSQL success/duplicate/malformed/unknown/missing RawItem/provenance/secret-safe tests 与
+  source audit；orchestration 不导入 ORM/SQLAlchemy，不绕过 Write Service 直接写 evidence_items。
+- 无真实 API、`.env`/capture、real adapter、scheduler、formal normalization/dedup/Event/AI/
+  Telegram；SPEC-0022 未启动，SPEC-0005 X Source 范围不变。
+
 ## Unreleased — SPEC-0026 Collection Runner Adapter Registry Integration
 
 - 将 SPEC-0025 Provider Adapter Scaffold 标记为 `Completed — Implementation Review approved`，并

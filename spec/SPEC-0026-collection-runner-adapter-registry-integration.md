@@ -1,6 +1,6 @@
 # SPEC-0026 — Collection Runner Adapter Registry Integration
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Collection Runner Adapter Registry Integration
 
@@ -93,7 +93,7 @@ safe error 不创建 RawItem；重试/失败沿用现有 CollectionRun lifecycle
 - [x] unknown/unauthorized/safe error fail closed。
 - [x] fake adapter regression 保持通过。
 - [x] 无真实 API、`.env`、capture、Evidence、scheduler、dedup/Event/AI。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 9. Verification Evidence
 
@@ -106,6 +106,12 @@ evidence_items，未启动 SPEC-0022。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #26、CI 与 ChatGPT review | Collection runner mocked adapter integration approved and merged |
+
+PR #26 已完成 CollectionRunner → ProviderAdapterRegistry mocked integration、
+`ProviderCollectionAdapter` bridge、`RawItemEnvelope` → RawItem persistence、成功持久化后的 cursor
+checkpoint，以及 provider safe error → CollectionRun safe error mapping。该 PR 未实现 RawItem →
+Evidence orchestration、真实 API adapter、scheduler、dedup/Event/AI 或 Telegram。
 
 ## 11. 后续门禁
 
