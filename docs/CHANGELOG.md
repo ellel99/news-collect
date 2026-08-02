@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0025 Provider Adapter Scaffold Implementation
+
+- 将 SPEC-0024 Provider Adapter Integration Design 标记为 `Completed — Docs Review approved`，并
+  激活 SPEC-0025 Implementation Review。
+- 新增 Python provider contracts、fail-closed `ProviderAdapterRegistry`、network-free
+  `MockProviderTransport` 与 Marketaux mocked response scaffold。
+- Marketaux scaffold 只输出 content-free/sanitized metadata 和 `RawItemEnvelope`，覆盖 stable ID、
+  deterministic cursor、record limit、secret isolation、429/timeout/provider error 分类。
+- 新增 22 个 mock-only/source-audit tests；无真实 API、`.env`/capture/local evaluation、DB write、
+  collection/scheduler、EvidenceWriteService、formal normalization/dedup/Event/AI；SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0024 Provider Adapter Integration Design
 
 - 将 SPEC-0023 Evidence Write Path implementation 标记为 `Completed — Implementation Review

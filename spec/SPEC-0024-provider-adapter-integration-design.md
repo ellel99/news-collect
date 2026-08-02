@@ -1,6 +1,6 @@
 # SPEC-0024 — Provider Adapter Integration Design
 
-Status：Active — Docs Review
+Status：Completed — Docs Review approved
 
 Phase：Phase 1 — Provider Adapter Integration Design Only
 
@@ -287,9 +287,17 @@ PostgreSQL/Redis/Celery integration tests 只能验证本地基础设施；真�
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 docs-only PR、CI 与 review package | 等待用户/ChatGPT Docs Review |
+| 2 | PASS | PR #24、CI、209 tests 与安全 review package | Docs Review approved and merged |
 
 ## 17. 后续门禁
 
-Docs Review PASS 只批准设计，不授权实现。后续必须由用户决定 Provider 实现拆分、补齐 plan/terms/
-retention/rate 数值并单独激活 Implementation SPEC；不得从本文直接请求 API、注册 Adapter、接入
-collection，或开始 SPEC-0022、dedup/Event/AI。
+Docs Review PASS 只批准设计。用户随后单独授权 SPEC-0025 scaffold implementation；该授权不允许
+真实 API、真实 Provider implementation、collection runner wiring，或开始 SPEC-0022、
+dedup/Event/AI。
+
+## 18. Completed Design Evidence
+
+PR #24 已完成并合并 Provider Adapter Integration Design，覆盖四 Provider 的 input/output、secret、
+rate/retry/timeout、cursor、RawItem safety、mapping handoff、registry/runner boundary 与 future tests。
+PR #24 是 docs-only：没有 Python、Adapter、AdapterRegistry、collection integration、API request、
+migration/ORM/schema 或 capture，也没有启动 SPEC-0022。
