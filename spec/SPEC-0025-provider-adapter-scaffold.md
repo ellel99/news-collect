@@ -1,6 +1,6 @@
 # SPEC-0025 — Provider Adapter Scaffold Implementation
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Provider Adapter Scaffold Implementation
 
@@ -140,7 +140,7 @@ title/body/URL、secret、exception raw text 或 SQL parameter。
 - [x] Adapter 无 EvidenceWriteService、evidence_items 或 DB write dependency。
 - [x] 无真实 API、`.env`、capture、collection/scheduler、formal normalization/dedup/Event/AI。
 - [x] SPEC-0022 未启动，Foundation v2.1-FROZEN 未修改。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 12. Verification Evidence
 
@@ -152,6 +152,13 @@ validator 与安全 review package 为证。未请求 API、读取 `.env`/captur
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #25、CI 与 ChatGPT review | Provider Adapter scaffold implementation approved and merged |
+
+PR #25 已完成 `ProviderAdapter` Protocol、`ProviderFetchRequest`/`ProviderFetchResult`、
+`ProviderTransport`/`MockProviderTransport`、fail-closed `ProviderAdapterRegistry`、Marketaux mocked
+scaffold、`RawItemEnvelope` mock output 与 source audit tests。该 PR 未实现 collection runner
+integration、真实 API adapter、scheduler、RawItem 到 Evidence orchestration、dedup/Event/AI 或
+Telegram。
 
 ## 14. 后续门禁
 

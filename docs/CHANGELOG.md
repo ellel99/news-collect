@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0026 Collection Runner Adapter Registry Integration
+
+- 将 SPEC-0025 Provider Adapter Scaffold 标记为 `Completed — Implementation Review approved`，并
+  激活 SPEC-0026 Implementation Review。
+- 新增 provider-to-collection bridge 与显式 registry/mock transport injection；mocked Marketaux
+  `RawItemEnvelope` 由 runner persistence 层写入 RawItem。
+- RawItem 与 cursor checkpoint 复用同一事务，只有 persistence 成功才推进；provider safe errors
+  映射为 redacted CollectionRun errors，unknown/unauthorized target fail closed。
+- 保留 fake adapter regression；无真实 API、`.env`/capture、real adapter、EvidenceWriteService/
+  evidence_items、scheduler、formal normalization/dedup/Event/AI；SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0025 Provider Adapter Scaffold Implementation
 
 - 将 SPEC-0024 Provider Adapter Integration Design 标记为 `Completed — Docs Review approved`，并
