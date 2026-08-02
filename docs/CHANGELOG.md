@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SPEC-0023 Evidence Write Path Design
+
+- 将 SPEC-0021 schema implementation 标记为 `Completed — Implementation Review approved`；
+  PR #21 已交付 `evidence_items` migration/ORM/PostgreSQL tests、secret marker rejection 与
+  raw item/source composite provenance consistency。
+- 激活 docs-only SPEC-0023，设计 `CommonEvidenceEnvelope` 到 `evidence_items` 的输入/输出、
+  sanitize/pre-check、provenance、provider-scoped conflict、per-row savepoint 和安全 summary。
+- 明确 DB secret rejection 不是静默丢弃策略；未来实现必须安全替换/null unsafe reference、记录
+  safe error，并逐 row 隔离失败且保证 summary 计数守恒。
+- 本轮无 Python implementation、repository/service、migration/ORM/schema 变化、API/capture、
+  Adapter、collection、正式 normalization/dedup/Event 或 AI；SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0021 Evidence Persistence Schema Implementation
 
 - 将 SPEC-0021 schema design 标记为 `Completed — Docs Review approved`，并激活独立

@@ -1,6 +1,6 @@
 # SPEC-0021 — Evidence Persistence Schema Implementation
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Evidence Persistence Schema Implementation
 
@@ -61,14 +61,32 @@ SQLite 不得替代 PostgreSQL 语义。测试不得访问网络或读取本地 
 
 ## 7. 验收标准
 
-- [ ] migration 支持 upgrade/downgrade/re-upgrade。
-- [ ] `evidence_items` 字段、约束、FK、索引与批准合同一致。
-- [ ] PostgreSQL tests 覆盖 schema allowlist、安全 checks 与唯一性。
-- [ ] PostgreSQL 拒绝带 secret marker 的 raw reference 与跨 Source raw item provenance。
-- [ ] 只有 schema/ORM/tests/docs 变化，无 Adapter、collection、正式 normalization、dedup、Event/AI。
-- [ ] Foundation v2.1-FROZEN 未修改，SPEC-0022 未启动。
+- [x] migration 支持 upgrade/downgrade/re-upgrade。
+- [x] `evidence_items` 字段、约束、FK、索引与批准合同一致。
+- [x] PostgreSQL tests 覆盖 schema allowlist、安全 checks 与唯一性。
+- [x] PostgreSQL 拒绝带 secret marker 的 raw reference 与跨 Source raw item provenance。
+- [x] 只有 schema/ORM/tests/docs 变化，无 Adapter、collection、正式 normalization、dedup、Event/AI。
+- [x] Foundation v2.1-FROZEN 未修改，SPEC-0022 未启动。
 
 ## 8. Delivery Evidence
 
 以本 PR diff、PostgreSQL migration 往返、Ruff、mypy、pytest、Foundation validator 与安全 review
-package 为证。Implementation Review PASS 前不得声明本实现 Completed 或开始下一 SPEC。
+package 为证。PR #21 已通过 Implementation Review 并合并。
+
+## 9. Review History
+
+| Round | Result | Evidence | Resolution |
+|---|---|---|---|
+| 1 | REQUEST CHANGES | raw reference secret marker 与 Source provenance enforcement | 增加 DB secret checks、composite unique index/FK 及 PostgreSQL tests |
+| 2 | PASS | PR #21，CI 与 187 tests | Implementation Review approved and merged |
+
+PR #21 已完成：
+
+- `evidence_items` Alembic migration；
+- SQLAlchemy `EvidenceItem` ORM 与关系；
+- PostgreSQL schema、constraint、upgrade/downgrade/re-upgrade tests；
+- `raw_payload_reference` secret marker rejection；
+- `raw_item_id` / `source_id` composite provenance consistency。
+
+本实现未包含 Evidence Write Path、Provider Adapter、AdapterRegistry、collection/scheduler、正式
+normalization、dedup/Event、AI、Telegram 或 investment recommendation。
