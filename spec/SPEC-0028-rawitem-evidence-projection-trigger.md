@@ -1,6 +1,6 @@
 # SPEC-0028 — RawItem Evidence Projection Store and Pipeline Trigger
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — RawItem Evidence Projection Store and Explicit Trigger
 
@@ -94,7 +94,7 @@ EvidenceWriteService。
 - [x] 无 migration/ORM/schema change。
 - [x] 无真实 API、`.env`、capture、real adapter、scheduler、dedup/Event/AI/Telegram。
 - [x] SPEC-0022 未启动，Foundation v2.1-FROZEN 未修改。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 9. Verification Evidence
 
@@ -107,6 +107,11 @@ capture/`local_evaluation/`，未修改 schema，未启动 SPEC-0022。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #28；projection store/reader/trigger、PostgreSQL tests 与安全边界通过审核 | Completed — Implementation Review approved |
+
+PR #28 已交付 projection store、RawItem safe reader、explicit pipeline trigger、provenance/identity
+核对以及 PostgreSQL tests。它未实现 collection-to-evidence end-to-end orchestration、真实 Adapter、
+scheduler、formal normalization、dedup、Event、AI 或 Telegram，也未启动 SPEC-0022。
 
 ## 11. 后续门禁
 

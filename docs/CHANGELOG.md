@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0029 End-to-End Mock Collection Evidence Pipeline
+
+- 将 SPEC-0028 标记为 `Completed — Implementation Review approved`，并激活 SPEC-0029。
+- 新增 provider result content-free observer、in-memory projection sidecar 与显式 end-to-end
+  orchestrator；只有 CollectionRun/RawItem persistence 成功后才通过既有 trigger、Pipeline Service 和
+  EvidenceWriteService 写 evidence_items。
+- 新增 PostgreSQL/Redis mocked success/duplicate/persistence failure/missing/mismatch/429/timeout/
+  authorization tests 与 source audit。
+- 无 migration/ORM/schema change、真实 API、`.env`/capture、real adapter、scheduler、formal
+  normalization/dedup/Event/AI/Telegram；SPEC-0022 未启动，SPEC-0005 X Source 范围不变。
+
 ## Unreleased — SPEC-0028 RawItem Evidence Projection Store and Pipeline Trigger
 
 - 将 SPEC-0027 RawItem to Evidence Pipeline Orchestration 标记为 `Completed — Implementation Review

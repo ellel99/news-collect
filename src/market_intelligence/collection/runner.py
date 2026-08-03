@@ -24,7 +24,10 @@ from market_intelligence.collection.locking import (
     retry_marker_key,
     target_lock_key,
 )
-from market_intelligence.collection.provider_adapter import ProviderCollectionAdapter
+from market_intelligence.collection.provider_adapter import (
+    ProviderCollectionAdapter,
+    ProviderResultObserver,
+)
 from market_intelligence.collection.registry import AdapterRegistry
 from market_intelligence.collection.retry import RetryPolicy
 from market_intelligence.core.config import Settings
@@ -60,6 +63,7 @@ class CollectionRunner:
         random_source: Random | None = None,
         provider_registry: ProviderAdapterRegistry | None = None,
         provider_transport: ProviderTransport | None = None,
+        provider_result_observer: ProviderResultObserver | None = None,
     ) -> None:
         self.factory = factory
         self.redis = redis
@@ -68,6 +72,7 @@ class CollectionRunner:
         self.random = random_source or Random()
         self.provider_registry = provider_registry
         self.provider_transport = provider_transport
+        self.provider_result_observer = provider_result_observer
         self.retry_policy = RetryPolicy(
             settings.COLLECTION_MAX_RETRIES,
             settings.COLLECTION_RETRY_BASE_SECONDS,
@@ -220,6 +225,7 @@ class CollectionRunner:
         return ProviderCollectionAdapter(
             self.provider_registry.get(access_method),
             self.provider_transport,
+            self.provider_result_observer,
         )
 
     async def _create_run(self, target: CollectionTarget) -> UUID:
