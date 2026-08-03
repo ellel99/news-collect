@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0028 RawItem Evidence Projection Store and Pipeline Trigger
+
+- 将 SPEC-0027 RawItem to Evidence Pipeline Orchestration 标记为 `Completed — Implementation Review
+  approved`，并激活 SPEC-0028 Implementation Review。
+- 新增 strict content-free in-memory projection store、既有 RawItem safe-field reader 与 explicit
+  trigger；trigger 核对 provenance/identity/hash/reference 后调用 EvidencePipelineService。
+- 新增 PostgreSQL success/duplicate/missing/malformed/mismatch/secret-safe tests 与 source audit；
+  evidence_items 仍只通过 EvidencePipelineService/EvidenceWriteService 写入。
+- 无 migration/ORM/schema change、真实 API、`.env`/capture、real adapter、scheduler、formal
+  normalization/dedup/Event/AI/Telegram；SPEC-0022 未启动，SPEC-0005 X Source 范围不变。
+
 ## Unreleased — SPEC-0027 RawItem to Evidence Pipeline Orchestration
 
 - 将 SPEC-0026 Collection Runner Adapter Registry Integration 标记为 `Completed — Implementation

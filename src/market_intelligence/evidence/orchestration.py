@@ -88,7 +88,7 @@ class EvidencePipelineService:
         if request.provider != _MARKETAUX:
             return _failed(request, EvidencePipelineStatus.SKIPPED, "provider_unsupported")
 
-        projection = _validated_marketaux_projection(request.sanitized_projection)
+        projection = validate_marketaux_projection(request.sanitized_projection)
         if projection is None:
             return _failed(request, EvidencePipelineStatus.INVALID, "projection_invalid")
         if request.observed_at.tzinfo is None or not _safe_text(request.correlation_id):
@@ -129,7 +129,7 @@ class EvidencePipelineService:
         return _write_outcome(request, write_outcome)
 
 
-def _validated_marketaux_projection(
+def validate_marketaux_projection(
     projection: Mapping[str, object],
 ) -> dict[str, object] | None:
     if set(projection) != _SAFE_PROJECTION_FIELDS:

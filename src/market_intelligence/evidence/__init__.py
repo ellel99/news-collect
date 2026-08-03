@@ -24,6 +24,18 @@ from market_intelligence.evidence.orchestration import (
     EvidencePipelineService,
     EvidencePipelineStatus,
 )
+from market_intelligence.evidence.pipeline_trigger import (
+    EvidenceTriggerError,
+    EvidenceTriggerOutcome,
+    EvidenceTriggerStatus,
+    RawItemEvidencePipelineTrigger,
+)
+from market_intelligence.evidence.projection_store import (
+    InMemoryEvidenceProjectionStore,
+    RawItemEvidenceProjection,
+    SafeRawItemProjectionSource,
+    SqlAlchemyRawItemProjectionReader,
+)
 from market_intelligence.evidence.provider_mappings import (
     map_eia_energy_row_to_evidence,
     map_finnhub_quote_to_evidence,
@@ -43,11 +55,19 @@ __all__ = [
     "EvidencePipelineRequest",
     "EvidencePipelineService",
     "EvidencePipelineStatus",
+    "EvidenceTriggerError",
+    "EvidenceTriggerOutcome",
+    "EvidenceTriggerStatus",
+    "InMemoryEvidenceProjectionStore",
     "NumericPresence",
     "ProcessingStatus",
     "Provider",
     "ProviderItemType",
+    "RawItemEvidencePipelineTrigger",
+    "RawItemEvidenceProjection",
+    "SafeRawItemProjectionSource",
     "SourceType",
+    "SqlAlchemyRawItemProjectionReader",
     "map_eia_energy_row_to_evidence",
     "map_finnhub_quote_to_evidence",
     "map_marketaux_news_to_evidence",

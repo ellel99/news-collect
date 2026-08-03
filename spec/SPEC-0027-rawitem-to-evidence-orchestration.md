@@ -1,6 +1,6 @@
 # SPEC-0027 — RawItem to Evidence Pipeline Orchestration
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — RawItem to Evidence Pipeline Orchestration
 
@@ -104,7 +104,7 @@ Provider value。
 - [x] success/duplicate/malformed/unknown/missing/provenance/secret-safe tests 已覆盖。
 - [x] 无真实 API、`.env`、capture、real adapter、scheduler、dedup/Event/AI/Telegram。
 - [x] SPEC-0022 未启动，Foundation v2.1-FROZEN 未修改。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 8. Verification Evidence
 
@@ -117,6 +117,13 @@ Provider value。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #27、CI 与 ChatGPT review | RawItem to Evidence orchestration approved and merged |
+
+PR #27 已完成 `EvidencePipelineRequest`/Outcome/Service、Marketaux synthetic projection validation、
+`provider_mappings.py` dispatch、`CommonEvidenceEnvelope` validation、`EvidenceWriteService`
+invocation，以及 duplicate/invalid/missing RawItem/provenance mismatch handling。该 PR 未实现 RawItem
+projection store/reader、explicit pipeline trigger、真实 API adapter、scheduler、dedup/Event/AI 或
+Telegram。
 
 ## 10. 后续门禁
 
