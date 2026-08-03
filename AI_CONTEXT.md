@@ -8,10 +8,10 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0026-collection-runner-adapter-registry-integration.md`
+- 当前 Active SPEC：`spec/SPEC-0027-rawitem-to-evidence-orchestration.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0026 Collection Runner Adapter Registry Integration Review；只允许 mocked
-  provider registry dispatch、RawItem persistence 与成功后的 cursor checkpoint
+- 当前工作状态：SPEC-0027 RawItem to Evidence Pipeline Orchestration Review；只允许 Marketaux
+  synthetic sanitized projection → mapper → EvidenceWriteService
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
@@ -33,14 +33,14 @@
   `content_values_emitted=false`
 - SPEC-0018 Normalized Evidence Contract Docs Review 已通过并 Completed；仅表示合同设计通过
 - SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review/schema
-  implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review 与 SPEC-0025
-  implementation 均已 Completed；当前只实现 mock-only collection runner → AdapterRegistry
-  integration，不得修改 migration/ORM/schema、请求 Provider、读取 `.env`/local capture，或接入
-  scheduler/RawItem → Evidence orchestration/正式 normalization/dedup/Event/AI
+  implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、SPEC-0025 与
+  SPEC-0026 implementation 均已 Completed；当前只实现 Marketaux synthetic RawItem → Evidence
+  orchestration，不得修改 migration/ORM/schema、请求 Provider、读取 `.env`/local capture，或接入
+  scheduler/其他 Provider/正式 normalization/dedup/Event/AI
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
-- SPEC-0026 只把 Marketaux mocked scaffold 接入 runner；Finnhub/EIA/SEC real adapters、
+- SPEC-0027 只支持 Marketaux synthetic projection；Finnhub/EIA/SEC orchestration 与 real adapters、
   NewsAPI.ai/GDELT 均不激活。SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X Source
   范围不变
 
