@@ -1,6 +1,6 @@
 # SPEC-0029 — End-to-End Mock Collection Evidence Pipeline
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — End-to-End Mock Collection Evidence Pipeline
 
@@ -99,7 +99,7 @@ internal reference。
 - [x] 无 migration/ORM/schema change。
 - [x] 无真实 API、`.env`/capture、real adapter、scheduler、dedup/Event/AI/Telegram。
 - [x] SPEC-0022 未启动，Foundation v2.1-FROZEN 未修改。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 9. Verification Evidence
 
@@ -111,6 +111,12 @@ internal reference。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #29；mock collection-to-evidence E2E、PostgreSQL/Redis tests 与安全边界通过审核 | Completed — Implementation Review approved |
+
+PR #29 已完成 mocked Marketaux → CollectionRunner → RawItem、content-free projection sidecar、
+Evidence trigger、EvidencePipelineService/EvidenceWriteService 以及 evidence_items end-to-end mock
+write。未实现 Marketaux real API adapter、real HTTP transport、credential runtime wiring、scheduler、
+Finnhub/EIA/SEC、durable projection store、dedup/Event/AI 或 Telegram。
 
 ## 11. 后续门禁
 

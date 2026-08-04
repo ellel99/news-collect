@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — SPEC-0030 Marketaux Real Adapter Implementation
+
+- 将 SPEC-0029 标记为 `Completed — Implementation Review approved`，并激活 SPEC-0030。
+- 新增 repr-redacted runtime credential、allowlisted httpx transport 与 Marketaux real adapter boundary；
+  官方 query token 只在最终 wire request 注入，不进入 provider-neutral params/result/error/cursor/RawItem。
+- 新增 mock-only endpoint/request、200、secret echo、429/Retry-After、timeout、4xx/5xx、malformed、
+  limit、cursor 与 source-audit tests；未执行真实 API。
+- 无 `.env`/capture、Finnhub/EIA/SEC、scheduler、formal normalization/dedup/Event/AI/Telegram，
+  无 migration/ORM/schema change；SPEC-0022 未启动，SPEC-0005 X Source 范围不变。
+
 ## Unreleased — SPEC-0029 End-to-End Mock Collection Evidence Pipeline
 
 - 将 SPEC-0028 标记为 `Completed — Implementation Review approved`，并激活 SPEC-0029。

@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0029-end-to-end-mock-evidence-pipeline.md`](spec/SPEC-0029-end-to-end-mock-evidence-pipeline.md)，仅实现 Marketaux mocked end-to-end evidence pipeline
+- 开发入口：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md)，仅实现 Marketaux real adapter code boundary；不执行真实 API
 
 Phase 1 固定主链路：
 
@@ -67,15 +67,16 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0029-end-to-end-mock-evidence-pipeline.md`](spec/SPEC-0029-end-to-end-mock-evidence-pipeline.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md) — Implementation Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021
   schema design 与 `evidence_items` migration、ORM、PostgreSQL schema tests implementation 已
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
-  orchestration 与 SPEC-0028 projection trigger implementation 也已 Completed。当前只实现 Marketaux
-  mocked collection → RawItem → content-free projection → EvidenceWriteService 端到端路径；不实现真实 API Adapter、scheduler
+  orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
+  当前只实现 Marketaux real adapter/request/credential/HTTP code boundary，并只用 mocked transport
+  测试；不执行真实 API，不实现 scheduler
   或其他 Provider，不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/
   `local_evaluation/`，不实现 formal normalization、dedup、Event 或 AI；SPEC-0022 未启动
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写

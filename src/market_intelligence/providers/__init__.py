@@ -11,7 +11,10 @@ from market_intelligence.providers.contracts import (
     ProviderTransportResponse,
     ProviderTransportTimeout,
 )
+from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.providers.http_transport import HttpxProviderTransport
 from market_intelligence.providers.marketaux import MarketauxAdapter
+from market_intelligence.providers.marketaux_real import MarketauxRealAdapter
 from market_intelligence.providers.registry import (
     ProviderAdapterNotRegistered,
     ProviderAdapterRegistry,
@@ -19,7 +22,9 @@ from market_intelligence.providers.registry import (
 from market_intelligence.providers.transport import MockProviderTransport
 
 __all__ = [
+    "HttpxProviderTransport",
     "MarketauxAdapter",
+    "MarketauxRealAdapter",
     "MockProviderTransport",
     "ProviderAdapter",
     "ProviderAdapterError",
@@ -32,4 +37,5 @@ __all__ = [
     "ProviderTransportRequest",
     "ProviderTransportResponse",
     "ProviderTransportTimeout",
+    "RuntimeCredential",
 ]
