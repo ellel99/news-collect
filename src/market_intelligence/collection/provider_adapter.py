@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
+from typing import Protocol
 
 from market_intelligence.collection.contracts import FetchBatch, FetchRequest
 from market_intelligence.collection.errors import ClassifiedCollectionError, CollectionErrorCode
@@ -13,8 +14,15 @@ from market_intelligence.providers.contracts import (
     ProviderAdapterError,
     ProviderAdapterErrorCode,
     ProviderFetchRequest,
+    ProviderFetchResult,
     ProviderTransport,
 )
+
+
+class ProviderResultObserver(Protocol):
+    """Receive a content-free provider result before collection persistence."""
+
+    def observe(self, result: ProviderFetchResult) -> None: ...
 
 
 class ProviderCollectionAdapter:
@@ -22,9 +30,15 @@ class ProviderCollectionAdapter:
 
     cursor_type = "provider_cursor_v1"
 
-    def __init__(self, adapter: ProviderAdapter, transport: ProviderTransport) -> None:
+    def __init__(
+        self,
+        adapter: ProviderAdapter,
+        transport: ProviderTransport,
+        observer: ProviderResultObserver | None = None,
+    ) -> None:
         self._adapter = adapter
         self._transport = transport
+        self._observer = observer
 
     async def fetch(self, request: FetchRequest) -> FetchBatch:
         result = await self._adapter.fetch(
@@ -46,6 +60,14 @@ class ProviderCollectionAdapter:
                 CollectionErrorCode.CONTRACT_INVALID,
                 "provider result identity mismatch",
             )
+        if self._observer is not None:
+            try:
+                self._observer.observe(result)
+            except (TypeError, ValueError) as exc:
+                raise ClassifiedCollectionError(
+                    CollectionErrorCode.CONTRACT_INVALID,
+                    "provider projection sidecar rejected result",
+                ) from exc
         return FetchBatch(
             items=result.raw_items,
             next_cursor=result.next_cursor,
