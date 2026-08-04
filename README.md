@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md)，仅实现 Marketaux real adapter code boundary；不执行真实 API
+- 开发入口：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md)，combined review 包含 [`SPEC-0031`](spec/SPEC-0031-marketaux-bounded-live-smoke-harness.md)；默认不执行真实 API
 
 Phase 1 固定主链路：
 
@@ -75,8 +75,8 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
-  当前只实现 Marketaux real adapter/request/credential/HTTP code boundary，并只用 mocked transport
-  测试；不执行真实 API，不实现 scheduler
+  当前 combined PR 只实现 Marketaux real adapter/request/credential/HTTP code boundary 与默认 dry-run
+  smoke harness，并只用 mocked transport 测试；CI/pytest/package review 不执行真实 API，不实现 scheduler
   或其他 Provider，不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/
   `local_evaluation/`，不实现 formal normalization、dedup、Event 或 AI；SPEC-0022 未启动
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
@@ -126,6 +126,26 @@ uv sync --frozen
 `.env.example` 只包含本地开发示例值，禁止用于生产。生产环境必须显式提供所有服务 URL，不能使用示例凭据或本地主机地址。
 
 ## 本地启动
+
+### Marketaux bounded live smoke
+
+在已激活项目 Python 3.12 `.venv` 后，默认命令是安全 dry-run：不读取 token、不请求 API，只输出
+redacted plan。未激活环境时使用 `.venv/bin/python` 等价执行。
+
+```bash
+python3 scripts/marketaux_live_smoke.py
+# 未激活 .venv 时：.venv/bin/python scripts/marketaux_live_smoke.py
+```
+
+只有用户另行明确授权后，才可手动通过 process environment 执行一次 bounded smoke：
+
+```bash
+MARKETAUX_API_TOKEN=... python3 scripts/marketaux_live_smoke.py --execute --limit 1
+```
+
+limit 默认 1、最大 3。脚本不读取 `.env`，不保存 response，不输出 title/body/URL/snippet/
+description、完整 request URL 或 token，也不写 DB/evidence_items。CI、pytest、package review 和默认命令
+均不得传 `--execute`。
 
 先启动依赖服务：
 

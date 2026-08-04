@@ -14,6 +14,9 @@ Depends on：SPEC-0025、SPEC-0026、SPEC-0029（Completed）
 HTTP transport interface/implementation、timeout、HTTP/rate-limit classification、response validation、
 content-free sanitized metadata、deterministic cursor 与 metadata-only `RawItemEnvelope`。
 
+按用户调整后的执行策略，PR #30 同时包含 `SPEC-0031 — Marketaux Bounded Live Smoke Harness`；
+SPEC-0030 保持本 combined PR 的唯一 Active SPEC，SPEC-0031 不另开 PR、不形成第二个 Active SPEC。
+
 本 PR 写 Python implementation code，不是 docs-only。测试全部使用 mocked transport；本 PR 不执行
 任何真实 Marketaux 或其他 Provider 请求。
 
@@ -79,6 +82,7 @@ content-free sanitized metadata、deterministic cursor 与 metadata-only `RawIte
 - [x] secret 不进入 provider-neutral params、result/error/cursor/RawItemEnvelope。
 - [x] 无真实 API、`.env`/capture、Finnhub/EIA/SEC、scheduler、dedup/Event/AI/Telegram。
 - [x] 无 migration/ORM/DB schema change；SPEC-0022 未启动。
+- [x] Bundled SPEC-0031 默认 dry-run/manual `--execute` harness 与 mock-only tests 已实现。
 - [ ] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 8. Verification Evidence

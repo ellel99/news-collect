@@ -10,8 +10,9 @@
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：`spec/SPEC-0030-marketaux-real-adapter.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0030 Marketaux Real Adapter Implementation Review；只允许 runtime credential、
-  allowlisted real request/HTTP transport code boundary 与 mocked-transport tests，不执行真实 API
+- 当前工作状态：SPEC-0030 combined Implementation Review（含 bundled SPEC-0031）；只允许 runtime
+  credential、allowlisted real request/HTTP transport、默认 dry-run manual smoke harness 与 mocked tests，
+  本 PR/CI/pytest/package review 不执行真实 API
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
@@ -40,7 +41,8 @@
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
-- SPEC-0030 只实现 Marketaux real adapter boundary；Finnhub/EIA/SEC real adapters、
+- SPEC-0030/0031 combined PR 只实现 Marketaux real adapter boundary 与 manual bounded smoke harness；
+  SPEC-0031 不单独 Active。Finnhub/EIA/SEC real adapters、
   NewsAPI.ai/GDELT 均不激活。SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X Source
   范围不变
 
