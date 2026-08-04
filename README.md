@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md)，combined review 包含 [`SPEC-0031`](spec/SPEC-0031-marketaux-bounded-live-smoke-harness.md)；默认不执行真实 API
+- 开发入口：[`spec/SPEC-0032-marketaux-real-collection-pipeline.md`](spec/SPEC-0032-marketaux-real-collection-pipeline.md)，仅实现 manual Marketaux real collection-to-evidence pipeline；默认不执行真实 API
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0030-marketaux-real-adapter.md`](spec/SPEC-0030-marketaux-real-adapter.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0032-marketaux-real-collection-pipeline.md`](spec/SPEC-0032-marketaux-real-collection-pipeline.md) — Implementation Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021
@@ -75,8 +75,9 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
-  当前 combined PR 只实现 Marketaux real adapter/request/credential/HTTP code boundary 与默认 dry-run
-  smoke harness，并只用 mocked transport 测试；CI/pytest/package review 不执行真实 API，不实现 scheduler
+  SPEC-0030/0031 combined PR 已完成 Marketaux real adapter 与 bounded smoke harness。当前只实现
+  manual real adapter → CollectionRunner → RawItem → evidence_items runtime，并只用 mocked transport
+  测试；CI/pytest/package review 不执行真实 API，不实现 scheduler
   或其他 Provider，不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/
   `local_evaluation/`，不实现 formal normalization、dedup、Event 或 AI；SPEC-0022 未启动
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
@@ -146,6 +147,25 @@ MARKETAUX_API_TOKEN=... python3 scripts/marketaux_live_smoke.py --execute --limi
 limit 默认 1、最大 3。脚本不读取 `.env`，不保存 response，不输出 title/body/URL/snippet/
 description、完整 request URL 或 token，也不写 DB/evidence_items。CI、pytest、package review 和默认命令
 均不得传 `--execute`。
+
+### Marketaux real collection pipeline
+
+默认 dry-run 不读取 token、不连接 DB/Redis、不请求 API，也不写任何数据：
+
+```bash
+python3 scripts/marketaux_real_collection_smoke.py
+```
+
+只有用户明确授权，且数据库中恰好配置一个 enabled/authorized Marketaux SourceAccount 后，才可手动
+执行一次 limit 1–3 的真实 collection-to-evidence pipeline：
+
+```bash
+MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --execute --limit 1
+```
+
+执行路径复用既有 runner、RawItem transaction、content-free sidecar、EvidencePipelineService 与
+EvidenceWriteService。summary 只含固定状态、计数与布尔值；不保存 response，不输出 token、完整 URL、
+title/body/snippet/description 或 provider payload。CI、pytest、package review 不执行 `--execute`。
 
 先启动依赖服务：
 

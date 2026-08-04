@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — SPEC-0032 Marketaux Real Collection Pipeline
+
+- 将 SPEC-0030 与 bundled SPEC-0031 标记为 PR #30 approved/completed，并激活 SPEC-0032。
+- 新增 explicit runtime wiring、唯一 authorized Marketaux account target resolver 与 manual default-dry-run
+  command；复用既有 registry/runner/RawItem/cursor/sidecar/Evidence Pipeline/Write Service。
+- 新增 PostgreSQL/Redis mocked success、429/timeout、RawItem failure、duplicate、安全输出和 source audit
+  tests；CI/pytest/package review 未请求真实 API。
+- 无 `.env`/capture/raw response、scheduler/Telegram/AI/dedup/Event、Finnhub/EIA/SEC，亦无 migration/
+  ORM/schema change；SPEC-0022 未启动。
+
 ## Unreleased — SPEC-0030 Marketaux Real Adapter Implementation
 
 - 将 SPEC-0029 标记为 `Completed — Implementation Review approved`，并激活 SPEC-0030。
