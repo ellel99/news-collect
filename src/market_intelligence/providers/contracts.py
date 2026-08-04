@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from market_intelligence.collection.contracts import RawItemEnvelope
+from market_intelligence.providers.credentials import RuntimeCredential
 
 _SECRET_FIELD = frozenset(
     {"api_key", "api_token", "token", "authorization", "x-finnhub-token", "secret", "password"}
@@ -61,6 +62,7 @@ class ProviderTransportRequest:
     operation: str
     params: Mapping[str, str | int]
     timeout_seconds: float
+    runtime_credential: RuntimeCredential | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if any(

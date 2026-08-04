@@ -19,18 +19,22 @@ from market_intelligence.providers.contracts import (
     ProviderTransportRequest,
     ProviderTransportTimeout,
 )
+from market_intelligence.providers.credentials import RuntimeCredential
 
 _MAX_RECORDS: Final = 3
 _CONTRACT_VERSION: Final = 1
 _SECRET_MARKER = re.compile(
     r"(?i)(api[_-]?key|api[_-]?token|authorization|x-finnhub-token|token|secret|password)"
 )
-_SAFE_CONFIG_KEYS = frozenset({"query", "timeout_seconds"})
+_SAFE_CONFIG_KEYS = frozenset({"query", "language", "symbols", "timeout_seconds"})
 
 
 class MarketauxAdapter:
     provider_key = "marketaux"
     contract_version = _CONTRACT_VERSION
+
+    def __init__(self, credential: RuntimeCredential | None = None) -> None:
+        self._credential = credential
 
     async def fetch(
         self,
@@ -45,7 +49,14 @@ class MarketauxAdapter:
         params: dict[str, str | int] = {
             "search": str(request.config.get("query", "")),
             "limit": request.limit,
+            "page": 1,
         }
+        language = request.config.get("language")
+        if isinstance(language, str) and language:
+            params["language"] = language
+        symbols = request.config.get("symbols")
+        if isinstance(symbols, (tuple, list)) and symbols:
+            params["symbols"] = ",".join(str(symbol) for symbol in symbols)
         cursor = _decode_cursor(request.cursor)
         if request.cursor is not None and cursor is None:
             return _failed(
@@ -63,6 +74,7 @@ class MarketauxAdapter:
             operation="news_all",
             params=params,
             timeout_seconds=timeout_seconds,
+            runtime_credential=self._credential,
         )
         try:
             response = await transport.send(transport_request)
@@ -209,6 +221,30 @@ def _validate_request(request: ProviderFetchRequest) -> ProviderAdapterError | N
         return ProviderAdapterError(
             code=ProviderAdapterErrorCode.CONFIG_INVALID,
             safe_message="provider_timeout_invalid",
+            retryable=False,
+        )
+    language = request.config.get("language")
+    if language is not None and (
+        not isinstance(language, str) or not language or _SECRET_MARKER.search(language)
+    ):
+        return ProviderAdapterError(
+            code=ProviderAdapterErrorCode.CONFIG_INVALID,
+            safe_message="provider_language_invalid",
+            retryable=False,
+        )
+    symbols = request.config.get("symbols")
+    if symbols is not None and (
+        not isinstance(symbols, (tuple, list))
+        or not symbols
+        or len(symbols) > 10
+        or any(
+            not isinstance(symbol, str) or not symbol or _SECRET_MARKER.search(symbol)
+            for symbol in symbols
+        )
+    ):
+        return ProviderAdapterError(
+            code=ProviderAdapterErrorCode.CONFIG_INVALID,
+            safe_message="provider_symbols_invalid",
             retryable=False,
         )
     return None
