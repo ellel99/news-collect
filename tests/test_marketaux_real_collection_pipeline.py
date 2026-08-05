@@ -21,6 +21,9 @@ from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.evidence.orchestration import EvidencePipelineStatus
 from market_intelligence.pipeline.marketaux_real_collection import (
     MarketauxRealCollectionPipeline,
+    MarketauxTargetError,
+    bootstrap_marketaux_target,
+    diagnose_marketaux_target,
 )
 from market_intelligence.providers.contracts import (
     ProviderTransportResponse,
@@ -181,6 +184,142 @@ def test_default_dry_run_has_safe_inert_summary(capsys) -> None:
         "status": "DRY_RUN",
         "token_read": False,
     }
+
+
+def test_default_dry_run_does_not_open_runtime(monkeypatch, capsys) -> None:
+    def fail(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("dry-run opened a runtime boundary")
+
+    monkeypatch.setattr(marketaux_real_collection_smoke, "create_engine", fail)
+    monkeypatch.setattr(marketaux_real_collection_smoke.Redis, "from_url", fail)
+    exit_code = marketaux_real_collection_smoke.main([])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "DRY_RUN"
+
+
+@pytest.mark.asyncio
+async def test_doctor_on_empty_database_fails_closed(real_pipeline_runtime) -> None:
+    factory, _ = real_pipeline_runtime
+
+    diagnosis = await diagnose_marketaux_target(factory)
+
+    assert diagnosis.source_count == 0
+    assert diagnosis.account_count == 0
+    assert diagnosis.eligible_target_count == 0
+    assert diagnosis.error is MarketauxTargetError.MISSING
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_creates_target_and_is_idempotent(real_pipeline_runtime) -> None:
+    factory, _ = real_pipeline_runtime
+
+    first = await bootstrap_marketaux_target(factory)
+    second = await bootstrap_marketaux_target(factory)
+
+    assert first.status == "created"
+    assert first.diagnosis.target is not None
+    assert first.diagnosis.target.target.retention_class == "metadata_only"
+    assert first.diagnosis.target.target.collection_options == {"query": "technology"}
+    assert second.status == "already_exists"
+    assert second.diagnosis.source_count == 1
+    assert second.diagnosis.account_count == 1
+    assert second.diagnosis.eligible_target_count == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_fails_closed_for_multiple_targets(real_pipeline_runtime) -> None:
+    factory, _ = real_pipeline_runtime
+    await _source(factory)
+    await _source(factory)
+
+    result = await bootstrap_marketaux_target(factory)
+
+    assert result.status == "blocked"
+    assert result.diagnosis.error is MarketauxTargetError.NOT_UNIQUE
+    assert result.diagnosis.eligible_target_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("enabled", "authorization", "account_enabled", "expected"),
+    [
+        (False, AuthorizationStatus.AUTHORIZED, True, MarketauxTargetError.DISABLED),
+        (True, AuthorizationStatus.PLANNED, True, MarketauxTargetError.UNAUTHORIZED),
+        (True, AuthorizationStatus.AUTHORIZED, False, MarketauxTargetError.DISABLED),
+    ],
+)
+async def test_doctor_distinguishes_ineligible_targets(
+    real_pipeline_runtime, enabled, authorization, account_enabled, expected
+) -> None:
+    factory, _ = real_pipeline_runtime
+    source, account = await _source(factory)
+    async with factory.begin() as session:
+        stored_source = await session.get(Source, source.id)
+        stored_account = await session.get(SourceAccount, account.id)
+        assert stored_source is not None and stored_account is not None
+        stored_source.enabled = enabled
+        stored_source.authorization_status = authorization
+        stored_account.enabled = account_enabled
+
+    diagnosis = await diagnose_marketaux_target(factory)
+
+    assert diagnosis.error is expected
+    assert diagnosis.eligible_target_count == 0
+
+
+@pytest.mark.asyncio
+async def test_doctor_distinguishes_missing_account(real_pipeline_runtime) -> None:
+    factory, _ = real_pipeline_runtime
+    async with factory.begin() as session:
+        session.add(
+            Source(
+                code=f"spec0032-no-account-{uuid.uuid4().hex}",
+                name="Synthetic Marketaux Missing Account",
+                source_type=SourceType.API,
+                access_method="marketaux",
+                authorization_status=AuthorizationStatus.AUTHORIZED,
+                retention_class="metadata_only",
+                enabled=True,
+                schedule_seconds=None,
+            )
+        )
+
+    diagnosis = await diagnose_marketaux_target(factory)
+
+    assert diagnosis.error is MarketauxTargetError.ACCOUNT_MISSING
+    assert diagnosis.account_count == 0
+
+
+@pytest.mark.asyncio
+async def test_bootstrapped_target_reaches_raw_and_evidence(real_pipeline_runtime) -> None:
+    factory, redis = real_pipeline_runtime
+    bootstrap = await bootstrap_marketaux_target(factory)
+    assert bootstrap.diagnosis.target is not None
+    pipeline, transport = _pipeline(factory, redis, _response())
+
+    outcome = await pipeline.run(bootstrap.diagnosis.target.target)
+
+    assert outcome.status is EndToEndStatus.PROCESSED
+    assert await _counts(factory) == (1, 1)
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_does_not_read_token_or_request_api(
+    real_pipeline_runtime, monkeypatch
+) -> None:
+    factory, _ = real_pipeline_runtime
+
+    def fail(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("bootstrap crossed credential or network boundary")
+
+    monkeypatch.setattr(marketaux_real_collection_smoke.os.environ, "get", fail)
+    result = await bootstrap_marketaux_target(factory)
+
+    assert result.status == "created"
 
 
 @pytest.mark.asyncio

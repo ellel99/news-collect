@@ -12,6 +12,8 @@
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
 - 当前工作状态：SPEC-0032 Marketaux Real Collection Pipeline Implementation Review；只允许显式
   manual runtime wiring、默认 dry-run、mocked PostgreSQL/Redis tests；本 PR/CI 不执行真实 API
+- PR #31 review fix 增加只读 target doctor 与幂等 bootstrap；bootstrap 不读 token、不请求 API，
+  只为干净本地 DB 建立唯一 enabled/authorized metadata-only Marketaux target，且不改 schema
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权

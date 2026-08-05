@@ -34,12 +34,18 @@ MarketauxRealAdapter
 - `MarketauxRealCollectionPipeline` 委托既有 end-to-end orchestrator，不直接写 RawItem/evidence_items。
 - manual target resolver 只允许恰好一个 enabled account，其 Source 必须 enabled、`access_method =
   marketaux` 且 authorization 为 authorized/implemented；零个或多个 target 均 fail closed。
+- `--doctor` 只读检查 Marketaux Source/SourceAccount 与 eligible target 数量；`--bootstrap-target`
+  在干净 DB 中幂等创建最小 metadata-only target，且不读取 token、不请求 Provider、不改变 schema。
+- 已存在唯一 target 返回 `already_exists`；多个 eligible target 必须以
+  `marketaux_target_not_unique` fail closed。
 - RawItem/cursor 仍由 CollectionRunner transaction 写入；evidence 仍只通过既有 Pipeline/Write Service。
 
 ## 3. Manual command
 
 ```bash
 python3 scripts/marketaux_real_collection_smoke.py
+python3 scripts/marketaux_real_collection_smoke.py --doctor
+python3 scripts/marketaux_real_collection_smoke.py --bootstrap-target
 MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --execute --limit 1
 ```
 
@@ -54,6 +60,8 @@ MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --exe
 ## 4. Failure behavior
 
 - missing token、invalid limit、missing/ambiguous target 在网络前 fail closed。
+- target 错误区分 `marketaux_target_missing`、`marketaux_target_not_unique`、
+  `marketaux_target_disabled`、`marketaux_target_unauthorized` 与 `marketaux_account_missing`。
 - 429/timeout/provider error 不写 RawItem/evidence_items。
 - RawItem persistence failure 不推进 cursor、不触发 evidence。
 - duplicate processing 通过既有 provider-scoped idempotency 返回 duplicate，不增加 evidence row。
@@ -71,6 +79,8 @@ MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --exe
 ## 6. 测试与验收
 
 - [x] default dry-run safe/inert；missing token 与 limit >3 fail closed。
+- [x] doctor 空 DB fail closed；bootstrap 空 DB 创建 target、重复运行幂等、多 target fail closed。
+- [x] bootstrap 不读 token、不请求 API；bootstrap 后 mocked pipeline 写 RawItem/evidence_items。
 - [x] mocked Marketaux real adapter → CollectionRunner → RawItem → evidence_items 成功。
 - [x] 429/timeout 不写 RawItem/evidence_items。
 - [x] RawItem persistence failure 不写 evidence。
@@ -91,3 +101,4 @@ Foundation validator 与 committed-snapshot review package 为证。本 PR/CI �
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | REQUEST CHANGES | 用户本地 execute 被 target resolution 阻塞 | 增加 safe doctor、幂等 bootstrap 与细化 target diagnosis；等待复审 |

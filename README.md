@@ -156,8 +156,16 @@ description、完整 request URL 或 token，也不写 DB/evidence_items。CI、
 python3 scripts/marketaux_real_collection_smoke.py
 ```
 
-只有用户明确授权，且数据库中恰好配置一个 enabled/authorized Marketaux SourceAccount 后，才可手动
-执行一次 limit 1–3 的真实 collection-to-evidence pipeline：
+首次在干净数据库运行时，先用 doctor 检查并用幂等 bootstrap 建立最小 metadata-only target；两者
+都不读取 token、不请求 Marketaux API：
+
+```bash
+.venv/bin/python scripts/marketaux_real_collection_smoke.py --doctor
+.venv/bin/python scripts/marketaux_real_collection_smoke.py --bootstrap-target
+```
+
+bootstrap 返回 `created` 或 `already_exists` 后，只有用户明确授权，且 doctor 确认恰好一个
+enabled/authorized Marketaux SourceAccount，才可手动执行一次 limit 1–3 的真实 pipeline：
 
 ```bash
 MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --execute --limit 1

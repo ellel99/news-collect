@@ -7,6 +7,9 @@
   command；复用既有 registry/runner/RawItem/cursor/sidecar/Evidence Pipeline/Write Service。
 - 新增 PostgreSQL/Redis mocked success、429/timeout、RawItem failure、duplicate、安全输出和 source audit
   tests；CI/pytest/package review 未请求真实 API。
+- PR #31 review fix 新增 safe `--doctor` 与幂等 `--bootstrap-target`，解决干净本地 DB 缺少唯一
+  Marketaux target 导致的 live execute BLOCKED，并细分 target diagnosis safe error；bootstrap 不读
+  token、不请求 API，且无 migration/ORM/schema 变化。
 - 无 `.env`/capture/raw response、scheduler/Telegram/AI/dedup/Event、Finnhub/EIA/SEC，亦无 migration/
   ORM/schema change；SPEC-0022 未启动。
 

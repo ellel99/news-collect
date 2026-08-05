@@ -18,6 +18,9 @@ from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.marketaux_real_collection import (
     MarketauxRealCollectionPipeline,
+    MarketauxTargetDiagnosis,
+    bootstrap_marketaux_target,
+    diagnose_marketaux_target,
     resolve_marketaux_target,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
@@ -29,8 +32,40 @@ _PROVIDER = "marketaux"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run one manual Marketaux collection pipeline")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--doctor", action="store_true")
+    parser.add_argument("--bootstrap-target", action="store_true")
     parser.add_argument("--limit", type=int, default=1)
     return parser
+
+
+def _target_summary(*, status: str, diagnosis: MarketauxTargetDiagnosis) -> dict[str, object]:
+    return {
+        "provider": _PROVIDER,
+        "status": status,
+        "marketaux_source_count": diagnosis.source_count,
+        "marketaux_account_count": diagnosis.account_count,
+        "eligible_target_count": diagnosis.eligible_target_count,
+        "safe_errors": [diagnosis.error.value] if diagnosis.error is not None else [],
+    }
+
+
+async def inspect_target(*, bootstrap: bool) -> tuple[dict[str, object], int]:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        if bootstrap:
+            result = await bootstrap_marketaux_target(factory)
+            report = _target_summary(status=result.status, diagnosis=result.diagnosis)
+            return report, 0 if result.status in ("created", "already_exists") else 2
+        diagnosis = await diagnose_marketaux_target(factory)
+        report = _target_summary(
+            status="PASS" if diagnosis.target is not None else "BLOCKED",
+            diagnosis=diagnosis,
+        )
+        return report, 0 if diagnosis.target is not None else 2
+    finally:
+        await engine.dispose()
 
 
 def _summary(
@@ -82,11 +117,16 @@ async def execute_collection(
     try:
         resolved = await resolve_marketaux_target(factory)
         if resolved is None:
+            diagnosis = await diagnose_marketaux_target(factory)
             return (
                 _summary(
                     status="BLOCKED",
                     collection_status="not_started",
-                    safe_errors=["marketaux_target_not_unique"],
+                    safe_errors=[
+                        diagnosis.error.value
+                        if diagnosis.error is not None
+                        else "marketaux_target_not_unique"
+                    ],
                     token_read=True,
                 ),
                 2,
@@ -146,7 +186,19 @@ async def execute_collection(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if not 1 <= args.limit <= 3:
+    selected_modes = sum((args.execute, args.doctor, args.bootstrap_target))
+    if selected_modes > 1:
+        report = _summary(
+            status="BLOCKED",
+            collection_status="not_started",
+            safe_errors=["runtime_mode_not_unique"],
+        )
+        exit_code = 2
+    elif args.doctor:
+        report, exit_code = asyncio.run(inspect_target(bootstrap=False))
+    elif args.bootstrap_target:
+        report, exit_code = asyncio.run(inspect_target(bootstrap=True))
+    elif not 1 <= args.limit <= 3:
         report = _summary(
             status="BLOCKED",
             collection_status="not_started",
