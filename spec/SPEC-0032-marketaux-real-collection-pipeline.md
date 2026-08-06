@@ -1,6 +1,6 @@
 # SPEC-0032 — Marketaux Real Collection Pipeline
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Manual Marketaux Real Collection-to-Evidence Pipeline
 
@@ -89,7 +89,7 @@ MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --exe
 - [x] source audit 无 `.env` file、capture、scheduler/Telegram/AI/dedup/Event dependency。
 - [x] PostgreSQL/Redis semantics；tests mock transport only，不访问 Provider。
 - [x] 无 migration/ORM/schema change；SPEC-0022 未启动。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证、安全 review package 与用户 post-fix manual verification PASS。
 
 ## 7. Verification Evidence
 
@@ -102,3 +102,4 @@ Foundation validator 与 committed-snapshot review package 为证。本 PR/CI �
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
 | 2 | REQUEST CHANGES | 用户本地 execute 被 target resolution 阻塞 | 增加 safe doctor、幂等 bootstrap 与细化 target diagnosis；等待复审 |
+| 3 | PASS | PR #31、CI、用户 post-fix doctor/bootstrap/dry-run/manual execute safe evidence | Marketaux → RawItem → evidence_items 与 target bootstrap 已批准并合并 |

@@ -19,7 +19,13 @@ from market_intelligence.db.models import (
     SourceAccount,
     SourceType,
 )
-from market_intelligence.evidence.end_to_end import EndToEndOutcome
+from market_intelligence.evidence.end_to_end import (
+    EndToEndError,
+    EndToEndOutcome,
+    EndToEndStatus,
+    InMemoryProviderProjectionSidecar,
+)
+from market_intelligence.feed.marketaux_feed import MarketauxFeedService
 from market_intelligence.providers.contracts import ProviderTransport
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.runtime import build_marketaux_real_pipeline
@@ -230,12 +236,45 @@ class MarketauxRealCollectionPipeline:
         credential: RuntimeCredential,
         transport: ProviderTransport,
     ) -> None:
+        self._sidecar = InMemoryProviderProjectionSidecar()
+        self._feed = MarketauxFeedService(factory)
         self._pipeline = build_marketaux_real_pipeline(
-            factory, redis, settings, credential, transport
+            factory, redis, settings, credential, transport, self._sidecar
         )
 
     async def run(self, target: CollectionTarget) -> EndToEndOutcome:
-        return await self._pipeline.run(target)
+        outcome = await self._pipeline.run(target)
+        return await self._persist_feed(outcome)
 
     async def process_run(self, collection_run_id: UUID) -> EndToEndOutcome:
-        return await self._pipeline.process_run(collection_run_id)
+        outcome = await self._pipeline.process_run(collection_run_id)
+        return await self._persist_feed(outcome)
+
+    async def _persist_feed(self, outcome: EndToEndOutcome) -> EndToEndOutcome:
+        if outcome.status is not EndToEndStatus.PROCESSED or outcome.collection_run_id is None:
+            return outcome
+        try:
+            feed_count = await self._feed.persist_run(outcome.collection_run_id, self._sidecar)
+        except Exception:
+            return EndToEndOutcome(
+                status=EndToEndStatus.INVALID,
+                collection_run_id=outcome.collection_run_id,
+                raw_item_count=outcome.raw_item_count,
+                trigger_outcomes=outcome.trigger_outcomes,
+                safe_errors=(
+                    *outcome.safe_errors,
+                    EndToEndError("content_projection_failed", "content_projection_failed"),
+                ),
+            )
+        if outcome.raw_item_count > 0 and feed_count == 0:
+            return EndToEndOutcome(
+                status=EndToEndStatus.INVALID,
+                collection_run_id=outcome.collection_run_id,
+                raw_item_count=outcome.raw_item_count,
+                trigger_outcomes=outcome.trigger_outcomes,
+                safe_errors=(
+                    *outcome.safe_errors,
+                    EndToEndError("visible_feed_item_missing", "visible_feed_item_missing"),
+                ),
+            )
+        return outcome
