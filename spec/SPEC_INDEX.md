@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0030（Combined Implementation Review；含 bundled SPEC-0031 smoke harness）
+Active SPEC：SPEC-0032（Implementation Review；manual Marketaux real collection pipeline only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -29,8 +29,9 @@ Active SPEC：SPEC-0030（Combined Implementation Review；含 bundled SPEC-0031
 | SPEC-0027 | RawItem to Evidence Pipeline Orchestration | Completed — Implementation Review approved | SPEC-0023/0026 implementation |
 | SPEC-0028 | RawItem Evidence Projection Store and Pipeline Trigger | Completed — Implementation Review approved | SPEC-0027 implementation |
 | SPEC-0029 | End-to-End Mock Collection Evidence Pipeline | Completed — Implementation Review approved | SPEC-0026/0027/0028 implementation |
-| SPEC-0030 | Marketaux Real Adapter Implementation | Active — Implementation Review | SPEC-0025/0026/0029 implementation |
-| SPEC-0031 | Marketaux Bounded Live Smoke Harness | Bundled — Implementation Review in PR #30；not separately Active | SPEC-0030 |
+| SPEC-0030 | Marketaux Real Adapter Implementation | Completed — Implementation Review approved | SPEC-0025/0026/0029 implementation |
+| SPEC-0031 | Marketaux Bounded Live Smoke Harness | Bundled — Completed in PR #30；not separately Active | SPEC-0030 |
+| SPEC-0032 | Marketaux Real Collection Pipeline | Active — Implementation Review | SPEC-0026–0030 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -94,7 +95,7 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-唯一 Active SPEC 是 SPEC-0030 combined delivery，只实现 Marketaux real adapter/request/credential/HTTP
-code boundary 与 bundled SPEC-0031 manual bounded smoke harness；
+SPEC-0030 与 bundled SPEC-0031 已由 PR #30 完成。唯一 Active SPEC 是 SPEC-0032，只实现 manual
+Marketaux real adapter → CollectionRunner → RawItem → evidence_items pipeline；
 不授权真实 API 执行、scheduler 或其他 Provider。SPEC-0005 及其他
 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate Layer 且未启动。

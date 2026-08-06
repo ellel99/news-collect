@@ -1,6 +1,6 @@
 # SPEC-0031 — Marketaux Bounded Live Smoke Harness
 
-Status：Bundled — Implementation Review in PR #30
+Status：Bundled — Completed in PR #30；not separately Active
 
 Phase：Phase 1 — Manual Bounded Live Smoke Harness
 
@@ -49,10 +49,11 @@ URL、token/Authorization/secret、provider item values 或 SQL/DB 数据。resp
 - [x] summary 不含 token、URL/title/body/snippet/raw response。
 - [x] source audit 确认不读 env file/local capture，不写 DB，不依赖 scheduler/dedup/Event/AI/Telegram。
 - [x] tests 不访问真实网络。
-- [ ] PR #30 Reviewer/CI/安全 review package PASS。
+- [x] PR #30 Reviewer/CI/安全 review package PASS；用户本地 manual smoke redacted PASS。
 
 ## 6. Review History
 
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | PR #30 combined implementation、mock tests 与 review package | 等待 combined Review |
+| 2 | PASS | PR #30 merge、CI 与用户本地 redacted manual smoke evidence | Bundled completion；not separately Active |

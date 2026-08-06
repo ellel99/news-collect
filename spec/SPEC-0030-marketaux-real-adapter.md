@@ -1,6 +1,6 @@
 # SPEC-0030 — Marketaux Real Adapter Implementation
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Marketaux Real Adapter Code Boundary
 
@@ -83,7 +83,7 @@ SPEC-0030 保持本 combined PR 的唯一 Active SPEC，SPEC-0031 不另开 PR�
 - [x] 无真实 API、`.env`/capture、Finnhub/EIA/SEC、scheduler、dedup/Event/AI/Telegram。
 - [x] 无 migration/ORM/DB schema change；SPEC-0022 未启动。
 - [x] Bundled SPEC-0031 默认 dry-run/manual `--execute` harness 与 mock-only tests 已实现。
-- [ ] Reviewer/CI/完整验证与安全 review package PASS。
+- [x] Reviewer/CI/完整验证与安全 review package PASS。
 
 ## 8. Verification Evidence
 
@@ -95,6 +95,12 @@ Foundation validator 与安全 review package 为证。本 PR 未执行真实 AP
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | PASS | PR #30；real adapter、HTTP boundary、bundled smoke harness、manual smoke evidence 与 CI | Completed — Implementation Review approved |
+
+PR #30 已交付 Marketaux real adapter boundary、`RuntimeCredential`、`HttpxProviderTransport` 与
+bundled SPEC-0031 bounded live smoke harness。用户本地 manual smoke 获得 redacted PASS；CI/pytest/
+package review 未请求真实 API。PR #30 未实现 real collection DB pipeline、scheduler、其他 Provider、
+dedup/Event/AI 或 Telegram。
 
 ## 10. 后续门禁
 
