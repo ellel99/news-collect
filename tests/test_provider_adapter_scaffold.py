@@ -95,6 +95,8 @@ async def test_marketaux_mock_response_builds_safe_raw_item_envelope() -> None:
     assert item.payload_location.startswith("internal://provider/marketaux/")
     assert item.payload_hash is not None and len(item.payload_hash) == 64
     assert result.sanitized_metadata[0]["has_title"] is True
+    assert result.sanitized_metadata[0]["display_title"] == "synthetic title"
+    assert result.sanitized_metadata[0]["display_url"] == "https://example.invalid/synthetic"
     assert "synthetic title" not in repr(result)
     assert "https://example.invalid" not in repr(result)
 
@@ -123,8 +125,10 @@ async def test_provider_echoed_secret_is_removed_from_output() -> None:
     assert SECRET not in serialized
     assert "api_key" not in result.sanitized_metadata[0]["field_names"]
     assert "authorization" not in result.sanitized_metadata[0]["field_names"]
-    assert result.sanitized_metadata[0]["has_title"] is True
-    assert result.sanitized_metadata[0]["has_source_url"] is True
+    assert result.sanitized_metadata[0]["has_title"] is False
+    assert result.sanitized_metadata[0]["has_source_url"] is False
+    assert result.sanitized_metadata[0]["display_title"] is None
+    assert result.sanitized_metadata[0]["display_url"] is None
 
 
 @pytest.mark.asyncio

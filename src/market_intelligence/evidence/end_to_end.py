@@ -29,6 +29,18 @@ from market_intelligence.evidence.projection_store import (
 from market_intelligence.evidence.write_path import EvidenceWriteService
 from market_intelligence.providers.contracts import ProviderFetchResult
 
+_EVIDENCE_METADATA_FIELDS = frozenset(
+    {
+        "provider_item_id",
+        "published_at",
+        "field_names",
+        "has_title",
+        "has_description",
+        "has_snippet",
+        "has_source_url",
+    }
+)
+
 
 class EndToEndStatus(StrEnum):
     PROCESSED = "processed"
@@ -80,7 +92,9 @@ class InMemoryProviderProjectionSidecar:
         item = self._pending.get(key)
         if item is None:
             return None
-        projection = dict(item.metadata)
+        projection = {
+            key: value for key, value in item.metadata.items() if key in _EVIDENCE_METADATA_FIELDS
+        }
         projection["payload_hash"] = raw_item.payload_hash
         projection["payload_reference"] = raw_item.payload_location
         return RawItemEvidenceProjection(
@@ -92,6 +106,15 @@ class InMemoryProviderProjectionSidecar:
             observed_at=item.observed_at,
             correlation_id=f"collection-run:{raw_item.raw_item_id}",
         )
+
+    def display_metadata(
+        self, raw_item: SafeRawItemProjectionSource
+    ) -> Mapping[str, object] | None:
+        """Return the adapter-sanitized display projection for same-run persistence."""
+
+        key = (raw_item.external_id, raw_item.payload_hash, raw_item.payload_location)
+        item = self._pending.get(key)
+        return None if item is None else dict(item.metadata)
 
 
 class EndToEndMockEvidencePipeline:

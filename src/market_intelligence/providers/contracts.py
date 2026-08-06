@@ -87,7 +87,7 @@ class ProviderTransportResponse:
 @dataclass(frozen=True, slots=True)
 class ProviderFetchResult:
     raw_items: tuple[RawItemEnvelope, ...]
-    sanitized_metadata: tuple[Mapping[str, Any], ...]
+    sanitized_metadata: tuple[Mapping[str, Any], ...] = field(repr=False)
     next_cursor: str | None
     has_more: bool
     safe_errors: tuple[ProviderAdapterError, ...]

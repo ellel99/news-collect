@@ -24,12 +24,13 @@ def build_marketaux_real_pipeline(
     settings: Settings,
     credential: RuntimeCredential,
     transport: ProviderTransport,
+    sidecar: InMemoryProviderProjectionSidecar | None = None,
 ) -> EndToEndMockEvidencePipeline:
     """Compose existing collection/evidence components for explicit manual use."""
 
     provider_registry = ProviderAdapterRegistry()
     provider_registry.register("marketaux", MarketauxRealAdapter(credential))
-    sidecar = InMemoryProviderProjectionSidecar()
+    sidecar = sidecar or InMemoryProviderProjectionSidecar()
     runner = CollectionRunner(
         factory,
         redis,

@@ -8,12 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0032-marketaux-real-collection-pipeline.md`
+- 当前 Active SPEC：`spec/SPEC-0033-marketaux-visible-feed-manual-telegram.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0032 Marketaux Real Collection Pipeline Implementation Review；只允许显式
-  manual runtime wiring、默认 dry-run、mocked PostgreSQL/Redis tests；本 PR/CI 不执行真实 API
-- PR #31 review fix 增加只读 target doctor 与幂等 bootstrap；bootstrap 不读 token、不请求 API，
-  只为干净本地 DB 建立唯一 enabled/authorized metadata-only Marketaux target，且不改 schema
+- 当前工作状态：SPEC-0032 已经 PR #31 与用户 post-fix live verification 批准完成；SPEC-0033
+  Implementation Review 只实现 Marketaux metadata-only visible ContentItem/feed 与 default-dry-run manual
+  Telegram preview/push。tests/CI 不执行真实 Marketaux/Telegram，不实现 scheduler/AI/dedup/Event
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
@@ -42,8 +41,8 @@
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
-- SPEC-0030/0031 combined PR 已完成 real adapter boundary 与 bounded smoke harness；SPEC-0031 不单独
-  Active。SPEC-0032 只接 manual Marketaux collection/evidence runtime。Finnhub/EIA/SEC real adapters、
+- SPEC-0030/0031 combined PR 已完成 real adapter boundary 与 bounded smoke harness；SPEC-0032 已完成
+  manual Marketaux collection/evidence runtime。SPEC-0033 只增加 visible feed/manual Telegram。Finnhub/EIA/SEC real adapters、
   NewsAPI.ai/GDELT 均不激活。SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X Source
   范围不变
 
