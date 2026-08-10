@@ -1,6 +1,6 @@
 # SPEC-0034 — Alembic Migration State Repair / Docker Startup Health
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Operations Safety
 
@@ -99,7 +99,7 @@ docker compose ps api
 - [x] incompatible schema/blocking chain 不修改数据库。
 - [x] safe output 不包含连接串/password/token/`.env`。
 - [x] 无外部 API、Telegram/Provider credential 或业务 pipeline dependency。
-- [ ] CI、Docker doctor/migrate/api startup 与 Reviewer PASS。
+- [x] CI、Docker doctor/migrate/api startup 与 Reviewer PASS。
 
 ## 9. 数据模型与 migration
 
@@ -113,3 +113,4 @@ docker compose ps api
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | implementation diff、PostgreSQL tests、Docker safe summaries、review package | 等待用户/ChatGPT Review |
+| 2 | PASS | PR #33 CI 与 ChatGPT review；Docker `0003 -> 0004`、doctor、downgrade/re-upgrade、api healthy | PR #33 合并为 `089d62b` |

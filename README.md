@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0034-alembic-state-repair-docker-startup-health.md`](spec/SPEC-0034-alembic-state-repair-docker-startup-health.md)，仅实现 Alembic state doctor、guarded repair 与 Docker startup health
+- 开发入口：[`spec/SPEC-0035-marketaux-telegram-scheduler.md`](spec/SPEC-0035-marketaux-telegram-scheduler.md)，仅实现 default-dry-run Marketaux + Telegram 最小 scheduler
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0034-alembic-state-repair-docker-startup-health.md`](spec/SPEC-0034-alembic-state-repair-docker-startup-health.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0035-marketaux-telegram-scheduler.md`](spec/SPEC-0035-marketaux-telegram-scheduler.md) — Implementation Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021
@@ -239,6 +239,26 @@ docker compose run --rm migrate
 docker compose up -d api
 docker compose ps api
 ```
+
+### Minimal Marketaux Telegram scheduler
+
+默认 smoke 是完全 inert 的 dry-run，不读取任何 Provider/Telegram credential、不连接 runtime、不发送：
+
+```bash
+python3 scripts/marketaux_telegram_scheduler_smoke.py
+```
+
+只有用户明确授权的一次 manual cycle 才使用 `--execute`。limit 默认 1、最大 3：
+
+```bash
+MARKETAUX_API_TOKEN=... TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
+  python3 scripts/marketaux_telegram_scheduler_smoke.py --execute --limit 1
+```
+
+Celery Beat 注册 `marketaux.telegram.run`，默认 `MARKETAUX_TELEGRAM_SCHEDULER_EXECUTE=false`，因此
+不会自动读取凭证或发送。明确启用 worker runtime 时，凭证只来自 process environment。自动 cycle
+只推送本轮新 ContentItem，并复用 `notifications.dedup_key` 唯一约束；失败保留 failed marker，
+不静默删除未推送状态，也不会自动重发可能已经到达 Telegram 的不确定请求。
 
 先启动依赖服务：
 

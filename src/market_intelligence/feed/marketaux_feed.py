@@ -146,6 +146,47 @@ class MarketauxFeedService:
             for content, source_name, evidence_id in rows
         )
 
+    async def for_run(
+        self, collection_run_id: uuid.UUID, limit: int
+    ) -> tuple[VisibleFeedItem, ...]:
+        """Return only visible items associated with one collection run."""
+
+        if limit < 1 or limit > 5:
+            raise ValueError("feed_limit_invalid")
+        async with self._factory() as session:
+            rows = (
+                await session.execute(
+                    select(ContentItem, Source.name, EvidenceItem.id)
+                    .join(RawItem, RawItem.id == ContentItem.raw_item_id)
+                    .join(Source, Source.id == ContentItem.source_id)
+                    .outerjoin(EvidenceItem, EvidenceItem.raw_item_id == ContentItem.raw_item_id)
+                    .where(
+                        RawItem.collection_run_id == collection_run_id,
+                        Source.access_method == "marketaux",
+                        ContentItem.title.is_not(None),
+                        ContentItem.canonical_url.is_not(None),
+                        ContentItem.source_published_at.is_not(None),
+                    )
+                    .order_by(ContentItem.source_published_at.desc(), ContentItem.id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return tuple(
+            VisibleFeedItem(
+                content_item_id=content.id,
+                title=content.title or "",
+                source=source_name,
+                provider="marketaux",
+                published_at=content.source_published_at,
+                canonical_url=content.canonical_url or "",
+                provider_item_id=content.external_id or "",
+                collected_at=content.first_seen_at,
+                raw_item_id=content.raw_item_id,
+                evidence_item_id=evidence_id,
+            )
+            for content, source_name, evidence_id in rows
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class _DisplayProjection:
