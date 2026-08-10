@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0033-marketaux-visible-feed-manual-telegram.md`](spec/SPEC-0033-marketaux-visible-feed-manual-telegram.md)，仅实现 Marketaux metadata-only visible feed 与 default-dry-run manual Telegram push
+- 开发入口：[`spec/SPEC-0034-alembic-state-repair-docker-startup-health.md`](spec/SPEC-0034-alembic-state-repair-docker-startup-health.md)，仅实现 Alembic state doctor、guarded repair 与 Docker startup health
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0033-marketaux-visible-feed-manual-telegram.md`](spec/SPEC-0033-marketaux-visible-feed-manual-telegram.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0034-alembic-state-repair-docker-startup-health.md`](spec/SPEC-0034-alembic-state-repair-docker-startup-health.md) — Implementation Review
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021
@@ -211,6 +211,34 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 凭证只从 process environment 读取，脚本强制不读 `.env`；不输出 token/chat id，不保存 Telegram
 response，不自动循环或调度。execute 也先查 feed；空 feed 时不读 token/chat id
 且不发送请求。SPEC-0033 生效前已保存的 content-free RawItem 不进行猜测性回填。
+
+### Alembic state doctor and guarded repair
+
+持久化 Docker 数据库出现 unknown revision 时，不要执行 `docker compose down -v`，也不要跳过
+migrate。先确保运行的是当前代码构建的 image，然后执行只读 doctor 与 repair dry-run：
+
+```bash
+docker compose build api migrate
+docker compose run --rm --no-deps api uv run python scripts/alembic_state_doctor.py
+docker compose run --rm --no-deps api uv run python scripts/alembic_state_repair.py
+```
+
+只有 doctor 明确返回 `repair_available=true`，并确认 schema 与当前唯一 head 完全兼容时，才可人工执行：
+
+```bash
+docker compose run --rm --no-deps api uv run python scripts/alembic_state_repair.py --execute
+```
+
+当前 code head 为 reconciliation revision `0004`：它用于修复曾应用早期 `0003` artifact 的数据库，
+补齐 composite provenance FK/index 与 secret-marker check。若 DB revision 是代码认识的 `0003`，应使用
+正常 migrate 而不是 repair。repair 只能将未知 bookkeeping revision 修到当前 code head，不接受任意目标，
+也不执行 DDL。随后仍须运行正常 migrate 并验证 api：
+
+```bash
+docker compose run --rm migrate
+docker compose up -d api
+docker compose ps api
+```
 
 先启动依赖服务：
 

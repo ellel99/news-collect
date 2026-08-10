@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SPEC-0034 Alembic State Repair / Docker Startup Health
+
+- 将 SPEC-0033 标记为 PR #32 与用户 post-fix live verification approved/completed，并激活 SPEC-0034。
+- Git 历史与本地 schema inspection 确认早期 `0003` artifact 与当前 `0003` contract 漂移；新增幂等
+  forward revision `0004`，补齐 composite provenance FK/index 与 raw reference secret-marker check，
+  不改写 `0003`，不新增 table/column/entity。
+- 当前 migration chain 为 `0001 -> 0002 -> 0003 -> 0004`；新增 safe Alembic code/database state doctor。
+- 新增默认 dry-run、single-head-only、schema-compatible-only 的显式 repair guardrails；不接受任意 revision，
+  不删除 database volume，不跳过 migrate，不改写既有 migration/ORM，也不新增 table/column/entity。
+- 新增 Docker image rebuild、doctor、normal migrate、api health recovery runbook；无 `.env`/dump/secret、
+  scheduler、AI、dedup/Event、多 Provider或 SPEC-0022。
+
 ## Unreleased — SPEC-0033 Marketaux Visible Feed + Manual Telegram Push
 
 - 将 SPEC-0032 标记为 PR #31 与用户 post-fix live verification approved/completed，并激活 SPEC-0033。
