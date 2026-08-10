@@ -1,6 +1,6 @@
 # SPEC-0033 — Marketaux Visible Feed + Manual Telegram Push
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Visible Marketaux Metadata and Explicit Manual Push
 
@@ -104,7 +104,7 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 - [x] mocked Telegram execute 格式正确，credential/response body 不进入 output/repr。
 - [x] source audit 无 scheduler/OpenAI/recommendation/dedup/Event/local capture dependency。
 - [x] 无 migration/ORM/schema 变化；SPEC-0022 未启动。
-- [ ] Reviewer、CI、完整 regression 与 review package PASS。
+- [x] Reviewer、CI、完整 regression 与 review package PASS。
 
 ## 7. Verification Evidence
 
@@ -117,6 +117,7 @@ Foundation validation 与 committed-snapshot review package 为证。本 PR/CI �
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
 | 2 | REQUEST CHANGES | 用户本地首次 real collection 为 `COLLECTION_CONTRACT_INVALID` / `provider_request_rejected`，本次 fetched/new/duplicate 均为 0；feed empty，Telegram blocked | 分离 display projection，正规化 cursor request datetime，细化 safe diagnostics，新增 feed `--require-items`，并将 Telegram credential 读取后移到 non-empty feed gate 之后；尚未声称 post-fix live PASS |
+| 3 | PASS | PR #32 CI、326 tests、用户 Docker post-fix Marketaux collection/feed/Telegram preview/manual push safe summaries | PR #32 合并为 `4ce1063`；最新 collection succeeded，ContentItem/feed 与手动 Telegram 均验证通过 |
 
 ## 9. Known environment issue (separate follow-up)
 

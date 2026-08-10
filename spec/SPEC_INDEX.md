@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0033（Implementation Review；Marketaux visible feed + manual Telegram only）
+Active SPEC：SPEC-0034（Implementation Review；Alembic state repair / Docker startup health only）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -32,7 +32,8 @@ Active SPEC：SPEC-0033（Implementation Review；Marketaux visible feed + manua
 | SPEC-0030 | Marketaux Real Adapter Implementation | Completed — Implementation Review approved | SPEC-0025/0026/0029 implementation |
 | SPEC-0031 | Marketaux Bounded Live Smoke Harness | Bundled — Completed in PR #30；not separately Active | SPEC-0030 |
 | SPEC-0032 | Marketaux Real Collection Pipeline | Completed — Implementation Review approved | SPEC-0026–0030 |
-| SPEC-0033 | Marketaux Visible Feed + Manual Telegram Push | Active — Implementation Review | SPEC-0032 |
+| SPEC-0033 | Marketaux Visible Feed + Manual Telegram Push | Completed — Implementation Review approved | SPEC-0032 |
+| SPEC-0034 | Alembic Migration State Repair / Docker Startup Health | Active — Implementation Review | SPEC-0033 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -96,7 +97,8 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-SPEC-0030/0031 与 SPEC-0032 已完成。唯一 Active SPEC 是 SPEC-0033，只实现 Marketaux
-metadata-only visible ContentItem/feed 与 default-dry-run manual Telegram preview/push；不授权 scheduler、
-AI、dedup/Event 或其他 Provider。SPEC-0005 及其他
+SPEC-0030–0033 已完成。唯一 Active SPEC 是 SPEC-0034，只实现 Alembic state doctor、严格受保护的
+head-only repair、单一 forward reconciliation revision 与 Docker startup health 恢复；不改写既有
+migration/ORM，不新增 table/column/entity，不删除 volume，不授权
+scheduler、AI、dedup/Event 或其他 Provider。SPEC-0005 及其他
 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate Layer 且未启动。
