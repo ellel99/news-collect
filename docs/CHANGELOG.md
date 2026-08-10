@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SPEC-0035 Minimal Scheduler for Marketaux + Telegram
+
+- 将 SPEC-0034 标记为 PR #33 approved/completed，并激活 SPEC-0035。
+- 新增 Celery Beat `marketaux.telegram.run` 与 manual smoke，复用已验证 Marketaux collection/evidence/
+  ContentItem/Telegram components；默认 dry-run 不读 credential、不访问 runtime、不发送。
+- 加固 Marketaux Telegram 投递：加入 FAILED bounded retry、stale SENDING 原子 recovery、retry
+  exhaustion safe counts，并使历史 retry 独立于 current collection run；无 schema change。
+- 复用既有 Notification unique dedup key 作为 ContentItem sent marker；Telegram failure 保留 failed
+  safe state，不静默丢失；SENT 永不重发。
+- mock-only tests；无 `.env`/raw response/live output、migration/ORM/schema change、AI、dedup/Event、
+  Finnhub/EIA/SEC/X、多 Provider或 SPEC-0022。
+
 ## Unreleased — SPEC-0034 Alembic State Repair / Docker Startup Health
 
 - 将 SPEC-0033 标记为 PR #32 与用户 post-fix live verification approved/completed，并激活 SPEC-0034。

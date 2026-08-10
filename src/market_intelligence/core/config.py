@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     COLLECTION_RETRY_MAX_SECONDS: int = Field(default=300, ge=1)
     COLLECTION_MAX_RETRY_AFTER_SECONDS: int = Field(default=900, ge=1, le=86400)
     COLLECTION_LOCK_TTL_SECONDS: int = Field(default=180, ge=1)
+    MARKETAUX_TELEGRAM_SCHEDULER_EXECUTE: bool = False
+    MARKETAUX_TELEGRAM_SCHEDULER_INTERVAL_SECONDS: int = Field(default=900, ge=60, le=86400)
+    MARKETAUX_TELEGRAM_SCHEDULER_LIMIT: int = Field(default=1, ge=1, le=3)
 
     @field_validator("DATABASE_URL")
     @classmethod

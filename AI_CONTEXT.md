@@ -8,13 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0034-alembic-state-repair-docker-startup-health.md`
+- 当前 Active SPEC：`spec/SPEC-0035-marketaux-telegram-scheduler.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0033 已由 PR #32 与用户 post-fix live verification 批准完成。SPEC-0034
-  只实现 Alembic state doctor、guarded head-only repair 与 Docker startup recovery；不删除 database
-  volume，不跳过 migrate；允许唯一 forward reconciliation revision `0004` 补齐旧 `0003` 缺失的
-  provenance/security constraints，但不改写既有 migration、不修改 ORM、不新增 table/column/entity。
-  不读取 `.env`，不实现 scheduler/AI/dedup/Event。
+- 当前工作状态：SPEC-0034 已由 PR #33 批准完成，Docker migrate/api health 已恢复。SPEC-0035
+  只实现 Marketaux → RawItem/evidence/ContentItem → Telegram 的最小 default-dry-run scheduler，复用
+  Notification unique dedup marker；不读 `.env`，不实现 AI、投资建议、dedup/Event、多 Provider或复杂规则。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
