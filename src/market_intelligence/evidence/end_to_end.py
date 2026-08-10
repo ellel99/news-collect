@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -29,6 +30,25 @@ from market_intelligence.evidence.projection_store import (
 from market_intelligence.evidence.write_path import EvidenceWriteService
 from market_intelligence.providers.contracts import ProviderFetchResult
 
+_EVIDENCE_METADATA_FIELDS = frozenset(
+    {
+        "provider_item_id",
+        "published_at",
+        "field_names",
+        "has_title",
+        "has_description",
+        "has_snippet",
+        "has_source_url",
+    }
+)
+_DISPLAY_METADATA_FIELDS = frozenset(
+    {"provider_item_id", "published_at", "display_title", "display_url"}
+)
+_SECRET_VALUE = re.compile(
+    r"(?i)(api[_-]?key|api[_-]?token|authorization|x-finnhub-token|token|secret|password)="
+)
+_PUBLIC_URL = re.compile(r"(?i)^https?://([^/?#]+)(?:[/?#].*)?$")
+
 
 class EndToEndStatus(StrEnum):
     PROCESSED = "processed"
@@ -55,6 +75,7 @@ class EndToEndOutcome:
 class _PendingProjection:
     provider: str
     metadata: Mapping[str, object]
+    display: Mapping[str, object]
     observed_at: datetime
 
 
@@ -69,10 +90,21 @@ class InMemoryProviderProjectionSidecar:
     def observe(self, result: ProviderFetchResult) -> None:
         if result.provider != "marketaux":
             raise ValueError("provider_unsupported")
-        for item, metadata in zip(result.raw_items, result.sanitized_metadata, strict=True):
+        if len(result.display_projections) != len(result.raw_items):
+            raise ValueError("provider_display_projection_missing")
+        for item, metadata, display in zip(
+            result.raw_items,
+            result.sanitized_metadata,
+            result.display_projections,
+            strict=True,
+        ):
+            if set(metadata) != _EVIDENCE_METADATA_FIELDS:
+                raise ValueError("provider_evidence_projection_invalid")
+            if not _valid_display_projection(display):
+                raise ValueError("provider_display_projection_invalid")
             key = (item.external_id, item.payload_hash, item.payload_location)
             self._pending[key] = _PendingProjection(
-                result.provider, dict(metadata), item.fetched_at
+                result.provider, dict(metadata), dict(display), item.fetched_at
             )
 
     def bind(self, raw_item: SafeRawItemProjectionSource) -> RawItemEvidenceProjection | None:
@@ -80,7 +112,9 @@ class InMemoryProviderProjectionSidecar:
         item = self._pending.get(key)
         if item is None:
             return None
-        projection = dict(item.metadata)
+        projection = {
+            key: value for key, value in item.metadata.items() if key in _EVIDENCE_METADATA_FIELDS
+        }
         projection["payload_hash"] = raw_item.payload_hash
         projection["payload_reference"] = raw_item.payload_location
         return RawItemEvidenceProjection(
@@ -92,6 +126,36 @@ class InMemoryProviderProjectionSidecar:
             observed_at=item.observed_at,
             correlation_id=f"collection-run:{raw_item.raw_item_id}",
         )
+
+    def display_metadata(
+        self, raw_item: SafeRawItemProjectionSource
+    ) -> Mapping[str, object] | None:
+        """Return the adapter-sanitized display projection for same-run persistence."""
+
+        key = (raw_item.external_id, raw_item.payload_hash, raw_item.payload_location)
+        item = self._pending.get(key)
+        return None if item is None else dict(item.display)
+
+
+def _valid_display_projection(value: Mapping[str, object]) -> bool:
+    if not {"provider_item_id", "published_at"} <= set(value) <= _DISPLAY_METADATA_FIELDS:
+        return False
+    item_id = value.get("provider_item_id")
+    published_at = value.get("published_at")
+    if not all(isinstance(item, str) and item for item in (item_id, published_at)):
+        return False
+    title = value.get("display_title")
+    if title is not None and (
+        not isinstance(title, str) or not title or len(title) > 2000 or _SECRET_VALUE.search(title)
+    ):
+        return False
+    url = value.get("display_url")
+    if url is None:
+        return True
+    if not isinstance(url, str) or len(url) > 4000 or _SECRET_VALUE.search(url):
+        return False
+    parsed = _PUBLIC_URL.fullmatch(url)
+    return parsed is not None and "@" not in parsed.group(1)
 
 
 class EndToEndMockEvidencePipeline:

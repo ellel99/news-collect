@@ -128,7 +128,7 @@ async def test_missing_credential_fails_closed_without_transport() -> None:
 
 
 @pytest.mark.asyncio
-async def test_success_returns_content_free_raw_item_and_metadata() -> None:
+async def test_success_returns_metadata_only_raw_item_and_sanitized_display_fields() -> None:
     result = await MarketauxRealAdapter(_credential()).fetch(
         _request(), MockProviderTransport([_response()])
     )
@@ -138,10 +138,12 @@ async def test_success_returns_content_free_raw_item_and_metadata() -> None:
     assert result.raw_items[0].external_id == "synthetic-real-item"
     assert result.raw_items[0].retention_class == "metadata_only"
     assert result.sanitized_metadata[0]["has_title"] is True
+    assert result.display_projections[0]["display_title"] == "value is never emitted"
+    assert result.display_projections[0]["display_url"] == "https://example.invalid/not-emitted"
+    assert "display_title" not in result.sanitized_metadata[0]
+    assert "display_url" not in result.sanitized_metadata[0]
     rendered = repr(result)
     assert SECRET not in rendered
-    assert "value is never emitted" not in rendered
-    assert "example.invalid" not in rendered
 
 
 @pytest.mark.asyncio
@@ -166,6 +168,8 @@ async def test_provider_echoed_secret_never_reaches_result() -> None:
     assert result.safe_errors == ()
     assert SECRET not in repr(result)
     assert "authorization" not in result.sanitized_metadata[0]["field_names"]
+    assert "display_title" not in result.display_projections[0]
+    assert "display_url" not in result.display_projections[0]
 
 
 @pytest.mark.asyncio
@@ -247,6 +251,7 @@ async def test_cursor_is_deterministic_and_secret_free() -> None:
         _request(cursor=first.next_cursor), MockProviderTransport([_response()])
     )
     assert first.next_cursor == second.next_cursor
+    assert second.safe_errors == ()
     assert SECRET not in (first.next_cursor or "")
 
 

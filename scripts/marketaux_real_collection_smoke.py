@@ -10,10 +10,10 @@ import os
 from collections.abc import Mapping, Sequence
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from market_intelligence.core.config import Settings
-from market_intelligence.db.models import CollectionCursor
+from market_intelligence.db.models import CollectionCursor, CollectionRun, ContentItem, RawItem
 from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.marketaux_real_collection import (
@@ -27,6 +27,7 @@ from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.http_transport import HttpxProviderTransport
 
 _PROVIDER = "marketaux"
+_SAFE_COLLECTION_DETAILS = frozenset({"provider_request_rejected"})
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -78,8 +79,12 @@ def _summary(
     safe_errors: list[str] | None = None,
     db_written: bool = False,
     token_read: bool = False,
+    collection_run_id_present: bool | None = None,
+    collection_run_status: str | None = None,
+    collection_error_code: str | None = None,
+    content_item_count: int | None = None,
 ) -> dict[str, object]:
-    return {
+    report: dict[str, object] = {
         "provider": _PROVIDER,
         "status": status,
         "collection_status": collection_status,
@@ -91,6 +96,26 @@ def _summary(
         "db_written": db_written,
         "token_read": token_read,
     }
+    if collection_run_id_present is not None:
+        report["collection_run_id_present"] = collection_run_id_present
+    if collection_run_status is not None:
+        report["collection_run_status"] = collection_run_status
+    if collection_error_code is not None:
+        report["collection_error_code"] = collection_error_code
+    if content_item_count is not None:
+        report["content_item_count"] = content_item_count
+    return report
+
+
+def _safe_collection_errors(
+    errors: list[str], error_code: str | None, redacted_detail: str | None
+) -> list[str]:
+    values = list(errors)
+    if error_code:
+        values.append(error_code.lower())
+    if redacted_detail in _SAFE_COLLECTION_DETAILS:
+        values.append(redacted_detail)
+    return list(dict.fromkeys(values))
 
 
 async def execute_collection(
@@ -150,6 +175,9 @@ async def execute_collection(
             errors.extend(error.code for error in trigger.safe_errors)
             if trigger.pipeline_outcome is not None:
                 errors.extend(error.code for error in trigger.pipeline_outcome.safe_errors)
+        run_status: str | None = None
+        run_error_code: str | None = None
+        content_count = 0
         async with factory() as session:
             cursor_present = (
                 await session.scalar(
@@ -159,6 +187,26 @@ async def execute_collection(
                 )
                 is not None
             )
+            if outcome.collection_run_id is not None:
+                run = await session.get(CollectionRun, outcome.collection_run_id)
+                if run is not None:
+                    run_status = run.status.value
+                    run_error_code = run.error_code
+                    errors = _safe_collection_errors(
+                        errors, run.error_code, run.error_message_redacted
+                    )
+                content_count = int(
+                    (
+                        await session.scalar(
+                            select(func.count())
+                            .select_from(ContentItem)
+                            .join(RawItem, RawItem.id == ContentItem.raw_item_id)
+                            .where(RawItem.collection_run_id == outcome.collection_run_id)
+                        )
+                    )
+                    or 0
+                )
+        errors = list(dict.fromkeys(errors))
         succeeded = (
             outcome.status is EndToEndStatus.PROCESSED
             and not errors
@@ -176,6 +224,10 @@ async def execute_collection(
                 safe_errors=errors,
                 db_written=outcome.raw_item_count > 0 or evidence_count > 0,
                 token_read=True,
+                collection_run_id_present=outcome.collection_run_id is not None,
+                collection_run_status=run_status,
+                collection_error_code=run_error_code,
+                content_item_count=content_count,
             ),
             0 if succeeded else 3,
         )

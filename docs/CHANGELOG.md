@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — SPEC-0033 Marketaux Visible Feed + Manual Telegram Push
+
+- 将 SPEC-0032 标记为 PR #31 与用户 post-fix live verification approved/completed，并激活 SPEC-0033。
+- 在不修改 schema/ORM/migration 的前提下，将 adapter allowlisted title/public URL 作为 sanitized
+  same-run sidecar metadata 写入现有 metadata-only ContentItem；新增 recent read-only Marketaux feed。
+- 新增 default-dry-run Telegram preview 与 explicit manual push；credential 仅从 process environment
+  读取，response body 不保存，message 仅含 title/source/time/link。
+- 新增 mock-only provider/Telegram 与 PostgreSQL/Redis tests；无 scheduler、AI、investment advice、
+  dedup/Event、Finnhub/EIA/SEC、`.env`/capture/raw response；SPEC-0022 未启动。
+- PR #32 review fix 将 content-free evidence metadata 与 allowlisted visible display projection 分离，
+  并将 Marketaux cursor 正规化为 provider 合同支持的 UTC datetime request 参数；不改变
+  RawItemEnvelope contract。
+- 新增 collection run safe diagnostics、feed `--require-items` fail-closed 验收语义，并确保
+  Telegram feed empty 时不读 credential、不发送请求。用户首次 post-PR live run 失败
+  记录为 `COLLECTION_CONTRACT_INVALID` / `provider_request_rejected`；尚未声称 post-fix live PASS。
+- 另行记录本地 migrate `Can't locate revision identified by '0003'` 环境问题；本 PR
+  不删除 DB volume，不修改 migration/ORM/schema。
+
 ## Unreleased — SPEC-0032 Marketaux Real Collection Pipeline
 
 - 将 SPEC-0030 与 bundled SPEC-0031 标记为 PR #30 approved/completed，并激活 SPEC-0032。
