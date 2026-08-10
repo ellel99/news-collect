@@ -30,17 +30,42 @@ from market_intelligence.evidence.projection_store import (
 from market_intelligence.evidence.write_path import EvidenceWriteService
 from market_intelligence.providers.contracts import ProviderFetchResult
 
-_EVIDENCE_METADATA_FIELDS = frozenset(
-    {
-        "provider_item_id",
-        "published_at",
-        "field_names",
-        "has_title",
-        "has_description",
-        "has_snippet",
-        "has_source_url",
-    }
-)
+_EVIDENCE_METADATA_FIELDS = {
+    "marketaux": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "has_title",
+            "has_description",
+            "has_snippet",
+            "has_source_url",
+        }
+    ),
+    "finnhub": frozenset(
+        {"provider_item_id", "published_at", "field_names", "symbol", "numeric_field_count"}
+    ),
+    "eia": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "geography",
+            "sector",
+            "has_numeric_value",
+        }
+    ),
+    "sec_edgar": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "ticker",
+            "form",
+            "has_primary_document",
+        }
+    ),
+}
 _DISPLAY_METADATA_FIELDS = frozenset(
     {"provider_item_id", "published_at", "display_title", "display_url"}
 )
@@ -88,19 +113,18 @@ class InMemoryProviderProjectionSidecar:
     )
 
     def observe(self, result: ProviderFetchResult) -> None:
-        if result.provider != "marketaux":
+        allowed_fields = _EVIDENCE_METADATA_FIELDS.get(result.provider)
+        if allowed_fields is None:
             raise ValueError("provider_unsupported")
-        if len(result.display_projections) != len(result.raw_items):
+        if result.display_projections and len(result.display_projections) != len(result.raw_items):
             raise ValueError("provider_display_projection_missing")
+        displays = result.display_projections or tuple({} for _ in result.raw_items)
         for item, metadata, display in zip(
-            result.raw_items,
-            result.sanitized_metadata,
-            result.display_projections,
-            strict=True,
+            result.raw_items, result.sanitized_metadata, displays, strict=True
         ):
-            if set(metadata) != _EVIDENCE_METADATA_FIELDS:
+            if set(metadata) != allowed_fields:
                 raise ValueError("provider_evidence_projection_invalid")
-            if not _valid_display_projection(display):
+            if display and not _valid_display_projection(display):
                 raise ValueError("provider_display_projection_invalid")
             key = (item.external_id, item.payload_hash, item.payload_location)
             self._pending[key] = _PendingProjection(
@@ -112,9 +136,7 @@ class InMemoryProviderProjectionSidecar:
         item = self._pending.get(key)
         if item is None:
             return None
-        projection = {
-            key: value for key, value in item.metadata.items() if key in _EVIDENCE_METADATA_FIELDS
-        }
+        projection = dict(item.metadata)
         projection["payload_hash"] = raw_item.payload_hash
         projection["payload_reference"] = raw_item.payload_location
         return RawItemEvidenceProjection(

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — SPEC-0036 Multi-provider Ingestion
+
+- 将 SPEC-0035 标记为 PR #34 approved/completed，并激活 SPEC-0036。
+- 新增 Finnhub quote、EIA electricity、SEC EDGAR submissions adapters，复用现有 CollectionRunner、
+  RawItem、provider mapping 与 EvidenceWriteService。
+- 新增三个 default-dry-run/manual-execute smoke commands；tests/CI 只使用 mocked transports。
+- SEC 只生成 metadata-only official-release ContentItem；不下载 filing body；Finnhub/EIA 保持 evidence-only。
+- 无 scheduler/Telegram routing、AI、投资建议、formal dedup/Event、多余 Provider、migration/ORM/schema change。
+
 ## Unreleased — SPEC-0035 Minimal Scheduler for Marketaux + Telegram
 
 - 将 SPEC-0034 标记为 PR #33 approved/completed，并激活 SPEC-0035。

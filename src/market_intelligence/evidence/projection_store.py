@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from market_intelligence.db.models import RawItem
-from market_intelligence.evidence.orchestration import validate_marketaux_projection
+from market_intelligence.evidence.orchestration import validate_provider_projection
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +62,10 @@ class InMemoryEvidenceProjectionStore:
     _items: dict[uuid.UUID, RawItemEvidenceProjection] = field(default_factory=dict)
 
     def save(self, projection: RawItemEvidenceProjection) -> None:
-        if projection.provider != "marketaux":
-            raise ValueError("projection_provider_unsupported")
-        if validate_marketaux_projection(projection.sanitized_projection) is None:
+        if (
+            validate_provider_projection(projection.provider, projection.sanitized_projection)
+            is None
+        ):
             raise ValueError("projection_invalid")
         if projection.observed_at.tzinfo is None:
             raise ValueError("projection_observed_at_invalid")

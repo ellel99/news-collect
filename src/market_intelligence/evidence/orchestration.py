@@ -10,32 +10,77 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
-from market_intelligence.evidence.contracts import validate_evidence_envelope
-from market_intelligence.evidence.provider_mappings import map_marketaux_news_to_evidence
+from market_intelligence.evidence.contracts import (
+    CommonEvidenceEnvelope,
+    validate_evidence_envelope,
+)
+from market_intelligence.evidence.provider_mappings import (
+    map_eia_energy_row_to_evidence,
+    map_finnhub_quote_to_evidence,
+    map_marketaux_news_to_evidence,
+    map_sec_filing_to_evidence,
+)
 from market_intelligence.evidence.write_path import (
     EvidenceWriteOutcome,
     EvidenceWriteRequest,
     EvidenceWriteStatus,
 )
 
-_MARKETAUX = "marketaux"
+_SUPPORTED = frozenset({"marketaux", "finnhub", "eia", "sec_edgar"})
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _SECRET = re.compile(
     r"(?i)(api[_-]?key|api[_-]?token|authorization|x-finnhub-token|token|secret|password)"
 )
-_SAFE_PROJECTION_FIELDS = frozenset(
-    {
-        "provider_item_id",
-        "published_at",
-        "field_names",
-        "has_title",
-        "has_description",
-        "has_snippet",
-        "has_source_url",
-        "payload_hash",
-        "payload_reference",
-    }
-)
+_SAFE_PROJECTION_FIELDS = {
+    "marketaux": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "has_title",
+            "has_description",
+            "has_snippet",
+            "has_source_url",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "finnhub": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "symbol",
+            "numeric_field_count",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "eia": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "geography",
+            "sector",
+            "has_numeric_value",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "sec_edgar": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "ticker",
+            "form",
+            "has_primary_document",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+}
 
 
 class EvidencePipelineStatus(StrEnum):
@@ -85,29 +130,19 @@ class EvidencePipelineService:
         self._writer = writer
 
     async def process(self, request: EvidencePipelineRequest) -> EvidencePipelineOutcome:
-        if request.provider != _MARKETAUX:
+        if request.provider not in _SUPPORTED:
             return _failed(request, EvidencePipelineStatus.SKIPPED, "provider_unsupported")
 
-        projection = validate_marketaux_projection(request.sanitized_projection)
+        projection = validate_provider_projection(request.provider, request.sanitized_projection)
         if projection is None:
             return _failed(request, EvidencePipelineStatus.INVALID, "projection_invalid")
         if request.observed_at.tzinfo is None or not _safe_text(request.correlation_id):
             return _failed(request, EvidencePipelineStatus.INVALID, "request_invalid")
 
-        mapper_item: dict[str, object] = {
-            "uuid": projection["provider_item_id"],
-            "published_at": projection["published_at"],
-            "title": True if projection["has_title"] else None,
-            "description": True if projection["has_description"] else None,
-            "snippet": True if projection["has_snippet"] else None,
-            "url": True if projection["has_source_url"] else None,
-        }
         try:
+            envelope = _map_projection(request.provider, projection, request.observed_at)
             envelope = replace(
-                map_marketaux_news_to_evidence(
-                    mapper_item,
-                    {"observed_at": request.observed_at},
-                ),
+                envelope,
                 provider_item_hash=str(projection["payload_hash"]),
                 raw_payload_reference=str(projection["payload_reference"]),
             )
@@ -132,19 +167,20 @@ class EvidencePipelineService:
 def validate_marketaux_projection(
     projection: Mapping[str, object],
 ) -> dict[str, object] | None:
-    if set(projection) != _SAFE_PROJECTION_FIELDS:
+    return validate_provider_projection("marketaux", projection)
+
+
+def validate_provider_projection(
+    provider: str, projection: Mapping[str, object]
+) -> dict[str, object] | None:
+    expected = _SAFE_PROJECTION_FIELDS.get(provider)
+    if expected is None or set(projection) != expected:
         return None
     item_id = projection.get("provider_item_id")
     published_at = projection.get("published_at")
     field_names = projection.get("field_names")
     payload_hash = projection.get("payload_hash")
     payload_reference = projection.get("payload_reference")
-    flags = (
-        projection.get("has_title"),
-        projection.get("has_description"),
-        projection.get("has_snippet"),
-        projection.get("has_source_url"),
-    )
     if not _safe_text(item_id) or not _safe_text(published_at):
         return None
     if not isinstance(field_names, (tuple, list)) or any(
@@ -157,9 +193,77 @@ def validate_marketaux_projection(
         ("internal://", "capture://", "local-ref://")
     ):
         return None
-    if _SECRET.search(payload_reference) or not all(isinstance(flag, bool) for flag in flags):
+    if _SECRET.search(payload_reference):
+        return None
+    if provider == "marketaux" and not all(
+        isinstance(projection.get(flag), bool)
+        for flag in ("has_title", "has_description", "has_snippet", "has_source_url")
+    ):
+        return None
+    if provider == "finnhub" and (
+        not _safe_text(projection.get("symbol"))
+        or not isinstance(projection.get("numeric_field_count"), int)
+    ):
+        return None
+    if provider == "eia" and (
+        not _safe_text(projection.get("geography"))
+        or not _safe_text(projection.get("sector"))
+        or not isinstance(projection.get("has_numeric_value"), bool)
+    ):
+        return None
+    if provider == "sec_edgar" and (
+        not _safe_text(projection.get("ticker"))
+        or not _safe_text(projection.get("form"))
+        or not isinstance(projection.get("has_primary_document"), bool)
+    ):
         return None
     return dict(projection)
+
+
+def _map_projection(
+    provider: str, projection: Mapping[str, object], observed_at: datetime
+) -> CommonEvidenceEnvelope:
+    context: dict[str, object] = {"observed_at": observed_at}
+    item: dict[str, object] = {"published_at": projection["published_at"]}
+    if provider == "marketaux":
+        item.update(
+            {
+                "uuid": projection["provider_item_id"],
+                "title": True if projection["has_title"] else None,
+                "description": True if projection["has_description"] else None,
+                "snippet": True if projection["has_snippet"] else None,
+                "url": True if projection["has_source_url"] else None,
+            }
+        )
+        return map_marketaux_news_to_evidence(item, context)
+    if provider == "finnhub":
+        item.update({"t": projection["published_at"]})
+        numeric_field_count = projection["numeric_field_count"]
+        assert isinstance(numeric_field_count, int)
+        for index in range(numeric_field_count):
+            item[("c", "d", "dp", "h", "l", "o", "pc")[index]] = 0
+        context["symbol"] = projection["symbol"]
+        return map_finnhub_quote_to_evidence(item, context)
+    if provider == "eia":
+        item.update(
+            {
+                "period": projection["published_at"],
+                "stateid": projection["geography"],
+                "sectorid": projection["sector"],
+                "price": 0 if projection["has_numeric_value"] else None,
+            }
+        )
+        return map_eia_energy_row_to_evidence(item, context)
+    item.update(
+        {
+            "accessionNumber": projection["provider_item_id"],
+            "filingDate": projection["published_at"],
+            "form": projection["form"],
+            "primaryDocument": True if projection["has_primary_document"] else None,
+        }
+    )
+    context["ticker"] = projection["ticker"]
+    return map_sec_filing_to_evidence(item, context)
 
 
 def _safe_text(value: object) -> bool:
@@ -171,7 +275,7 @@ def _failed(
     status: EvidencePipelineStatus,
     code: str,
 ) -> EvidencePipelineOutcome:
-    provider = request.provider if request.provider == _MARKETAUX else "unknown"
+    provider = request.provider if request.provider in _SUPPORTED else "unknown"
     return EvidencePipelineOutcome(
         status=status,
         raw_item_id=request.raw_item_id,

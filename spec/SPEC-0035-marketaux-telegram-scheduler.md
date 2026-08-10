@@ -1,6 +1,6 @@
 # SPEC-0035 — Minimal Scheduler for Marketaux + Telegram
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Minimal Automated Collection and Push
 
@@ -101,3 +101,4 @@ MARKETAUX_API_TOKEN=... TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | implementation diff、mock tests、PostgreSQL/Redis integration、review package | 等待用户/ChatGPT Review |
+| 2 | PASS | PR #34，CI PASS，可靠投递 review fixes | Approved and merged；SPEC-0035 Completed |
