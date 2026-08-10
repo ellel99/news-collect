@@ -1,13 +1,14 @@
+import asyncio
 import inspect
 import os
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from market_intelligence.collection.contracts import CollectionTarget
@@ -25,7 +26,12 @@ from market_intelligence.pipeline.marketaux_real_collection import MarketauxReal
 from market_intelligence.providers.contracts import ProviderTransportResponse
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.transport import MockProviderTransport
-from market_intelligence.scheduler.marketaux_telegram import MarketauxTelegramScheduler, _summary
+from market_intelligence.scheduler.marketaux_telegram import (
+    MAX_DELIVERY_ATTEMPTS,
+    SENDING_STALE_AFTER_SECONDS,
+    MarketauxTelegramScheduler,
+    _summary,
+)
 from market_intelligence.scheduler.runtime import run_scheduler_cycle
 from market_intelligence.telegram.manual_push import (
     TelegramRuntimeCredential,
@@ -213,7 +219,7 @@ async def test_duplicate_content_is_not_pushed_twice(scheduler_runtime) -> None:
 
     first = await scheduler.run(target, limit=1)
     items = await scheduler._feed.recent(1)
-    second_claim, second_ids = await scheduler._claim(items)
+    second_claim, second_ids = await scheduler._claim_new(items)
 
     assert first.status == "PASS"
     assert second_claim == ()
@@ -244,6 +250,137 @@ async def test_telegram_failure_retains_failed_notification(scheduler_runtime) -
     assert notification is not None
     assert notification.status is NotificationStatus.FAILED
     assert notification.failure_code == "telegram_request_rejected"
+
+
+@pytest.mark.asyncio
+async def test_failed_notification_retries_then_sends_without_current_run_item(
+    scheduler_runtime,
+) -> None:
+    factory, redis = scheduler_runtime
+    target = await _target(factory)
+    first_scheduler, _ = _scheduler(
+        factory, redis, [_response("scheduler-retry")], telegram_status=500
+    )
+    first = await first_scheduler.run(target, limit=1)
+    retry_scheduler, telegram = _scheduler(
+        factory, redis, [_response("provider-failed-during-retry", 429)]
+    )
+
+    retried = await retry_scheduler.run(target, limit=1)
+
+    assert first.status == "FAIL"
+    assert retried.status == "PASS"
+    assert retried.collection_status != "processed"
+    assert retried.new_notification_count == 0
+    assert retried.retry_notification_count == 1
+    assert retried.sent_count == 1
+    assert len(telegram.messages) == 1
+    async with factory() as session:
+        notification = await session.scalar(select(Notification))
+    assert notification is not None
+    assert notification.status is NotificationStatus.SENT
+    assert notification.retry_count == 1
+
+
+@pytest.mark.asyncio
+async def test_no_new_items_still_delivers_retryable_notification(scheduler_runtime) -> None:
+    factory, redis = scheduler_runtime
+    target = await _target(factory)
+    first_scheduler, _ = _scheduler(
+        factory, redis, [_response("scheduler-no-new-retry")], telegram_status=500
+    )
+    await first_scheduler.run(target, limit=1)
+    empty_response = ProviderTransportResponse(
+        status_code=200,
+        received_at=datetime.now(UTC),
+        body={"data": []},
+    )
+    retry_scheduler, telegram = _scheduler(factory, redis, [empty_response])
+
+    summary = await retry_scheduler.run(target, limit=1)
+
+    assert summary.status == "PASS"
+    assert summary.raw_item_count == 0
+    assert summary.retry_notification_count == 1
+    assert summary.sent_count == 1
+    assert len(telegram.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_notification_at_retry_limit_is_exhausted(scheduler_runtime) -> None:
+    factory, redis = scheduler_runtime
+    target = await _target(factory)
+    scheduler, telegram = _scheduler(
+        factory, redis, [_response("scheduler-exhausted")], telegram_status=500
+    )
+    await scheduler.run(target, limit=1)
+    async with factory.begin() as session:
+        await session.execute(update(Notification).values(retry_count=MAX_DELIVERY_ATTEMPTS))
+
+    items, notification_ids, exhausted = await scheduler._claim_retries(1)
+
+    assert items == ()
+    assert notification_ids == ()
+    assert exhausted == 1
+    assert len(telegram.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_sending_is_reclaimed_but_fresh_sending_is_not(
+    scheduler_runtime,
+) -> None:
+    factory, redis = scheduler_runtime
+    target = await _target(factory)
+    scheduler, _ = _scheduler(factory, redis, [_response("scheduler-stale")])
+    await scheduler.run(target, limit=1)
+    async with factory.begin() as session:
+        await session.execute(
+            update(Notification).values(
+                status=NotificationStatus.SENDING,
+                sent_at=None,
+                retry_count=0,
+                scheduled_at=datetime.now(UTC),
+            )
+        )
+
+    fresh_items, fresh_ids, _ = await scheduler._claim_retries(1)
+    assert fresh_items == ()
+    assert fresh_ids == ()
+
+    async with factory.begin() as session:
+        await session.execute(
+            update(Notification).values(
+                scheduled_at=datetime.now(UTC) - timedelta(seconds=SENDING_STALE_AFTER_SECONDS + 1)
+            )
+        )
+    stale_items, stale_ids, _ = await scheduler._claim_retries(1)
+
+    assert len(stale_items) == 1
+    assert len(stale_ids) == 1
+    async with factory() as session:
+        retry_count = await session.scalar(select(Notification.retry_count))
+    assert retry_count == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_stale_claim_has_one_winner(scheduler_runtime) -> None:
+    factory, redis = scheduler_runtime
+    target = await _target(factory)
+    scheduler, _ = _scheduler(factory, redis, [_response("scheduler-concurrent")])
+    await scheduler.run(target, limit=1)
+    async with factory.begin() as session:
+        await session.execute(
+            update(Notification).values(
+                status=NotificationStatus.SENDING,
+                sent_at=None,
+                retry_count=0,
+                scheduled_at=datetime.now(UTC) - timedelta(seconds=SENDING_STALE_AFTER_SECONDS + 1),
+            )
+        )
+
+    first, second = await asyncio.gather(scheduler._claim_retries(1), scheduler._claim_retries(1))
+
+    assert sum(len(result[1]) for result in (first, second)) == 1
 
 
 @pytest.mark.asyncio

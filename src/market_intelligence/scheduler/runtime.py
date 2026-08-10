@@ -89,6 +89,8 @@ def _runtime_summary(
         evidence_item_count=0,
         content_item_count=0,
         new_notification_count=0,
+        retry_notification_count=0,
+        retry_exhausted_count=0,
         sent_count=0,
         failed_count=0,
         response_saved=False,

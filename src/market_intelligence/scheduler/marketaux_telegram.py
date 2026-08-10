@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from redis.asyncio import Redis
-from sqlalchemy import update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,6 +30,8 @@ from market_intelligence.telegram.manual_push import (
 
 _POLICY_ID = "spec-0035-marketaux-telegram"
 _POLICY_VERSION = "1"
+MAX_DELIVERY_ATTEMPTS = 3
+SENDING_STALE_AFTER_SECONDS = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +43,8 @@ class SchedulerRunSummary:
     evidence_item_count: int
     content_item_count: int
     new_notification_count: int
+    retry_notification_count: int
+    retry_exhausted_count: int
     sent_count: int
     failed_count: int
     response_saved: bool
@@ -83,34 +87,28 @@ class MarketauxTelegramScheduler:
             if trigger.pipeline_outcome is not None
             and trigger.pipeline_outcome.evidence_item_id is not None
         )
-        if outcome.status is not EndToEndStatus.PROCESSED or outcome.collection_run_id is None:
-            errors = tuple(error.code for error in outcome.safe_errors) or (
-                "collection_not_succeeded",
-            )
-            return _summary(
-                "FAIL",
-                outcome.status.value,
-                raw=outcome.raw_item_count,
-                evidence=evidence_count,
-                errors=errors,
-            )
+        collection_errors = tuple(error.code for error in outcome.safe_errors)
+        items: tuple[VisibleFeedItem, ...] = ()
+        if outcome.status is EndToEndStatus.PROCESSED and outcome.collection_run_id is not None:
+            items = await self._feed.for_run(outcome.collection_run_id, limit)
 
-        items = await self._feed.for_run(outcome.collection_run_id, limit)
-        if not items:
-            return _summary(
-                "NO_NEW_ITEMS",
-                outcome.status.value,
-                raw=outcome.raw_item_count,
-                evidence=evidence_count,
-            )
-        claimed, notification_ids = await self._claim(items)
+        new_items, new_ids = await self._claim_new(items)
+        retry_items, retry_ids, exhausted = await self._claim_retries(limit)
+        claimed = new_items + retry_items
+        notification_ids = new_ids + retry_ids
         if not claimed:
+            status = "NO_NEW_ITEMS" if outcome.status is EndToEndStatus.PROCESSED else "FAIL"
+            errors = collection_errors
+            if status == "FAIL" and not errors:
+                errors = ("collection_not_succeeded",)
             return _summary(
-                "NO_NEW_ITEMS",
+                status,
                 outcome.status.value,
                 raw=outcome.raw_item_count,
                 evidence=evidence_count,
                 content=len(items),
+                exhausted=exhausted,
+                errors=errors,
             )
         try:
             result = await self._push.push(
@@ -126,9 +124,11 @@ class MarketauxTelegramScheduler:
                 raw=outcome.raw_item_count,
                 evidence=evidence_count,
                 content=len(items),
-                new=len(claimed),
+                new=len(new_items),
+                retry=len(retry_items),
+                exhausted=exhausted,
                 failed=len(claimed),
-                errors=("telegram_message_invalid",),
+                errors=(*collection_errors, "telegram_message_invalid"),
             )
         except RuntimeError:
             await self._mark(
@@ -140,9 +140,11 @@ class MarketauxTelegramScheduler:
                 raw=outcome.raw_item_count,
                 evidence=evidence_count,
                 content=len(items),
-                new=len(claimed),
+                new=len(new_items),
+                retry=len(retry_items),
+                exhausted=exhausted,
                 failed=len(claimed),
-                errors=("telegram_transport_failed",),
+                errors=(*collection_errors, "telegram_transport_failed"),
             )
         if not 200 <= result.status_code < 300:
             await self._mark(
@@ -154,9 +156,11 @@ class MarketauxTelegramScheduler:
                 raw=outcome.raw_item_count,
                 evidence=evidence_count,
                 content=len(items),
-                new=len(claimed),
+                new=len(new_items),
+                retry=len(retry_items),
+                exhausted=exhausted,
                 failed=len(claimed),
-                errors=("telegram_request_rejected",),
+                errors=(*collection_errors, "telegram_request_rejected"),
             )
         await self._mark(notification_ids, NotificationStatus.SENT, None)
         return _summary(
@@ -165,11 +169,14 @@ class MarketauxTelegramScheduler:
             raw=outcome.raw_item_count,
             evidence=evidence_count,
             content=len(items),
-            new=len(claimed),
+            new=len(new_items),
+            retry=len(retry_items),
+            exhausted=exhausted,
             sent=len(claimed),
+            errors=collection_errors,
         )
 
-    async def _claim(
+    async def _claim_new(
         self, items: tuple[VisibleFeedItem, ...]
     ) -> tuple[tuple[VisibleFeedItem, ...], tuple[uuid.UUID, ...]]:
         claimed: list[VisibleFeedItem] = []
@@ -203,6 +210,94 @@ class MarketauxTelegramScheduler:
             await session.commit()
         return tuple(claimed), tuple(notification_ids)
 
+    async def _claim_retries(
+        self, limit: int
+    ) -> tuple[tuple[VisibleFeedItem, ...], tuple[uuid.UUID, ...], int]:
+        """Atomically reclaim bounded FAILED and stale SENDING notifications."""
+
+        now = datetime.now(UTC)
+        stale_before = now - timedelta(seconds=SENDING_STALE_AFTER_SECONDS)
+        claimed_ids: list[uuid.UUID] = []
+        content_ids: list[uuid.UUID] = []
+        async with self._factory() as session:
+            candidates = tuple(
+                await session.scalars(
+                    select(Notification.id)
+                    .where(
+                        Notification.policy_rule_id == _POLICY_ID,
+                        Notification.channel == NotificationChannel.TELEGRAM_PUSH,
+                        Notification.retry_count < MAX_DELIVERY_ATTEMPTS,
+                        or_(
+                            Notification.status == NotificationStatus.FAILED,
+                            (
+                                (Notification.status == NotificationStatus.SENDING)
+                                & (Notification.scheduled_at < stale_before)
+                            ),
+                        ),
+                    )
+                    .order_by(Notification.scheduled_at, Notification.id)
+                    .limit(limit)
+                )
+            )
+            for notification_id in candidates:
+                row = (
+                    await session.execute(
+                        update(Notification)
+                        .where(
+                            Notification.id == notification_id,
+                            Notification.retry_count < MAX_DELIVERY_ATTEMPTS,
+                            or_(
+                                Notification.status == NotificationStatus.FAILED,
+                                (
+                                    (Notification.status == NotificationStatus.SENDING)
+                                    & (Notification.scheduled_at < stale_before)
+                                ),
+                            ),
+                        )
+                        .values(
+                            status=NotificationStatus.SENDING,
+                            retry_count=Notification.retry_count + 1,
+                            scheduled_at=now,
+                            sent_at=None,
+                            failure_code=None,
+                        )
+                        .returning(Notification.id, Notification.content_item_id)
+                    )
+                ).one_or_none()
+                if row is not None and row.content_item_id is not None:
+                    claimed_ids.append(row.id)
+                    content_ids.append(row.content_item_id)
+            exhausted = int(
+                (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(Notification)
+                        .where(
+                            Notification.policy_rule_id == _POLICY_ID,
+                            Notification.channel == NotificationChannel.TELEGRAM_PUSH,
+                            Notification.retry_count >= MAX_DELIVERY_ATTEMPTS,
+                            or_(
+                                Notification.status == NotificationStatus.FAILED,
+                                (
+                                    (Notification.status == NotificationStatus.SENDING)
+                                    & (Notification.scheduled_at < stale_before)
+                                ),
+                            ),
+                        )
+                    )
+                )
+                or 0
+            )
+            await session.commit()
+        items = await self._feed.by_content_ids(tuple(content_ids))
+        item_ids = {item.content_item_id for item in items}
+        filtered_ids = tuple(
+            notification_id
+            for notification_id, content_id in zip(claimed_ids, content_ids, strict=True)
+            if content_id in item_ids
+        )
+        return items, filtered_ids, exhausted
+
     async def _mark(
         self,
         notification_ids: tuple[uuid.UUID, ...],
@@ -235,6 +330,8 @@ def _summary(
     evidence: int = 0,
     content: int = 0,
     new: int = 0,
+    retry: int = 0,
+    exhausted: int = 0,
     sent: int = 0,
     failed: int = 0,
     errors: tuple[str, ...] = (),
@@ -247,6 +344,8 @@ def _summary(
         evidence_item_count=evidence,
         content_item_count=content,
         new_notification_count=new,
+        retry_notification_count=retry,
+        retry_exhausted_count=exhausted,
         sent_count=sent,
         failed_count=failed,
         response_saved=False,

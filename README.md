@@ -256,9 +256,10 @@ MARKETAUX_API_TOKEN=... TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 ```
 
 Celery Beat 注册 `marketaux.telegram.run`，默认 `MARKETAUX_TELEGRAM_SCHEDULER_EXECUTE=false`，因此
-不会自动读取凭证或发送。明确启用 worker runtime 时，凭证只来自 process environment。自动 cycle
-只推送本轮新 ContentItem，并复用 `notifications.dedup_key` 唯一约束；失败保留 failed marker，
-不静默删除未推送状态，也不会自动重发可能已经到达 Telegram 的不确定请求。
+dry-run 不读取 credential 或访问 runtime。自动投递使用 Notification dedup key；SENT 永久去重，FAILED
+最多重试 3 次，超过 300 秒的 stale SENDING 可被原子恢复。历史 retry 独立于当前 collection run，即使
+本轮没有新 item 或 Provider 失败也可继续安全投递。
+明确启用 worker runtime 时，凭证只来自 process environment；Notification 不会被删除来绕过去重。
 
 先启动依赖服务：
 
