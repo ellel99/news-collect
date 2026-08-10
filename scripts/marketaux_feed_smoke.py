@@ -16,10 +16,11 @@ from market_intelligence.feed.marketaux_feed import MarketauxFeedService, Visibl
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Read recent Marketaux visible feed items")
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--require-items", action="store_true")
     return parser
 
 
-async def read_feed(limit: int) -> tuple[dict[str, object], int]:
+async def read_feed(limit: int, *, require_items: bool = False) -> tuple[dict[str, object], int]:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     engine = create_engine(settings)
     try:
@@ -28,7 +29,10 @@ async def read_feed(limit: int) -> tuple[dict[str, object], int]:
         return _report("BLOCKED", [], ["feed_read_failed"]), 2
     finally:
         await engine.dispose()
-    return _report("PASS", [_item(item) for item in items], []), 0
+    rendered = [_item(item) for item in items]
+    if require_items and not rendered:
+        return _report("BLOCKED", [], ["visible_feed_empty"]), 2
+    return _report("PASS", rendered, []), 0
 
 
 def _item(item: VisibleFeedItem) -> dict[str, object]:
@@ -62,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 1 <= args.limit <= 50:
         report, exit_code = _report("BLOCKED", [], ["feed_limit_invalid"]), 2
     else:
-        report, exit_code = asyncio.run(read_feed(args.limit))
+        report, exit_code = asyncio.run(read_feed(args.limit, require_items=args.require_items))
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     return exit_code
 

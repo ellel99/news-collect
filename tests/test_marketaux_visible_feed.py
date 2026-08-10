@@ -1,8 +1,10 @@
+import importlib.util
 import inspect
 import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -25,6 +27,14 @@ POSTGRES_TEST_URL = os.environ.get(
     "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
 )
 REDIS_TEST_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/13")
+
+_SCRIPT_SPEC = importlib.util.spec_from_file_location(
+    "marketaux_feed_smoke",
+    Path(__file__).parents[1] / "scripts" / "marketaux_feed_smoke.py",
+)
+assert _SCRIPT_SPEC is not None and _SCRIPT_SPEC.loader is not None
+marketaux_feed_smoke = importlib.util.module_from_spec(_SCRIPT_SPEC)
+_SCRIPT_SPEC.loader.exec_module(marketaux_feed_smoke)
 
 
 @pytest_asyncio.fixture
@@ -199,3 +209,18 @@ def test_visible_feed_source_has_no_forbidden_dependencies() -> None:
         "telegram",
     )
     assert all(term not in source for term in forbidden)
+
+
+@pytest.mark.asyncio
+async def test_require_items_fails_closed_for_empty_feed(monkeypatch) -> None:
+    async def recent(self, limit):
+        del self, limit
+        return ()
+
+    monkeypatch.setattr(marketaux_feed_smoke.MarketauxFeedService, "recent", recent)
+
+    report, exit_code = await marketaux_feed_smoke.read_feed(3, require_items=True)
+
+    assert exit_code == 2
+    assert report["status"] == "BLOCKED"
+    assert report["safe_errors"] == ["visible_feed_empty"]

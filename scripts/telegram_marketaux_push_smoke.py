@@ -34,32 +34,40 @@ async def run_push(
     environ: Mapping[str, str],
     transport: TelegramTransport | None = None,
 ) -> tuple[dict[str, object], int]:
-    token = ""
-    chat_id = ""
-    if execute:
-        token = environ.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = environ.get("TELEGRAM_CHAT_ID", "")
-        if not token or not chat_id:
-            return _report("BLOCKED", 0, False, False, None, ["telegram_credential_missing"]), 2
-
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     engine = create_engine(settings)
     try:
         items = await MarketauxFeedService(create_session_factory(engine)).recent(limit)
     except Exception:
-        return _report("BLOCKED", 0, execute, False, None, ["feed_read_failed"]), 2
+        return _report("BLOCKED", 0, execute, False, False, None, ["feed_read_failed"]), 2
     finally:
         await engine.dispose()
     if not items:
-        return _report("BLOCKED", 0, execute, False, None, ["telegram_feed_empty"]), 2
+        return _report("BLOCKED", 0, execute, False, False, None, ["telegram_feed_empty"]), 2
 
     service = ManualTelegramPushService()
     try:
         preview = service.preview(items)
     except ValueError as exc:
-        return _report("BLOCKED", len(items), execute, False, None, [str(exc)]), 2
+        return _report("BLOCKED", len(items), execute, False, False, None, [str(exc)]), 2
     if not execute:
-        return _report("DRY_RUN", len(items), False, False, preview, []), 0
+        return _report("DRY_RUN", len(items), False, False, False, preview, []), 0
+
+    token = environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return (
+            _report(
+                "BLOCKED",
+                len(items),
+                True,
+                True,
+                False,
+                None,
+                ["telegram_credential_missing"],
+            ),
+            2,
+        )
 
     try:
         result = await service.push(
@@ -68,12 +76,16 @@ async def run_push(
             transport or HttpxTelegramTransport(),
         )
     except RuntimeError:
-        return _report("FAIL", len(items), True, False, None, ["telegram_transport_failed"]), 3
+        return (
+            _report("FAIL", len(items), True, True, False, None, ["telegram_transport_failed"]),
+            3,
+        )
     passed = 200 <= result.status_code < 300
     return (
         _report(
             "PASS" if passed else "FAIL",
             len(items),
+            True,
             True,
             passed,
             None,
@@ -86,6 +98,7 @@ async def run_push(
 def _report(
     status: str,
     item_count: int,
+    execute_requested: bool,
     credential_read: bool,
     sent: bool,
     preview: str | None,
@@ -94,10 +107,10 @@ def _report(
     return {
         "provider": "marketaux",
         "status": status,
-        "mode": "execute" if credential_read else "dry_run",
+        "mode": "execute" if execute_requested else "dry_run",
         "item_count": item_count,
         "preview": preview,
-        "request_enabled": credential_read,
+        "request_enabled": execute_requested and credential_read,
         "sent": sent,
         "credential_read": credential_read,
         "response_saved": False,
@@ -108,7 +121,10 @@ def _report(
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not 1 <= args.limit <= 5:
-        report, exit_code = _report("BLOCKED", 0, False, False, None, ["telegram_limit_invalid"]), 2
+        report, exit_code = (
+            _report("BLOCKED", 0, args.execute, False, False, None, ["telegram_limit_invalid"]),
+            2,
+        )
     else:
         report, exit_code = asyncio.run(
             run_push(execute=args.execute, limit=args.limit, environ=os.environ)

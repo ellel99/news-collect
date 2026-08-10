@@ -71,7 +71,16 @@ class MarketauxAdapter:
                 )
             )
         if cursor is not None:
-            params["published_after"] = cursor[0]
+            published_after = _published_after_param(cursor[0])
+            if published_after is None:
+                return _failed(
+                    ProviderAdapterError(
+                        code=ProviderAdapterErrorCode.CONFIG_INVALID,
+                        safe_message="provider_cursor_invalid",
+                        retryable=False,
+                    )
+                )
+            params["published_after"] = published_after
 
         transport_request = ProviderTransportRequest(
             provider=self.provider_key,
@@ -137,6 +146,7 @@ class MarketauxAdapter:
 
         raw_items: list[RawItemEnvelope] = []
         metadata: list[Mapping[str, Any]] = []
+        display_projections: list[Mapping[str, Any]] = []
         cursor_candidates: list[tuple[str, str]] = []
         for item in items[: request.limit]:
             sanitized = _sanitize_item(item)
@@ -150,7 +160,7 @@ class MarketauxAdapter:
                 )
             item_id = sanitized["provider_item_id"]
             published_at = sanitized["published_at"]
-            projection = {
+            projection: dict[str, Any] = {
                 "provider_item_id": item_id,
                 "published_at": published_at,
                 "field_names": sanitized["field_names"],
@@ -158,9 +168,15 @@ class MarketauxAdapter:
                 "has_description": sanitized["has_description"],
                 "has_snippet": sanitized["has_snippet"],
                 "has_source_url": sanitized["has_source_url"],
-                "display_title": sanitized["display_title"],
-                "display_url": sanitized["display_url"],
             }
+            display: dict[str, Any] = {
+                "provider_item_id": item_id,
+                "published_at": published_at,
+            }
+            if sanitized["display_title"] is not None:
+                display["display_title"] = sanitized["display_title"]
+            if sanitized["display_url"] is not None:
+                display["display_url"] = sanitized["display_url"]
             payload_hash = _stable_hash(projection)
             raw_items.append(
                 RawItemEnvelope(
@@ -174,6 +190,7 @@ class MarketauxAdapter:
                 )
             )
             metadata.append(projection)
+            display_projections.append(display)
             cursor_candidates.append((published_at, item_id))
 
         if not raw_items:
@@ -193,6 +210,7 @@ class MarketauxAdapter:
             safe_errors=(),
             provider=self.provider_key,
             contract_version=self.contract_version,
+            display_projections=tuple(display_projections),
         )
 
 
@@ -303,7 +321,12 @@ def _safe_public_url(value: object) -> str | None:
     if not isinstance(value, str) or len(value) > 4000 or _SECRET_VALUE.search(value):
         return None
     parsed = urlsplit(value)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username:
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         return None
     return value
 
@@ -343,6 +366,16 @@ def _decode_cursor(cursor: str | None) -> tuple[str, str] | None:
     if _SECRET_MARKER.search(published_at) or _SECRET_MARKER.search(item_id):
         return None
     return published_at, item_id
+
+
+def _published_after_param(value: str) -> str | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _retry_after(headers: Mapping[str, str]) -> float | None:

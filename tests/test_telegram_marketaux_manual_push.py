@@ -74,16 +74,47 @@ async def test_preview_does_not_read_credentials(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_missing_credentials_fails_before_db_or_transport(monkeypatch) -> None:
-    def fail(*args, **kwargs):
-        del args, kwargs
-        raise AssertionError("runtime opened before credential validation")
+async def test_execute_missing_credentials_fails_after_safe_feed_read(monkeypatch) -> None:
+    async def recent(self, limit):
+        del self, limit
+        return (_item(),)
 
-    monkeypatch.setattr(telegram_smoke, "create_engine", fail)
+    monkeypatch.setattr(telegram_smoke.MarketauxFeedService, "recent", recent)
     report, exit_code = await telegram_smoke.run_push(execute=True, limit=1, environ={})
 
     assert exit_code == 2
+    assert report["credential_read"] is True
     assert report["safe_errors"] == ["telegram_credential_missing"]
+
+
+@pytest.mark.asyncio
+async def test_execute_empty_feed_does_not_read_credentials_or_send(monkeypatch) -> None:
+    async def recent(self, limit):
+        del self, limit
+        return ()
+
+    class GuardedEnvironment(dict[str, str]):
+        def get(self, key, default=None):
+            raise AssertionError(f"credential read for empty feed: {key}")
+
+    class GuardedTransport:
+        async def send(self, credential, message):
+            del credential, message
+            raise AssertionError("Telegram request sent for empty feed")
+
+    monkeypatch.setattr(telegram_smoke.MarketauxFeedService, "recent", recent)
+    report, exit_code = await telegram_smoke.run_push(
+        execute=True,
+        limit=1,
+        environ=GuardedEnvironment(),
+        transport=GuardedTransport(),
+    )
+
+    assert exit_code == 2
+    assert report["mode"] == "execute"
+    assert report["credential_read"] is False
+    assert report["request_enabled"] is False
+    assert report["safe_errors"] == ["telegram_feed_empty"]
 
 
 @pytest.mark.asyncio

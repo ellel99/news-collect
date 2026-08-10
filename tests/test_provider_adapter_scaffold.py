@@ -95,8 +95,10 @@ async def test_marketaux_mock_response_builds_safe_raw_item_envelope() -> None:
     assert item.payload_location.startswith("internal://provider/marketaux/")
     assert item.payload_hash is not None and len(item.payload_hash) == 64
     assert result.sanitized_metadata[0]["has_title"] is True
-    assert result.sanitized_metadata[0]["display_title"] == "synthetic title"
-    assert result.sanitized_metadata[0]["display_url"] == "https://example.invalid/synthetic"
+    assert result.display_projections[0]["display_title"] == "synthetic title"
+    assert result.display_projections[0]["display_url"] == "https://example.invalid/synthetic"
+    assert "display_title" not in result.sanitized_metadata[0]
+    assert "display_url" not in result.sanitized_metadata[0]
     assert "synthetic title" not in repr(result)
     assert "https://example.invalid" not in repr(result)
 
@@ -127,8 +129,83 @@ async def test_provider_echoed_secret_is_removed_from_output() -> None:
     assert "authorization" not in result.sanitized_metadata[0]["field_names"]
     assert result.sanitized_metadata[0]["has_title"] is False
     assert result.sanitized_metadata[0]["has_source_url"] is False
-    assert result.sanitized_metadata[0]["display_title"] is None
-    assert result.sanitized_metadata[0]["display_url"] is None
+    assert "display_title" not in result.display_projections[0]
+    assert "display_url" not in result.display_projections[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "title",
+    ["x" * 2001, f"api_token={SECRET}", f"authorization={SECRET}"],
+)
+async def test_unsafe_display_title_is_omitted_from_separate_projection(title: str) -> None:
+    body = {
+        "data": [
+            {
+                "uuid": "synthetic-item-1",
+                "published_at": "2026-01-01T00:00:00Z",
+                "title": title,
+                "url": "https://example.invalid/safe",
+            }
+        ]
+    }
+
+    result = await MarketauxAdapter().fetch(
+        _request(), MockProviderTransport([_response(body=body)])
+    )
+
+    assert result.safe_errors == ()
+    assert "display_title" not in result.display_projections[0]
+    assert "display_title" not in result.sanitized_metadata[0]
+    assert title not in repr(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://example.invalid/article",
+        "https://user:password@example.invalid/article",
+        f"https://example.invalid/article?token={SECRET}",
+        f"https://example.invalid/article?api_key={SECRET}",
+    ],
+)
+async def test_unsafe_display_url_is_omitted_from_separate_projection(url: str) -> None:
+    body = {
+        "data": [
+            {
+                "uuid": "synthetic-item-1",
+                "published_at": "2026-01-01T00:00:00Z",
+                "title": "Synthetic safe title",
+                "url": url,
+            }
+        ]
+    }
+
+    result = await MarketauxAdapter().fetch(
+        _request(), MockProviderTransport([_response(body=body)])
+    )
+
+    assert result.safe_errors == ()
+    assert "display_url" not in result.display_projections[0]
+    assert "display_url" not in result.sanitized_metadata[0]
+    assert url not in repr(result)
+
+
+def test_raw_item_envelope_contract_is_unchanged_by_display_projection() -> None:
+    from dataclasses import fields
+
+    from market_intelligence.collection.contracts import RawItemEnvelope
+
+    assert tuple(field.name for field in fields(RawItemEnvelope)) == (
+        "external_id",
+        "fetched_at",
+        "http_status",
+        "content_type",
+        "payload_location",
+        "payload_hash",
+        "retention_class",
+    )
 
 
 @pytest.mark.asyncio
@@ -171,7 +248,7 @@ async def test_cursor_is_deterministic_and_used_as_safe_watermark() -> None:
         _request(limit=2, cursor=first.next_cursor), second_transport
     )
     assert second.next_cursor == first.next_cursor
-    assert second_transport.calls[0].params["published_after"] == "2026-01-02T00:00:00Z"
+    assert second_transport.calls[0].params["published_after"] == "2026-01-02T00:00:00"
 
 
 @pytest.mark.asyncio

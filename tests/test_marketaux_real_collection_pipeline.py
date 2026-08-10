@@ -341,6 +341,40 @@ def test_limit_above_three_fails_without_runtime(capsys) -> None:
     assert report["safe_errors"] == ["provider_record_limit_invalid"]
 
 
+def test_collection_contract_failure_diagnostics_are_specific_and_safe() -> None:
+    errors = marketaux_real_collection_smoke._safe_collection_errors(
+        ["collection_not_succeeded"],
+        "COLLECTION_CONTRACT_INVALID",
+        "provider_request_rejected",
+    )
+    report = marketaux_real_collection_smoke._summary(
+        status="FAIL",
+        collection_status="collection_failed",
+        raw_item_count=0,
+        evidence_item_count=0,
+        cursor_present=True,
+        safe_errors=errors,
+        db_written=False,
+        token_read=True,
+        collection_run_id_present=True,
+        collection_run_status="failed",
+        collection_error_code="COLLECTION_CONTRACT_INVALID",
+        content_item_count=0,
+    )
+
+    assert "collection_contract_invalid" in report["safe_errors"]
+    assert "provider_request_rejected" in report["safe_errors"]
+    assert report["collection_run_id_present"] is True
+    assert report["collection_run_status"] == "failed"
+    assert report["collection_error_code"] == "COLLECTION_CONTRACT_INVALID"
+    assert report["content_item_count"] == 0
+    rendered = repr(report).lower()
+    assert all(
+        term not in rendered
+        for term in (SECRET.lower(), "authorization", "https://", "title", "snippet")
+    )
+
+
 @pytest.mark.asyncio
 async def test_mocked_real_adapter_collection_reaches_evidence(
     real_pipeline_runtime,

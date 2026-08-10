@@ -19,9 +19,13 @@ ORM 或 DB schema。
 
 ## 2. Visible feed contract
 
-- Marketaux adapter 只把 `display_title` 与 `display_url` 加入同一运行期 sanitized sidecar；RawItem 仍
-  只保存 metadata-only envelope，不保存 response/body/HTML。
+- Marketaux adapter 将 content-free evidence metadata 与 allowlisted display projection 作为两个
+  独立 contract 交给 same-run sidecar；`display_title` / `display_url` 不进入
+  `RawItemEnvelope` 或 evidence metadata。RawItem 仍只保存 metadata-only envelope，不保存
+  response/body/HTML。
 - URL 只接受 `http`/`https` public URL；secret-bearing title/URL fail closed 为不可展示字段。
+- Display projection 只允许 provider item id / published time / bounded non-secret title / public URL；
+  `None`、过长 title、credential-bearing URL 或 token-like value 均不传递。
 - Evidence projection 继续使用原 content-free allowlist，display 字段不会进入 evidence mapper contract。
 - 成功 collection/evidence 后，以 raw/source/account provenance 幂等创建现有 `ContentItem`：
   `content_kind=article`、`body=NULL`、`body_availability=unavailable`、metadata retention 为
@@ -37,6 +41,15 @@ Read-only feed：
 ```bash
 python3 scripts/marketaux_feed_smoke.py --limit 10
 ```
+
+验收时必须要求至少一条可见项：
+
+```bash
+python3 scripts/marketaux_feed_smoke.py --limit 3 --require-items
+```
+
+`--require-items` 在空 feed 时返回 `BLOCKED` / `visible_feed_empty`；默认 read-only
+查询仍允许空结果为 PASS。
 
 Telegram preview（默认；读 DB，但不读 Telegram credential、不请求 Telegram）：
 
@@ -58,7 +71,8 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 
 ## 4. Safety and failure behavior
 
-- preview 不读取 credential、不请求 Telegram；execute missing credential 在 DB/transport 前 fail closed。
+- preview 不读取 credential、不请求 Telegram。execute 也必须先读 feed；feed empty
+  时不读 token/chat id、不请求 Telegram，只有 feed 非空才读 credential。
 - tests/CI/package review 只使用 mock provider/Telegram transport，不请求真实 Marketaux/Telegram。
 - feed/Telegram transport failure 只返回固定 safe code，不回显 request URL、payload 或 secret。
 - 不保存 Telegram response，不提交 live output。
@@ -76,9 +90,16 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 ## 6. 测试与验收
 
 - [x] mocked Marketaux collection 生成 ContentItem 与 recent visible feed。
+- [x] Marketaux cursor 在下次 provider request 前转换为合同允许的 UTC datetime
+  参数，不将 cursor 封装格式直接传给 provider。
+- [x] RawItem/evidence projection 与 visible display projection 严格分离。
 - [x] feed 包含 title/source/time/link 与 raw/evidence provenance；body/source summary 不保存。
 - [x] recent list bounded/ordered。
 - [x] Telegram preview 不读 token、不请求 API。
+- [x] feed empty 时 Telegram execute 不读 credential、不发送请求。
+- [x] `--require-items` 在空 feed 时 fail closed。
+- [x] collection failure summary 仅返回 collection run 存在性/status/error code 及固定
+  allowlisted safe detail，不回显 provider content/request。
 - [x] missing credential、limit >5 fail closed。
 - [x] mocked Telegram execute 格式正确，credential/response body 不进入 output/repr。
 - [x] source audit 无 scheduler/OpenAI/recommendation/dedup/Event/local capture dependency。
@@ -95,3 +116,10 @@ Foundation validation 与 committed-snapshot review package 为证。本 PR/CI �
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | 本 implementation PR、CI 与 review package | 等待用户/ChatGPT Implementation Review |
+| 2 | REQUEST CHANGES | 用户本地首次 real collection 为 `COLLECTION_CONTRACT_INVALID` / `provider_request_rejected`，本次 fetched/new/duplicate 均为 0；feed empty，Telegram blocked | 分离 display projection，正规化 cursor request datetime，细化 safe diagnostics，新增 feed `--require-items`，并将 Telegram credential 读取后移到 non-empty feed gate 之后；尚未声称 post-fix live PASS |
+
+## 9. Known environment issue (separate follow-up)
+
+用户本地 `docker compose up -d api` 触发 migrate 时曾报 `Can't locate revision identified
+by '0003'`。该环境/Alembic 状态不通过删除 volume 掩盖，本 PR 不修改 migration、ORM
+或 DB schema；待独立审核任务诊断。

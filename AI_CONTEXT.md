@@ -12,7 +12,10 @@
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
 - 当前工作状态：SPEC-0032 已经 PR #31 与用户 post-fix live verification 批准完成；SPEC-0033
   Implementation Review 只实现 Marketaux metadata-only visible ContentItem/feed 与 default-dry-run manual
-  Telegram preview/push。tests/CI 不执行真实 Marketaux/Telegram，不实现 scheduler/AI/dedup/Event
+  Telegram preview/push。PR #32 正在修复用户首次 live run 的
+  `COLLECTION_CONTRACT_INVALID` / `provider_request_rejected`；display projection 与 content-free
+  RawItem/evidence metadata 必须严格分离，不得声称 post-fix live PASS。tests/CI 不执行
+  真实 Marketaux/Telegram，不实现 scheduler/AI/dedup/Event
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权

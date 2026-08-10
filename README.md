@@ -184,6 +184,16 @@ MARKETAUX_API_TOKEN=... python3 scripts/marketaux_real_collection_smoke.py --exe
 python3 scripts/marketaux_feed_smoke.py --limit 10
 ```
 
+本地验收需要至少一条可见新闻时，使用 fail-closed 模式：
+
+```bash
+python3 scripts/marketaux_feed_smoke.py --limit 3 --require-items
+```
+
+默认 read-only 模式允许空 feed；`--require-items` 在空 feed 时返回
+`BLOCKED` / `visible_feed_empty`。Marketaux display projection 与 RawItem/evidence metadata contract
+严格分离，title/public URL 不进入 content-free evidence metadata。
+
 默认 Telegram preview 读取最近新闻并生成仅含标题、来源、时间、链接的消息；不读取 Telegram token，
 也不请求 Telegram：
 
@@ -199,7 +209,8 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 ```
 
 凭证只从 process environment 读取，脚本强制不读 `.env`；不输出 token/chat id，不保存 Telegram
-response，不自动循环或调度。SPEC-0033 生效前已保存的 content-free RawItem 不进行猜测性回填。
+response，不自动循环或调度。execute 也先查 feed；空 feed 时不读 token/chat id
+且不发送请求。SPEC-0033 生效前已保存的 content-free RawItem 不进行猜测性回填。
 
 先启动依赖服务：
 
