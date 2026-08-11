@@ -253,10 +253,6 @@ class MultiProviderIngestionPipeline:
 
     async def run(self, target: CollectionTarget) -> EndToEndOutcome:
         outcome = await self._pipeline.run(target)
-        if (
-            self._provider == "sec_edgar"
-            and outcome.status is EndToEndStatus.PROCESSED
-            and outcome.collection_run_id is not None
-        ):
-            await self._feed.persist_sec_run(outcome.collection_run_id, self._sidecar)
+        if outcome.status is EndToEndStatus.PROCESSED and outcome.collection_run_id is not None:
+            await self._feed.persist_run(outcome.collection_run_id, self._sidecar, self._provider)
         return outcome

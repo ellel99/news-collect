@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.db.models import (
@@ -14,21 +15,33 @@ from market_intelligence.db.models import (
     ContentKind,
     DeletedStatus,
     RawItem,
+    Source,
 )
 from market_intelligence.evidence.end_to_end import InMemoryProviderProjectionSidecar
 from market_intelligence.evidence.projection_store import SqlAlchemyRawItemProjectionReader
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderDisplayItem:
+    content_item_id: uuid.UUID
+    provider: str
+    title: str
+    source: str
+    published_at: datetime
+    canonical_url: str | None
+
+
 class ProviderFeedService:
-    """Persist SEC filing labels only; numeric providers remain evidence-only."""
+    """Persist and read allowlisted, content-safe provider display projections."""
 
     def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
         self._factory = factory
 
-    async def persist_sec_run(
+    async def persist_run(
         self,
         collection_run_id: uuid.UUID,
         sidecar: InMemoryProviderProjectionSidecar,
+        provider: str = "sec_edgar",
     ) -> int:
         count = 0
         async with self._factory() as session:
@@ -54,7 +67,13 @@ class ProviderFeedService:
                 assert isinstance(item_id, str)
                 assert isinstance(published_at, str)
                 if await session.scalar(
-                    select(ContentItem.id).where(ContentItem.raw_item_id == raw_id)
+                    select(ContentItem.id).where(
+                        or_(
+                            ContentItem.raw_item_id == raw_id,
+                            (ContentItem.source_id == raw.source_id)
+                            & (ContentItem.external_id == item_id),
+                        )
+                    )
                 ):
                     count += 1
                     continue
@@ -63,7 +82,11 @@ class ProviderFeedService:
                         raw_item_id=raw_id,
                         source_id=raw.source_id,
                         source_account_id=raw.source_account_id,
-                        content_kind=ContentKind.OFFICIAL_RELEASE,
+                        content_kind=(
+                            ContentKind.OFFICIAL_RELEASE
+                            if provider in {"sec_edgar", "eia"}
+                            else ContentKind.FEED_ENTRY
+                        ),
                         external_id=item_id,
                         title=title,
                         source_summary=None,
@@ -81,9 +104,69 @@ class ProviderFeedService:
                         quote_external_id=None,
                         repost_external_id=None,
                         deleted_status=DeletedStatus.UNKNOWN,
-                        metadata_={"provider": "sec_edgar", "retention": "metadata_only"},
+                        metadata_={"provider": provider, "retention": "metadata_only"},
                     )
                 )
                 count += 1
             await session.commit()
         return count
+
+    async def for_run(
+        self, collection_run_id: uuid.UUID, provider: str, limit: int
+    ) -> tuple[ProviderDisplayItem, ...]:
+        if not 1 <= limit <= 5:
+            raise ValueError("feed_limit_invalid")
+        async with self._factory() as session:
+            rows = (
+                await session.execute(
+                    select(ContentItem, Source.name)
+                    .join(RawItem, RawItem.id == ContentItem.raw_item_id)
+                    .join(Source, Source.id == ContentItem.source_id)
+                    .where(
+                        RawItem.collection_run_id == collection_run_id,
+                        Source.access_method == provider,
+                        ContentItem.title.is_not(None),
+                        ContentItem.source_published_at.is_not(None),
+                    )
+                    .order_by(ContentItem.source_published_at.desc(), ContentItem.id.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return tuple(
+            ProviderDisplayItem(
+                content.id,
+                provider,
+                content.title or "",
+                source_name,
+                content.source_published_at,
+                content.canonical_url,
+            )
+            for content, source_name in rows
+        )
+
+    async def by_content_ids(
+        self, content_item_ids: tuple[uuid.UUID, ...]
+    ) -> tuple[ProviderDisplayItem, ...]:
+        if not content_item_ids:
+            return ()
+        async with self._factory() as session:
+            rows = (
+                await session.execute(
+                    select(ContentItem, Source.name, Source.access_method)
+                    .join(Source, Source.id == ContentItem.source_id)
+                    .where(ContentItem.id.in_(content_item_ids))
+                )
+            ).all()
+        by_id = {
+            content.id: ProviderDisplayItem(
+                content.id,
+                provider,
+                content.title or "",
+                source_name,
+                content.source_published_at,
+                content.canonical_url,
+            )
+            for content, source_name, provider in rows
+            if content.title is not None and content.source_published_at is not None
+        }
+        return tuple(by_id[item_id] for item_id in content_item_ids if item_id in by_id)

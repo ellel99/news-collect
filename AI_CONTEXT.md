@@ -8,15 +8,15 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0037-multi-provider-runtime-verification.md`
+- 当前 Active SPEC：`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0036 已由 PR #35 批准完成。SPEC-0037 只增加统一、单请求 bounded runtime
-  verification runner，验证 Finnhub/EIA/SEC 既有 adapter → RawItem/evidence 与 SEC metadata-only
-  ContentItem；不修改 scheduler/Telegram/schema，不读 `.env`，不实现 AI、投资建议或 dedup/Event。
+- 当前工作状态：SPEC-0037 runtime verification 已批准完成。SPEC-0038 只实现 Marketaux、Finnhub、
+  EIA、SEC EDGAR 的独立 cadence scheduler 与 provider-specific Telegram routing；默认 dry-run，
+  tests/CI mock-only，不读 `.env`，不实现 AI、投资建议或 formal dedup/Event。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
-  request 已成功，正在等待 snapshot same-cursor 修复后的单次 live integrated verification。
+  post-fix live verification 也已 PASS（succeeded/no-new-items）。
 - NewsAPI.ai / Event Registry：future / blocked；不得请求或执行 smoke
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
@@ -25,9 +25,9 @@
   或保存文章数据
 - GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
-- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。当前仍未授权的是
-  scheduler expansion、AI、Event、formal dedup/clustering、投资建议及其他独立 SPEC 范围；SEC
-  仅允许在用户后续明确授权下进行一次 post-fix live verification。
+- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。SPEC-0038 仅授权当前四家
+  最小 cadence scheduler/Telegram routing；进一步 scheduler expansion、AI、Event、formal
+  dedup/clustering、投资建议及其他独立 SPEC 范围仍未授权。
 - Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
   `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
@@ -37,9 +37,9 @@
 - SPEC-0018 Normalized Evidence Contract Docs Review 已通过并 Completed；仅表示合同设计通过
 - SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review/schema
   implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、SPEC-0025、
-  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；当前只实现
-  Marketaux real adapter code boundary，不得修改 migration/ORM/schema、请求 Provider、
-  读取 `.env`/local capture，或接入 scheduler/其他 Provider/正式 normalization/dedup/Event/AI
+  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0037
+  也已完成当前批准范围。当前只实现四 Provider 最小 scheduler/Telegram routing，不得修改
+  migration/ORM/schema、请求 Provider、读取 `.env`/local capture，或实现 formal dedup/Event/AI
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash

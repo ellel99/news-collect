@@ -201,8 +201,8 @@ def _adapter(provider: str):
 @pytest.mark.parametrize(
     ("provider", "options", "content_count"),
     [
-        ("finnhub", {"symbol": "AAPL"}, 0),
-        ("eia", {"dataset": "electricity"}, 0),
+        ("finnhub", {"symbol": "AAPL"}, 1),
+        ("eia", {"dataset": "electricity"}, 1),
         ("sec_edgar", {"ticker": "AAPL", "cik": "0000320193"}, 1),
     ],
 )

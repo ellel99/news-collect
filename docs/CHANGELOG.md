@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
+
+- 将 SPEC-0037 标记为用户/ChatGPT approved/completed，并激活 SPEC-0038。
+- 新增统一 Celery Beat cycle，以独立 Redis cadence 串行隔离 Marketaux、Finnhub、EIA、SEC EDGAR；
+  missing credential/target 或单家 failure 不阻断其他 Provider。
+- Finnhub/EIA 新增 content-safe metadata-only display projection；复用现有 ContentItem、Notification
+  unique dedup marker、FAILED bounded retry 与 stale SENDING recovery，不修改 migration/ORM/schema。
+- 新增 provider-specific Telegram formatting 与 default-inert manual smoke；tests/CI mock-only，不请求
+  真实 Provider/Telegram，不读取 `.env`，不保存 raw response/live output。
+- 无 AI、投资建议、formal dedup/Event/clustering、新 Provider或 SPEC-0022。
+
 ## Unreleased — SPEC-0037 Multi Provider Runtime Verification
 
 - SPEC-0037 Implementation Review approved/completed：用户最终 SEC post-fix live verification 返回

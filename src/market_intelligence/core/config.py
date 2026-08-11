@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     MARKETAUX_TELEGRAM_SCHEDULER_EXECUTE: bool = False
     MARKETAUX_TELEGRAM_SCHEDULER_INTERVAL_SECONDS: int = Field(default=900, ge=60, le=86400)
     MARKETAUX_TELEGRAM_SCHEDULER_LIMIT: int = Field(default=1, ge=1, le=3)
+    MULTI_PROVIDER_SCHEDULER_EXECUTE: bool = False
+    MULTI_PROVIDER_SCHEDULER_TICK_SECONDS: int = Field(default=60, ge=30, le=3600)
+    MARKETAUX_CADENCE_SECONDS: int = Field(default=300, ge=60, le=86400)
+    FINNHUB_CADENCE_SECONDS: int = Field(default=900, ge=60, le=86400)
+    EIA_CADENCE_SECONDS: int = Field(default=21600, ge=300, le=604800)
+    SEC_EDGAR_CADENCE_SECONDS: int = Field(default=1800, ge=300, le=86400)
 
     @field_validator("DATABASE_URL")
     @classmethod
