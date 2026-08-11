@@ -1,6 +1,6 @@
 # SPEC-0036 — Multi-provider Ingestion for Finnhub, EIA and SEC EDGAR
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Multi-provider Ingestion
 
@@ -109,3 +109,4 @@ SEC_USER_AGENT=... SEC_CONTACT_EMAIL=... \
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | implementation diff、mock/PostgreSQL tests、dry-run summaries、review package | 等待用户/ChatGPT Review |
+| 2 | PASS | PR #35，CI PASS，target doctor/bootstrap review fixes | Approved and merged；SPEC-0036 Completed |

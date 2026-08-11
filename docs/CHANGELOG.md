@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — SPEC-0037 Multi Provider Runtime Verification
+
+- 将 SPEC-0036 标记为 PR #35 approved/completed，并激活 SPEC-0037。
+- 新增统一 `multi_provider_runtime_smoke.py`，支持 inert dry-run、三家 doctor/bootstrap 与显式 execute。
+- 固定 Finnhub → EIA → SEC 串行执行且每家最多一次 request；EIA/SEC bounded adapter 不分页。
+- 本地 bootstrap/doctor 三家 PASS；首次 execute 因 process credential 全部 MISSING 在网络前安全
+  BLOCKED，未读取 `.env`、未发出 Provider request、未写 live data。
+- tests/CI mock-only；无 scheduler/Telegram、AI、投资建议、dedup/Event、migration/ORM/schema change。
+
 ## Unreleased — SPEC-0036 Multi-provider Ingestion
 
 - 将 SPEC-0035 标记为 PR #34 approved/completed，并激活 SPEC-0036。

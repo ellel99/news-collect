@@ -8,11 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0036-multi-provider-ingestion.md`
+- 当前 Active SPEC：`spec/SPEC-0037-multi-provider-runtime-verification.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0035 已由 PR #34 批准完成。SPEC-0036 一次性实现 Finnhub、EIA、SEC EDGAR
-  的 bounded manual ingestion → RawItem/evidence，并仅为 SEC 生成 metadata-only ContentItem；不修改
-  scheduler/Telegram，不读 `.env`，不实现 AI、投资建议、dedup/Event 或复杂规则。
+- 当前工作状态：SPEC-0036 已由 PR #35 批准完成。SPEC-0037 只增加统一、单请求 bounded runtime
+  verification runner，验证 Finnhub/EIA/SEC 既有 adapter → RawItem/evidence 与 SEC metadata-only
+  ContentItem；不修改 scheduler/Telegram/schema，不读 `.env`，不实现 AI、投资建议或 dedup/Event。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Bounded smoke：Marketaux、Finnhub、EIA Open Data、SEC EDGAR 均在用户逐次授权下
   获得 redacted structural PASS；合同 PASS、Adapter implementation 和正式采集仍未授权
