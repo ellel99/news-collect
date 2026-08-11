@@ -6,6 +6,9 @@
 - 新增 Finnhub quote、EIA electricity、SEC EDGAR submissions adapters，复用现有 CollectionRunner、
   RawItem、provider mapping 与 EvidenceWriteService。
 - 新增三个 default-dry-run/manual-execute smoke commands；tests/CI 只使用 mocked transports。
+- 为三个 smoke 增加通用 target doctor/bootstrap：安全区分 missing/not-unique/disabled/unauthorized/
+  account-missing，首次创建、重复幂等，多 target fail closed；bootstrap 不读 credential、不请求 API。
+- 补充 SEC agent + contact 缺一 fail closed 与 mocked transport User-Agent 构造/不回显测试。
 - SEC 只生成 metadata-only official-release ContentItem；不下载 filing body；Finnhub/EIA 保持 evidence-only。
 - 无 scheduler/Telegram routing、AI、投资建议、formal dedup/Event、多余 Provider、migration/ORM/schema change。
 

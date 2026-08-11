@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
@@ -18,11 +19,22 @@ from market_intelligence.core.config import Settings
 from market_intelligence.db import Base, ContentItem, EvidenceItem, RawItem
 from market_intelligence.db.models import AuthorizationStatus, Source, SourceAccount, SourceType
 from market_intelligence.evidence.end_to_end import EndToEndStatus
-from market_intelligence.pipeline.multi_provider_ingestion import MultiProviderIngestionPipeline
-from market_intelligence.providers.contracts import ProviderFetchRequest, ProviderTransportResponse
+from market_intelligence.pipeline.multi_provider_ingestion import (
+    MultiProviderIngestionPipeline,
+    ProviderTargetError,
+    bootstrap_provider_target,
+    diagnose_provider_target,
+)
+from market_intelligence.pipeline.provider_runtime import execute_provider, target_summary
+from market_intelligence.providers.contracts import (
+    ProviderFetchRequest,
+    ProviderTransportRequest,
+    ProviderTransportResponse,
+)
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.eia import EiaAdapter
 from market_intelligence.providers.finnhub import FinnhubAdapter
+from market_intelligence.providers.http_transport import HttpxProviderTransport
 from market_intelligence.providers.sec_edgar import SecEdgarAdapter
 from market_intelligence.providers.transport import MockProviderTransport
 
@@ -269,3 +281,158 @@ def test_multi_provider_source_audit() -> None:
         "dotenv",
     )
     assert all(value not in source for value in forbidden)
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected_options"),
+    [
+        ("finnhub", {"symbol": "AAPL"}),
+        ("eia", {"dataset": "electricity"}),
+        ("sec_edgar", {"ticker": "AAPL", "cik": "0000320193"}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_provider_target_doctor_and_bootstrap_are_idempotent(
+    provider_runtime, provider, expected_options
+) -> None:
+    factory, _ = provider_runtime
+
+    missing = await diagnose_provider_target(factory, provider)
+    first = await bootstrap_provider_target(factory, provider)
+    second = await bootstrap_provider_target(factory, provider)
+    ready = await diagnose_provider_target(factory, provider)
+
+    assert missing.error is ProviderTargetError.MISSING
+    assert target_summary("BLOCKED", missing)["safe_errors"] == ["provider_target_missing"]
+    assert first.status == "created"
+    assert second.status == "already_exists"
+    assert ready.target is not None
+    assert ready.eligible_target_count == 1
+    assert target_summary("PASS", ready)["status"] == "PASS"
+    async with factory() as session:
+        account = await session.scalar(
+            select(SourceAccount)
+            .join(Source, Source.id == SourceAccount.source_id)
+            .where(Source.access_method == provider)
+        )
+    assert account is not None
+    assert account.collection_options == expected_options
+    rendered = repr(account.collection_options).lower()
+    assert all(marker not in rendered for marker in (SECRET, "api_key", "token", "contact"))
+
+
+@pytest.mark.asyncio
+async def test_conflicting_provider_targets_fail_closed(provider_runtime) -> None:
+    factory, _ = provider_runtime
+    await _target(factory, "finnhub", {"symbol": "AAPL"})
+    await _target(factory, "finnhub", {"symbol": "MSFT"})
+
+    diagnosis = await diagnose_provider_target(factory, "finnhub")
+    bootstrap = await bootstrap_provider_target(factory, "finnhub")
+
+    assert diagnosis.error is ProviderTargetError.NOT_UNIQUE
+    assert diagnosis.eligible_target_count == 2
+    assert bootstrap.status == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("enabled", "authorization", "expected"),
+    [
+        (False, AuthorizationStatus.AUTHORIZED, ProviderTargetError.SOURCE_DISABLED),
+        (True, AuthorizationStatus.PLANNED, ProviderTargetError.SOURCE_UNAUTHORIZED),
+    ],
+)
+@pytest.mark.asyncio
+async def test_provider_doctor_distinguishes_source_gate_failures(
+    provider_runtime, enabled, authorization, expected
+) -> None:
+    factory, _ = provider_runtime
+    async with factory.begin() as session:
+        session.add(
+            Source(
+                code=f"gate-{uuid.uuid4().hex}",
+                name="Synthetic gate",
+                source_type=SourceType.API,
+                access_method="finnhub",
+                authorization_status=authorization,
+                retention_class="metadata_only",
+                enabled=enabled,
+            )
+        )
+
+    diagnosis = await diagnose_provider_target(factory, "finnhub")
+
+    assert diagnosis.error is expected
+
+
+@pytest.mark.asyncio
+async def test_provider_doctor_distinguishes_missing_account(provider_runtime) -> None:
+    factory, _ = provider_runtime
+    async with factory.begin() as session:
+        session.add(
+            Source(
+                code=f"account-{uuid.uuid4().hex}",
+                name="Synthetic account gate",
+                source_type=SourceType.API,
+                access_method="eia",
+                authorization_status=AuthorizationStatus.AUTHORIZED,
+                retention_class="metadata_only",
+                enabled=True,
+            )
+        )
+
+    diagnosis = await diagnose_provider_target(factory, "eia")
+
+    assert diagnosis.error is ProviderTargetError.ACCOUNT_MISSING
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {"SEC_USER_AGENT": "synthetic-agent"},
+        {"SEC_CONTACT_EMAIL": "synthetic@example.invalid"},
+        {},
+    ],
+)
+async def test_sec_runtime_requires_agent_and_contact(environ) -> None:
+    report, code = await execute_provider(
+        "sec_edgar",
+        1,
+        environ,
+        {"ticker": "AAPL", "cik": "0000320193"},
+        MockProviderTransport([]),
+    )
+    assert code == 2
+    assert report["status"] == "BLOCKED"
+    assert report["safe_errors"] == ["provider_runtime_credential_missing"]
+    rendered = json.dumps(report).lower()
+    assert "synthetic-agent" not in rendered
+    assert "synthetic@example.invalid" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_sec_transport_constructs_user_agent_without_echo() -> None:
+    observed: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed["user-agent"] = request.headers["User-Agent"]
+        return httpx.Response(200, json={"filings": {"recent": {}}})
+
+    credential = RuntimeCredential("SEC_USER_AGENT", "synthetic-agent synthetic@example.invalid")
+    transport = HttpxProviderTransport(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    request = ProviderTransportRequest(
+        provider="sec_edgar",
+        operation="submissions",
+        params={"cik": "0000320193"},
+        timeout_seconds=1,
+        runtime_credential=credential,
+    )
+
+    response = await transport.send(request)
+
+    assert response.status_code == 200
+    assert observed["user-agent"] == "synthetic-agent synthetic@example.invalid"
+    rendered = f"{request!r} {response!r}"
+    assert "synthetic-agent" not in rendered
+    assert "synthetic@example.invalid" not in rendered

@@ -21,6 +21,8 @@ Depends on：SPEC-0035（Completed）
 - 扩展既有 `HttpxProviderTransport` allowlist，不引入 Provider SDK。
 - 扩展既有 projection sidecar、trigger、mapper dispatch 与 EvidenceWriteService 路径，不复制 DB write。
 - 三个 manual smoke 默认 dry-run；只有显式 `--execute` 才读取 process environment、访问 runtime。
+- 三个 smoke 均提供 `--doctor` 与 `--bootstrap-target`；doctor 只返回 Source/SourceAccount counts、
+  eligibility 与固定 safe error，bootstrap 只创建缺失的最小 target，且不读 Provider credential、不请求 API。
 
 ## 2. 安全与数据边界
 
@@ -44,6 +46,24 @@ Depends on：SPEC-0035（Completed）
 - SEC 仅创建 metadata-only OFFICIAL_RELEASE ContentItem，title 为 form/ticker 标签，不保存 filing body 或 URL。
 
 ## 4. Manual bounded smoke
+
+Target doctor/bootstrap（不读 Provider credential、不请求 API）：
+
+```bash
+python3 scripts/finnhub_ingestion_smoke.py --doctor
+python3 scripts/finnhub_ingestion_smoke.py --bootstrap-target
+python3 scripts/eia_ingestion_smoke.py --doctor
+python3 scripts/eia_ingestion_smoke.py --bootstrap-target
+python3 scripts/sec_edgar_ingestion_smoke.py --doctor
+python3 scripts/sec_edgar_ingestion_smoke.py --bootstrap-target
+```
+
+- 缺失 target 返回 `provider_target_missing`；多个 eligible target 返回
+  `provider_target_not_unique` 并 fail closed。
+- disabled/unauthorized Source 与 missing account 分别返回固定 safe error；不输出行内容或配置值。
+- 首次 bootstrap 返回 `created`，重复执行返回 `already_exists`，之后 doctor 返回 `PASS`。
+- bootstrap defaults 只含 `AAPL` symbol、`electricity` dataset，或 SEC `AAPL`/公开 CIK；credential
+  与 SEC contact 永不写入 SourceAccount。
 
 默认 inert dry-run：
 
@@ -78,6 +98,10 @@ SEC_USER_AGENT=... SEC_CONTACT_EMAIL=... \
 - [x] 默认 smoke 不读 credential、不访问 network/DB、输出 safe JSON。
 - [x] adapter contract、limits、cursor、secret separation 由 mock tests 覆盖。
 - [x] source audit 不含 scheduler/Telegram/AI/recommendation/Event/clustering/local capture 依赖。
+- [x] 三 Provider missing → bootstrap created → already_exists → doctor PASS。
+- [x] 多 target fail closed；bootstrap 不读 credential、不调用 transport、不保存 secret config。
+- [x] SEC runtime 缺 agent/contact 任一项即 fail closed；两者齐全时只在 transport 层构造 User-Agent，
+  summary/repr/error 不回显。
 - [ ] CI、完整 PostgreSQL suite 与 review package PASS。
 
 ## 7. Review History

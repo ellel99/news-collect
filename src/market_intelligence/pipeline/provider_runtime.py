@@ -14,6 +14,9 @@ from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.multi_provider_ingestion import (
     MultiProviderIngestionPipeline,
+    ProviderTargetDiagnosis,
+    bootstrap_provider_target,
+    diagnose_provider_target,
     resolve_provider_target,
 )
 from market_intelligence.providers.contracts import ProviderAdapter, ProviderTransport
@@ -40,6 +43,41 @@ def dry_run_summary(provider: str, limit: int) -> dict[str, object]:
     }
 
 
+def target_summary(status: str, diagnosis: ProviderTargetDiagnosis) -> dict[str, object]:
+    return {
+        "provider": diagnosis.provider,
+        "status": status,
+        "provider_source_count": diagnosis.source_count,
+        "provider_account_count": diagnosis.account_count,
+        "eligible_target_count": diagnosis.eligible_target_count,
+        "safe_errors": [diagnosis.error.value] if diagnosis.error is not None else [],
+    }
+
+
+async def inspect_provider_target(
+    provider: str, *, bootstrap: bool
+) -> tuple[dict[str, object], int]:
+    """Doctor/bootstrap without reading provider credentials or using transport."""
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        if bootstrap:
+            result = await bootstrap_provider_target(factory, provider)
+            return (
+                target_summary(result.status, result.diagnosis),
+                0 if result.status in ("created", "already_exists") else 2,
+            )
+        diagnosis = await diagnose_provider_target(factory, provider)
+        return (
+            target_summary("PASS" if diagnosis.target is not None else "BLOCKED", diagnosis),
+            0 if diagnosis.target is not None else 2,
+        )
+    finally:
+        await engine.dispose()
+
+
 async def execute_provider(
     provider: str,
     limit: int,
@@ -57,7 +95,13 @@ async def execute_provider(
     try:
         resolved = await resolve_provider_target(factory, provider)
         if resolved is None:
-            return _blocked(provider, limit, "provider_target_not_unique", True), 2
+            diagnosis = await diagnose_provider_target(factory, provider)
+            error = (
+                diagnosis.error.value
+                if diagnosis.error is not None
+                else "provider_target_not_unique"
+            )
+            return _blocked(provider, limit, error, True), 2
         target = CollectionTarget(
             source_id=resolved.target.source_id,
             source_account_id=resolved.target.source_account_id,
