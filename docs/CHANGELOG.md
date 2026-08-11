@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — SPEC-0037 Multi Provider Runtime Verification
+
+- SPEC-0037 Implementation Review approved/completed：用户最终 SEC post-fix live verification 返回
+  succeeded/no-new-items，无重复 RawItem/EvidenceItem/ContentItem，Finnhub/EIA live integrated PASS 保持有效。
+- 修复 SEC EDGAR snapshot polling：same latest cursor 正常结束为 no-new-items，newer cursor 推进，
+  older cursor fail closed；Marketaux/Finnhub/EIA 保持 strict cursor contract。
+- runtime summary 新增 content-free collection status/error diagnostics；本轮 review fix 未请求任何
+  Provider API，等待用户进行一次 SEC post-fix live verification。
+- bounded `max_batches=1` 只由 SPEC-0037 runtime verifier 显式注入；共享 ingestion pipeline 默认
+  保留正常 pagination，避免 production/scheduler path 跳过后续 batch。
+- 将 SPEC-0036 标记为 PR #35 approved/completed，并激活 SPEC-0037。
+- 新增统一 `multi_provider_runtime_smoke.py`，支持 inert dry-run、三家 doctor/bootstrap 与显式 execute。
+- 固定 Finnhub → EIA → SEC 串行执行且每家最多一次 request；EIA/SEC bounded adapter 不分页。
+- 本地 bootstrap/doctor 三家 PASS；首次 execute 因 process credential 全部 MISSING 在网络前安全
+  BLOCKED，未读取 `.env`、未发出 Provider request、未写 live data。
+- tests/CI mock-only；无 scheduler/Telegram、AI、投资建议、dedup/Event、migration/ORM/schema change。
+
 ## Unreleased — SPEC-0036 Multi-provider Ingestion
 
 - 将 SPEC-0035 标记为 PR #34 approved/completed，并激活 SPEC-0036。

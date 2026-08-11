@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from market_intelligence.collection.contracts import FetchBatch, FetchRequest
@@ -25,6 +26,55 @@ class ProviderResultObserver(Protocol):
     def observe(self, result: ProviderFetchResult) -> None: ...
 
 
+class CursorRelation(StrEnum):
+    ADVANCE = "advance"
+    UNCHANGED = "unchanged"
+    INVALID = "invalid"
+
+
+class ProviderCursorPolicy(Protocol):
+    def classify(self, current: str | None, candidate: str) -> CursorRelation: ...
+
+
+class StrictCursorPolicy:
+    """Require every non-initial provider cursor to advance."""
+
+    def classify(self, current: str | None, candidate: str) -> CursorRelation:
+        candidate_value = _cursor_value(candidate)
+        if candidate_value is None:
+            return CursorRelation.INVALID
+        if current is None:
+            return CursorRelation.ADVANCE
+        current_value = _cursor_value(current)
+        if current_value is None or candidate_value <= current_value:
+            return CursorRelation.INVALID
+        return CursorRelation.ADVANCE
+
+
+class SnapshotCursorPolicy:
+    """Allow a snapshot endpoint to repeat its latest cursor without advancing."""
+
+    def classify(self, current: str | None, candidate: str) -> CursorRelation:
+        candidate_value = _cursor_value(candidate)
+        if candidate_value is None:
+            return CursorRelation.INVALID
+        if current is None:
+            return CursorRelation.ADVANCE
+        current_value = _cursor_value(current)
+        if current_value is None or candidate_value < current_value:
+            return CursorRelation.INVALID
+        if candidate_value == current_value:
+            return CursorRelation.UNCHANGED
+        return CursorRelation.ADVANCE
+
+
+_STRICT_CURSOR_POLICY = StrictCursorPolicy()
+_SNAPSHOT_CURSOR_POLICY = SnapshotCursorPolicy()
+_CURSOR_POLICIES: Mapping[str, ProviderCursorPolicy] = {
+    "sec_edgar": _SNAPSHOT_CURSOR_POLICY,
+}
+
+
 class ProviderCollectionAdapter:
     """Adapt a provider scaffold without giving it persistence responsibilities."""
 
@@ -39,6 +89,7 @@ class ProviderCollectionAdapter:
         self._adapter = adapter
         self._transport = transport
         self._observer = observer
+        self._cursor_policy = _CURSOR_POLICIES.get(adapter.provider_key, _STRICT_CURSOR_POLICY)
 
     async def fetch(self, request: FetchRequest) -> FetchBatch:
         result = await self._adapter.fetch(
@@ -60,6 +111,17 @@ class ProviderCollectionAdapter:
                 CollectionErrorCode.CONTRACT_INVALID,
                 "provider result identity mismatch",
             )
+        if (
+            result.next_cursor is not None
+            and self._cursor_policy.classify(request.cursor.cursor_value, result.next_cursor)
+            is CursorRelation.UNCHANGED
+        ):
+            return FetchBatch(
+                items=(),
+                next_cursor=result.next_cursor,
+                last_published_at=request.cursor.last_published_at,
+                has_more=False,
+            )
         if self._observer is not None:
             try:
                 self._observer.observe(result)
@@ -76,13 +138,7 @@ class ProviderCollectionAdapter:
         )
 
     def is_cursor_successor(self, current: str | None, candidate: str) -> bool:
-        candidate_value = _cursor_value(candidate)
-        if candidate_value is None:
-            return False
-        if current is None:
-            return True
-        current_value = _cursor_value(current)
-        return current_value is not None and candidate_value > current_value
+        return self._cursor_policy.classify(current, candidate) is not CursorRelation.INVALID
 
 
 def _collection_error(error: ProviderAdapterError) -> ClassifiedCollectionError:

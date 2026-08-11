@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from market_intelligence.collection.contracts import CollectionTarget
 from market_intelligence.core.config import Settings
-from market_intelligence.db.models import ContentItem, RawItem
+from market_intelligence.db.models import CollectionRun, ContentItem, RawItem
 from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.multi_provider_ingestion import (
@@ -31,6 +31,11 @@ def dry_run_summary(provider: str, limit: int) -> dict[str, object]:
     return {
         "provider": provider,
         "status": "DRY_RUN",
+        "collection_status": "not_started",
+        "collection_no_new_items": False,
+        "collection_run_id_present": False,
+        "collection_run_status": None,
+        "collection_error_code": None,
         "limit": limit,
         "credential_read": False,
         "request_enabled": False,
@@ -52,6 +57,53 @@ def target_summary(status: str, diagnosis: ProviderTargetDiagnosis) -> dict[str,
         "eligible_target_count": diagnosis.eligible_target_count,
         "safe_errors": [diagnosis.error.value] if diagnosis.error is not None else [],
     }
+
+
+def _runtime_summary(
+    *,
+    provider: str,
+    limit: int,
+    outcome_status: EndToEndStatus,
+    raw_item_count: int,
+    evidence_item_count: int,
+    content_item_count: int,
+    safe_errors: list[str],
+    collection_run_id_present: bool,
+    collection_run_status: str | None,
+    collection_error_code: str | None,
+) -> tuple[dict[str, object], int]:
+    no_new_items = (
+        outcome_status is EndToEndStatus.PROCESSED
+        and raw_item_count == 0
+        and collection_run_status == "succeeded"
+        and not safe_errors
+    )
+    succeeded = (
+        outcome_status is EndToEndStatus.PROCESSED
+        and not safe_errors
+        and (no_new_items or (raw_item_count > 0 and evidence_item_count > 0))
+    )
+    return (
+        {
+            "provider": provider,
+            "status": "PASS" if succeeded else "FAIL",
+            "collection_status": "no_new_items" if no_new_items else outcome_status.value,
+            "collection_no_new_items": no_new_items,
+            "collection_run_id_present": collection_run_id_present,
+            "collection_run_status": collection_run_status,
+            "collection_error_code": collection_error_code,
+            "limit": limit,
+            "credential_read": True,
+            "request_enabled": True,
+            "db_written": raw_item_count > 0 or evidence_item_count > 0,
+            "raw_item_count": raw_item_count,
+            "evidence_item_count": evidence_item_count,
+            "content_item_count": content_item_count,
+            "response_saved": False,
+            "safe_errors": safe_errors,
+        },
+        0 if succeeded else 3,
+    )
 
 
 async def inspect_provider_target(
@@ -111,7 +163,12 @@ async def execute_provider(
             collection_options=collection_options,
         )
         pipeline = MultiProviderIngestionPipeline(
-            factory, redis, settings, adapter, transport or HttpxProviderTransport()
+            factory,
+            redis,
+            settings,
+            adapter,
+            transport or HttpxProviderTransport(),
+            max_batches=1,
         )
         outcome = await pipeline.run(target)
         evidence_ids = tuple(
@@ -121,8 +178,14 @@ async def execute_provider(
             and trigger.pipeline_outcome.evidence_item_id is not None
         )
         content_count = 0
+        run_status: str | None = None
+        run_error_code: str | None = None
         if outcome.collection_run_id is not None:
             async with factory() as session:
+                run = await session.get(CollectionRun, outcome.collection_run_id)
+                if run is not None:
+                    run_status = run.status.value
+                    run_error_code = run.error_code
                 content_count = int(
                     (
                         await session.scalar(
@@ -135,27 +198,20 @@ async def execute_provider(
                     or 0
                 )
         errors = [error.code for error in outcome.safe_errors]
-        succeeded = (
-            outcome.status is EndToEndStatus.PROCESSED
-            and outcome.raw_item_count > 0
-            and len(evidence_ids) > 0
-            and not errors
-        )
-        return (
-            {
-                "provider": provider,
-                "status": "PASS" if succeeded else "FAIL",
-                "limit": limit,
-                "credential_read": True,
-                "request_enabled": True,
-                "db_written": outcome.raw_item_count > 0 or bool(evidence_ids),
-                "raw_item_count": outcome.raw_item_count,
-                "evidence_item_count": len(evidence_ids),
-                "content_item_count": content_count,
-                "response_saved": False,
-                "safe_errors": errors,
-            },
-            0 if succeeded else 3,
+        if run_error_code is not None:
+            errors.append(run_error_code.lower())
+        errors = list(dict.fromkeys(errors))
+        return _runtime_summary(
+            provider=provider,
+            limit=limit,
+            outcome_status=outcome.status,
+            raw_item_count=outcome.raw_item_count,
+            evidence_item_count=len(evidence_ids),
+            content_item_count=content_count,
+            safe_errors=errors,
+            collection_run_id_present=outcome.collection_run_id is not None,
+            collection_run_status=run_status,
+            collection_error_code=run_error_code,
         )
     finally:
         await redis.aclose()

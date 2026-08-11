@@ -231,6 +231,8 @@ class MultiProviderIngestionPipeline:
         settings: Settings,
         adapter: ProviderAdapter,
         transport: ProviderTransport,
+        *,
+        max_batches: int | None = None,
     ) -> None:
         self._provider = adapter.provider_key
         self._sidecar = InMemoryProviderProjectionSidecar()
@@ -244,6 +246,7 @@ class MultiProviderIngestionPipeline:
             provider_registry=registry,
             provider_transport=transport,
             provider_result_observer=self._sidecar,
+            max_batches=max_batches,
         )
         self._pipeline = EndToEndMockEvidencePipeline(factory, runner, self._sidecar)
         self._feed = ProviderFeedService(factory)

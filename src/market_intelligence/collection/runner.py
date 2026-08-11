@@ -64,6 +64,7 @@ class CollectionRunner:
         provider_registry: ProviderAdapterRegistry | None = None,
         provider_transport: ProviderTransport | None = None,
         provider_result_observer: ProviderResultObserver | None = None,
+        max_batches: int | None = None,
     ) -> None:
         self.factory = factory
         self.redis = redis
@@ -73,6 +74,9 @@ class CollectionRunner:
         self.provider_registry = provider_registry
         self.provider_transport = provider_transport
         self.provider_result_observer = provider_result_observer
+        if max_batches is not None and max_batches < 1:
+            raise ValueError("max_batches must be positive")
+        self.max_batches = max_batches
         self.retry_policy = RetryPolicy(
             settings.COLLECTION_MAX_RETRIES,
             settings.COLLECTION_RETRY_BASE_SECONDS,
@@ -100,6 +104,7 @@ class CollectionRunner:
             deadline = datetime.now(UTC) + timedelta(
                 seconds=self.settings.COLLECTION_TASK_DEADLINE_SECONDS
             )
+            completed_batches = 0
             while True:
                 cursor = await self._load_cursor(target, adapter.cursor_type)
                 request = FetchRequest(
@@ -125,7 +130,10 @@ class CollectionRunner:
                         CollectionErrorCode.LOCK_LOST, "target lock ownership lost"
                     )
                 await self._persist_checkpoint(target, run_id, cursor, batch, adapter)
-                if not batch.has_more:
+                completed_batches += 1
+                if not batch.has_more or (
+                    self.max_batches is not None and completed_batches >= self.max_batches
+                ):
                     await self._finish_success(target, run_id)
                     return RunOutcome(run_id, CollectionRunStatus.SUCCEEDED.value)
         except ClassifiedCollectionError as error:

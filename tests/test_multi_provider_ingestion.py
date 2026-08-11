@@ -17,7 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from market_intelligence.collection.contracts import CollectionTarget
 from market_intelligence.core.config import Settings
 from market_intelligence.db import Base, ContentItem, EvidenceItem, RawItem
-from market_intelligence.db.models import AuthorizationStatus, Source, SourceAccount, SourceType
+from market_intelligence.db.models import (
+    AuthorizationStatus,
+    CollectionCursor,
+    CollectionRun,
+    CollectionRunStatus,
+    Source,
+    SourceAccount,
+    SourceType,
+)
 from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.multi_provider_ingestion import (
     MultiProviderIngestionPipeline,
@@ -141,6 +149,47 @@ def _response(provider: str, status: int = 200) -> ProviderTransportResponse:
     return ProviderTransportResponse(status, datetime.now(UTC), bodies[provider])
 
 
+def _sec_response(accession: str, filing_date: str) -> ProviderTransportResponse:
+    return ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "filings": {
+                "recent": {
+                    "accessionNumber": [accession],
+                    "filingDate": [filing_date],
+                    "form": ["10-Q"],
+                    "primaryDocument": ["synthetic.htm"],
+                }
+            }
+        },
+    )
+
+
+def _multi_row_response(provider: str) -> ProviderTransportResponse:
+    if provider == "eia":
+        body = {
+            "response": {
+                "data": [
+                    {"period": "2026-08", "price": 1, "stateid": "US", "sectorid": "ALL"},
+                    {"period": "2026-07", "price": 2, "stateid": "US", "sectorid": "ALL"},
+                ]
+            }
+        }
+    else:
+        body = {
+            "filings": {
+                "recent": {
+                    "accessionNumber": ["0000320193-26-000002", "0000320193-26-000001"],
+                    "filingDate": ["2026-08-02", "2026-08-01"],
+                    "form": ["10-Q", "8-K"],
+                    "primaryDocument": ["new.htm", "old.htm"],
+                }
+            }
+        }
+    return ProviderTransportResponse(200, datetime.now(UTC), body)
+
+
 def _adapter(provider: str):
     if provider == "finnhub":
         return FinnhubAdapter(RuntimeCredential("FINNHUB_API_KEY", SECRET))
@@ -185,6 +234,134 @@ async def test_mock_provider_ingestion_writes_raw_and_evidence(
     assert counts == (1, 1, content_count)
     assert len(transport.calls) == 1
     assert SECRET not in repr(transport.calls[0])
+
+
+@pytest.mark.asyncio
+async def test_sec_snapshot_polling_initial_same_newer_and_older(provider_runtime) -> None:
+    factory, redis = provider_runtime
+    target = await _target(factory, "sec_edgar", {"ticker": "AAPL", "cik": "0000320193"})
+    filing_a = "0000320193-26-000001"
+    filing_b = "0000320193-26-000002"
+    filing_z = "0000320193-25-000099"
+    transport = MockProviderTransport(
+        [
+            _sec_response(filing_a, "2026-08-01"),
+            _sec_response(filing_a, "2026-08-01"),
+            _sec_response(filing_a, "2026-08-01"),
+            _sec_response(filing_a, "2026-08-01"),
+            _sec_response(filing_b, "2026-08-02"),
+            _sec_response(filing_z, "2026-07-01"),
+        ]
+    )
+    pipeline = MultiProviderIngestionPipeline(
+        factory, redis, _settings(1), _adapter("sec_edgar"), transport
+    )
+
+    initial = await pipeline.run(target)
+    repeated = [await pipeline.run(target) for _ in range(3)]
+    newer = await pipeline.run(target)
+    older = await pipeline.run(target)
+
+    assert initial.status is EndToEndStatus.PROCESSED and initial.raw_item_count == 1
+    assert all(
+        outcome.status is EndToEndStatus.PROCESSED
+        and outcome.raw_item_count == 0
+        and outcome.safe_errors == ()
+        for outcome in repeated
+    )
+    assert newer.status is EndToEndStatus.PROCESSED and newer.raw_item_count == 1
+    assert older.status is EndToEndStatus.COLLECTION_FAILED and older.raw_item_count == 0
+    async with factory() as session:
+        raw_count = int((await session.scalar(select(func.count()).select_from(RawItem))) or 0)
+        evidence_count = int(
+            (await session.scalar(select(func.count()).select_from(EvidenceItem))) or 0
+        )
+        content_count = int(
+            (await session.scalar(select(func.count()).select_from(ContentItem))) or 0
+        )
+        cursor = await session.scalar(
+            select(CollectionCursor).where(
+                CollectionCursor.source_account_id == target.source_account_id
+            )
+        )
+        runs = (
+            await session.scalars(select(CollectionRun).order_by(CollectionRun.started_at))
+        ).all()
+    assert (raw_count, evidence_count, content_count) == (2, 2, 2)
+    assert cursor is not None and filing_b in (cursor.cursor_value or "")
+    assert cursor.last_published_at == datetime(2026, 8, 2, tzinfo=UTC)
+    assert all(run.status is CollectionRunStatus.SUCCEEDED for run in runs[:5])
+    assert all(run.error_count == 0 and run.error_code is None for run in runs[:5])
+    assert runs[-1].status is CollectionRunStatus.FAILED
+    assert runs[-1].error_code == "COLLECTION_CONTRACT_INVALID"
+    assert len(transport.calls) == 6
+
+
+@pytest.mark.parametrize(
+    ("provider", "options"),
+    [
+        ("eia", {"dataset": "electricity"}),
+        ("sec_edgar", {"ticker": "AAPL", "cik": "0000320193"}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bounded_pipeline_ignores_has_more_after_one_request(
+    provider_runtime, provider, options
+) -> None:
+    factory, redis = provider_runtime
+    target = await _target(factory, provider, options)
+    transport = MockProviderTransport([_multi_row_response(provider)])
+    pipeline = MultiProviderIngestionPipeline(
+        factory,
+        redis,
+        _settings(1),
+        _adapter(provider),
+        transport,
+        max_batches=1,
+    )
+
+    outcome = await pipeline.run(target)
+
+    assert outcome.status is EndToEndStatus.PROCESSED
+    assert outcome.raw_item_count == 1
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_normal_pipeline_continues_when_provider_has_more(provider_runtime) -> None:
+    factory, redis = provider_runtime
+    target = await _target(factory, "eia", {"dataset": "electricity"})
+    first = ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "response": {
+                "data": [
+                    {"period": "2026-07", "price": 1, "stateid": "US", "sectorid": "ALL"},
+                    {"period": "2026-06", "price": 2, "stateid": "US", "sectorid": "ALL"},
+                ]
+            }
+        },
+    )
+    second = ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "response": {
+                "data": [{"period": "2026-08", "price": 3, "stateid": "US", "sectorid": "ALL"}]
+            }
+        },
+    )
+    transport = MockProviderTransport([first, second])
+    pipeline = MultiProviderIngestionPipeline(
+        factory, redis, _settings(1), _adapter("eia"), transport
+    )
+
+    outcome = await pipeline.run(target)
+
+    assert outcome.status is EndToEndStatus.PROCESSED
+    assert outcome.raw_item_count == 2
+    assert len(transport.calls) == 2
 
 
 @pytest.mark.parametrize("provider", ["finnhub", "eia", "sec_edgar"])

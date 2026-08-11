@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0036-multi-provider-ingestion.md`](spec/SPEC-0036-multi-provider-ingestion.md)，实现 Finnhub + EIA + SEC bounded manual ingestion
+- 开发入口：[`spec/SPEC-0037-multi-provider-runtime-verification.md`](spec/SPEC-0037-multi-provider-runtime-verification.md)，统一验证 Finnhub + EIA + SEC bounded runtime ingestion
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,20 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0036-multi-provider-ingestion.md`](spec/SPEC-0036-multi-provider-ingestion.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0037-multi-provider-runtime-verification.md`](spec/SPEC-0037-multi-provider-runtime-verification.md) — Implementation Review
+
+统一 runtime verification：
+
+```bash
+.venv/bin/python scripts/multi_provider_runtime_smoke.py
+.venv/bin/python scripts/multi_provider_runtime_smoke.py --doctor
+.venv/bin/python scripts/multi_provider_runtime_smoke.py --bootstrap-target
+FINNHUB_API_KEY=... EIA_API_KEY=... SEC_USER_AGENT=... SEC_CONTACT_EMAIL=... \
+  .venv/bin/python scripts/multi_provider_runtime_smoke.py --execute
+```
+
+默认模式完全 inert；只有 `--execute` 接收 process environment。runner 固定串行执行三家且每家最多
+一次请求，不读取 `.env`，不保存 response 或 live output。
 
 SPEC-0036 Provider target 准备（不读 Provider credential、不请求 API）：
 
