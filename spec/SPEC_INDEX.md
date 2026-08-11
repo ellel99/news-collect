@@ -2,7 +2,7 @@
 
 Foundation：v2.1-FROZEN  
 Current Phase：Phase 1  
-Active SPEC：SPEC-0035（Implementation Review；minimal Marketaux + Telegram scheduler only）
+Active SPEC：SPEC-0036（Implementation Review；Finnhub + EIA + SEC minimal ingestion）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -34,7 +34,8 @@ Active SPEC：SPEC-0035（Implementation Review；minimal Marketaux + Telegram s
 | SPEC-0032 | Marketaux Real Collection Pipeline | Completed — Implementation Review approved | SPEC-0026–0030 |
 | SPEC-0033 | Marketaux Visible Feed + Manual Telegram Push | Completed — Implementation Review approved | SPEC-0032 |
 | SPEC-0034 | Alembic Migration State Repair / Docker Startup Health | Completed — Implementation Review approved | SPEC-0033 |
-| SPEC-0035 | Minimal Scheduler for Marketaux + Telegram | Active — Implementation Review | SPEC-0033/0034 |
+| SPEC-0035 | Minimal Scheduler for Marketaux + Telegram | Completed — Implementation Review approved | SPEC-0033/0034 |
+| SPEC-0036 | Multi-provider Ingestion for Finnhub, EIA and SEC EDGAR | Active — Implementation Review | SPEC-0035 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -98,7 +99,7 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-SPEC-0030–0034 已完成。唯一 Active SPEC 是 SPEC-0035，只实现 Marketaux collection 到 metadata-only
-ContentItem 的既有链路与 Telegram 的最小 default-dry-run scheduler，并复用 Notification unique marker；
-不授权 AI、dedup/Event、其他 Provider 或复杂规则引擎。SPEC-0005 及其他
+SPEC-0030–0035 已完成。唯一 Active SPEC 是 SPEC-0036，只实现 Finnhub/EIA/SEC 的 bounded manual
+ingestion、RawItem/evidence mapping 与适用的 metadata-only ContentItem；不修改 scheduler/Telegram，
+不授权 AI、investment recommendation 或 dedup/Event。SPEC-0005 及其他
 Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate Layer 且未启动。

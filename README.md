@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0035-marketaux-telegram-scheduler.md`](spec/SPEC-0035-marketaux-telegram-scheduler.md)，仅实现 default-dry-run Marketaux + Telegram 最小 scheduler
+- 开发入口：[`spec/SPEC-0036-multi-provider-ingestion.md`](spec/SPEC-0036-multi-provider-ingestion.md)，实现 Finnhub + EIA + SEC bounded manual ingestion
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,21 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0035-marketaux-telegram-scheduler.md`](spec/SPEC-0035-marketaux-telegram-scheduler.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0036-multi-provider-ingestion.md`](spec/SPEC-0036-multi-provider-ingestion.md) — Implementation Review
+
+SPEC-0036 Provider target 准备（不读 Provider credential、不请求 API）：
+
+```bash
+.venv/bin/python scripts/finnhub_ingestion_smoke.py --doctor
+.venv/bin/python scripts/finnhub_ingestion_smoke.py --bootstrap-target
+.venv/bin/python scripts/eia_ingestion_smoke.py --doctor
+.venv/bin/python scripts/eia_ingestion_smoke.py --bootstrap-target
+.venv/bin/python scripts/sec_edgar_ingestion_smoke.py --doctor
+.venv/bin/python scripts/sec_edgar_ingestion_smoke.py --bootstrap-target
+```
+
+Bootstrap 只创建最小 enabled/authorized Source + SourceAccount，重复执行为 `already_exists`；多个
+eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB。
 - 最近完成：[`spec/SPEC-0003.md`](spec/SPEC-0003.md)，tag `spec-0003-completed`
 - NewsAPI.ai / Event Registry：future / blocked；GDELT：runtime blocked / future evaluation only
 - SPEC-0019 pure contract scaffold 与 SPEC-0020 provider mapping scaffold 已 Completed；SPEC-0021

@@ -91,7 +91,7 @@ def _matches(
         projection.raw_item_id == raw_item.raw_item_id
         and projection.source_id == raw_item.source_id
         and projection.source_account_id == raw_item.source_account_id
-        and projection.provider == "marketaux"
+        and projection.provider in {"marketaux", "finnhub", "eia", "sec_edgar"}
         and values.get("provider_item_id") == raw_item.external_id
         and values.get("payload_hash") == raw_item.payload_hash
         and values.get("payload_reference") == raw_item.payload_location
