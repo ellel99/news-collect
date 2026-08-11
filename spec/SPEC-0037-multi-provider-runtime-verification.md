@@ -1,6 +1,6 @@
 # SPEC-0037 — Multi Provider Runtime Verification
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Bounded Runtime Verification
 
@@ -65,10 +65,9 @@ adapter 架构、migration、ORM 或 DB schema。
 - [x] source audit 无 scheduler/Telegram/AI/Event/dedup/local capture 依赖。
 - [x] SPEC-0036 adapter/ingestion mock/PostgreSQL tests 保持通过。
 - [x] 完整 mock/local 验证与 review package PASS。
-- [ ] 三家 bounded live execute：Finnhub 与 EIA integrated ingestion 已由用户本地验证 PASS。SEC
-  request 成功并 fetched 1 item，但首次 integrated ingestion 因 snapshot same-cursor 被旧 strict
-  successor contract 阻断；本 PR 已修复，等待用户进行一次独立 SEC post-fix live verification。
-- [ ] Reviewer PASS。
+- [x] 三家 bounded live execute：Finnhub 与 EIA integrated ingestion PASS；SEC post-fix live execute
+  对 same latest snapshot 正确返回 `PASS/no_new_items`，CollectionRun succeeded，无重复写入。
+- [x] Reviewer PASS。
 
 ## 6. Runtime Verification Evidence
 
@@ -82,7 +81,10 @@ adapter 架构、migration、ORM 或 DB schema。
   `COLLECTION_CONTRACT_INVALID` / `cursor is not a direct successor`。当前 cursor 使用安全的
   `provider_item_id + published_at` 结构；具体值不作为实现逻辑或测试夹具。
 - Fix：SEC same cursor → no-new-items；newer → advance；older → fail closed；runtime empty success 与
-  safe collection diagnostics 已补齐。尚未声称 SEC post-fix live PASS。
+  safe collection diagnostics 已补齐。
+- SEC post-fix live evidence：doctor PASS；execute 返回 `collection_run_status=succeeded`、
+  `collection_status=no_new_items`、`collection_no_new_items=true`、三个 item count 均为 0、
+  `db_written=false`、`safe_errors=[]`、总体 `status=PASS`。
 - 未读取 `.env`，未保存 response/live output，未输出任何 credential、value、URL 或 body。
 
 ## 7. Review History
@@ -92,3 +94,4 @@ adapter 架构、migration、ORM 或 DB schema。
 | 1 | IN REVIEW | unified runner、mock tests、bounded live safe summaries、review package | 等待用户/ChatGPT Review |
 | 2 | REQUEST CHANGES | adapter `has_more` contract 与 verifier request bound 混淆 | 已恢复真实 `has_more`，单请求由 verifier 保证 |
 | 3 | REQUEST CHANGES | SEC snapshot same cursor 被 strict successor 错判 | 已实现 SEC-specific snapshot policy、no-new-items 与安全诊断；等待 post-fix live verification |
+| 4 | PASS | 用户 SEC post-fix live verification：succeeded/no-new-items，无重复写入 | Implementation Review approved；SPEC-0037 Completed |

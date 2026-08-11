@@ -2,6 +2,8 @@
 
 ## Unreleased — SPEC-0037 Multi Provider Runtime Verification
 
+- SPEC-0037 Implementation Review approved/completed：用户最终 SEC post-fix live verification 返回
+  succeeded/no-new-items，无重复 RawItem/EvidenceItem/ContentItem，Finnhub/EIA live integrated PASS 保持有效。
 - 修复 SEC EDGAR snapshot polling：same latest cursor 正常结束为 no-new-items，newer cursor 推进，
   older cursor fail closed；Marketaux/Finnhub/EIA 保持 strict cursor contract。
 - runtime summary 新增 content-free collection status/error diagnostics；本轮 review fix 未请求任何
