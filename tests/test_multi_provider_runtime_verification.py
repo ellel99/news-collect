@@ -8,14 +8,19 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from market_intelligence.collection.provider_adapter import ProviderCollectionAdapter
+from market_intelligence.evidence.end_to_end import EndToEndStatus
 from market_intelligence.pipeline.multi_provider_verification import (
     PROVIDER_ORDER,
     VerificationMode,
     run_multi_provider_verification,
 )
+from market_intelligence.pipeline.provider_runtime import _runtime_summary
 from market_intelligence.providers.contracts import ProviderFetchRequest, ProviderTransportResponse
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.eia import EiaAdapter
+from market_intelligence.providers.finnhub import FinnhubAdapter
+from market_intelligence.providers.marketaux import MarketauxAdapter
 from market_intelligence.providers.sec_edgar import SecEdgarAdapter
 from market_intelligence.providers.transport import MockProviderTransport
 
@@ -176,6 +181,86 @@ async def test_eia_and_sec_adapters_preserve_has_more_semantics() -> None:
         )
         assert len(result.raw_items) == 1
         assert result.has_more is True
+
+
+def test_only_sec_uses_snapshot_same_cursor_policy() -> None:
+    cursor = json.dumps(
+        {"provider_item_id": "synthetic-item", "published_at": "2026-08-01T00:00:00+00:00"}
+    )
+    adapters = (
+        MarketauxAdapter(RuntimeCredential("MARKETAUX_API_TOKEN", "synthetic")),
+        FinnhubAdapter(RuntimeCredential("FINNHUB_API_KEY", "synthetic")),
+        EiaAdapter(RuntimeCredential("EIA_API_KEY", "synthetic")),
+    )
+    for adapter in adapters:
+        bridge = ProviderCollectionAdapter(adapter, MockProviderTransport([]))
+        assert bridge.is_cursor_successor(cursor, cursor) is False
+    sec_bridge = ProviderCollectionAdapter(
+        SecEdgarAdapter(RuntimeCredential("SEC_USER_AGENT", "synthetic contact")),
+        MockProviderTransport([]),
+    )
+    assert sec_bridge.is_cursor_successor(cursor, cursor) is True
+
+
+def test_runtime_summary_treats_empty_success_as_no_new_items() -> None:
+    report, code = _runtime_summary(
+        provider="sec_edgar",
+        limit=1,
+        outcome_status=EndToEndStatus.PROCESSED,
+        raw_item_count=0,
+        evidence_item_count=0,
+        content_item_count=0,
+        safe_errors=[],
+        collection_run_id_present=True,
+        collection_run_status="succeeded",
+        collection_error_code=None,
+    )
+
+    assert code == 0
+    assert report == {
+        "provider": "sec_edgar",
+        "status": "PASS",
+        "collection_status": "no_new_items",
+        "collection_no_new_items": True,
+        "collection_run_id_present": True,
+        "collection_run_status": "succeeded",
+        "collection_error_code": None,
+        "limit": 1,
+        "credential_read": True,
+        "request_enabled": True,
+        "db_written": False,
+        "raw_item_count": 0,
+        "evidence_item_count": 0,
+        "content_item_count": 0,
+        "response_saved": False,
+        "safe_errors": [],
+    }
+
+
+def test_runtime_summary_exposes_only_safe_collection_diagnostics() -> None:
+    report, code = _runtime_summary(
+        provider="sec_edgar",
+        limit=1,
+        outcome_status=EndToEndStatus.COLLECTION_FAILED,
+        raw_item_count=0,
+        evidence_item_count=0,
+        content_item_count=0,
+        safe_errors=["collection_contract_invalid"],
+        collection_run_id_present=True,
+        collection_run_status="failed",
+        collection_error_code="COLLECTION_CONTRACT_INVALID",
+    )
+
+    assert code == 3
+    assert report["status"] == "FAIL"
+    assert report["collection_no_new_items"] is False
+    assert report["collection_run_status"] == "failed"
+    assert report["collection_error_code"] == "COLLECTION_CONTRACT_INVALID"
+    rendered = json.dumps(report).lower()
+    assert all(
+        marker not in rendered
+        for marker in ("authorization", "user-agent", "https://", "filing body", "api_key=")
+    )
 
 
 def test_runtime_verification_source_has_no_forbidden_scope() -> None:

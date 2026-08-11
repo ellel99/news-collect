@@ -244,6 +244,7 @@ class MultiProviderIngestionPipeline:
             provider_registry=registry,
             provider_transport=transport,
             provider_result_observer=self._sidecar,
+            max_batches=1,
         )
         self._pipeline = EndToEndMockEvidencePipeline(factory, runner, self._sidecar)
         self._feed = ProviderFeedService(factory)

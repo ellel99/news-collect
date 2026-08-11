@@ -2,6 +2,10 @@
 
 ## Unreleased — SPEC-0037 Multi Provider Runtime Verification
 
+- 修复 SEC EDGAR snapshot polling：same latest cursor 正常结束为 no-new-items，newer cursor 推进，
+  older cursor fail closed；Marketaux/Finnhub/EIA 保持 strict cursor contract。
+- runtime summary 新增 content-free collection status/error diagnostics；本轮 review fix 未请求任何
+  Provider API，等待用户进行一次 SEC post-fix live verification。
 - 将 SPEC-0036 标记为 PR #35 approved/completed，并激活 SPEC-0037。
 - 新增统一 `multi_provider_runtime_smoke.py`，支持 inert dry-run、三家 doctor/bootstrap 与显式 execute。
 - 固定 Finnhub → EIA → SEC 串行执行且每家最多一次 request；EIA/SEC bounded adapter 不分页。

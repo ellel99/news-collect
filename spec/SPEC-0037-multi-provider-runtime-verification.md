@@ -55,12 +55,16 @@ adapter 架构、migration、ORM 或 DB schema。
 - [x] EIA/SEC response 行数大于 limit 时 `has_more=true`，保留 Provider contract 语义。
 - [x] unified verifier 即使收到 `has_more=true` 也只调用每个 Provider executor 一次，不触发
   pagination/backfill。
+- [x] SEC submissions snapshot cursor 使用独立 policy：same cursor 合法返回 no-new-items，newer
+  cursor 推进，older cursor fail closed；Marketaux/Finnhub/EIA 继续使用 strict successor。
+- [x] runtime summary 将成功空轮询报告为 `PASS` / `collection_status=no_new_items`，并只暴露
+  collection run presence/status/fixed error code 等安全诊断。
 - [x] source audit 无 scheduler/Telegram/AI/Event/dedup/local capture 依赖。
 - [x] SPEC-0036 adapter/ingestion mock/PostgreSQL tests 保持通过。
 - [x] 完整 mock/local 验证与 review package PASS。
-- [ ] 三家 bounded live execute：2026-08-11 首次统一 execute 因当前 process environment 中四项
-  credential 均 MISSING，在网络前安全 BLOCKED；0 Provider requests、0 DB writes。不得读取 `.env`
-  绕过此门禁，需用户导出 process environment 后再次明确执行。
+- [ ] 三家 bounded live execute：Finnhub 与 EIA integrated ingestion 已由用户本地验证 PASS。SEC
+  request 成功并 fetched 1 item，但首次 integrated ingestion 因 snapshot same-cursor 被旧 strict
+  successor contract 阻断；本 PR 已修复，等待用户进行一次独立 SEC post-fix live verification。
 - [ ] Reviewer PASS。
 
 ## 6. Runtime Verification Evidence
@@ -68,7 +72,14 @@ adapter 架构、migration、ORM 或 DB schema。
 - Bootstrap：Finnhub/EIA/SEC 均 `created`，eligible target count 均为 1。
 - Doctor：三家均 `PASS`。
 - Dry-run：三家均 `DRY_RUN`，`credential_read=false`、`request_enabled=false`、`db_written=false`。
-- Execute attempt：三家均 `BLOCKED` / `provider_runtime_credential_missing`；没有发出真实请求。
+- Finnhub live integrated ingestion：PASS，RawItem=1、EvidenceItem=1。
+- EIA live integrated ingestion：PASS，RawItem=1、EvidenceItem=1。
+- SEC live request：Provider request 成功、`fetched_count=1`；不是 credential、User-Agent、network、
+  target 或 HTTP failure。首次 integrated ingestion 被 snapshot same-cursor bug 阻断：
+  `COLLECTION_CONTRACT_INVALID` / `cursor is not a direct successor`。当前 cursor 使用安全的
+  `provider_item_id + published_at` 结构；具体值不作为实现逻辑或测试夹具。
+- Fix：SEC same cursor → no-new-items；newer → advance；older → fail closed；runtime empty success 与
+  safe collection diagnostics 已补齐。尚未声称 SEC post-fix live PASS。
 - 未读取 `.env`，未保存 response/live output，未输出任何 credential、value、URL 或 body。
 
 ## 7. Review History
@@ -76,3 +87,5 @@ adapter 架构、migration、ORM 或 DB schema。
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | unified runner、mock tests、bounded live safe summaries、review package | 等待用户/ChatGPT Review |
+| 2 | REQUEST CHANGES | adapter `has_more` contract 与 verifier request bound 混淆 | 已恢复真实 `has_more`，单请求由 verifier 保证 |
+| 3 | REQUEST CHANGES | SEC snapshot same cursor 被 strict successor 错判 | 已实现 SEC-specific snapshot policy、no-new-items 与安全诊断；等待 post-fix live verification |
