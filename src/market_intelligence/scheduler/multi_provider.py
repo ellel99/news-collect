@@ -7,9 +7,9 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -48,6 +48,7 @@ class ProviderCycleResult:
     content_item_count: int = 0
     items: tuple[ProviderDisplayItem, ...] = ()
     safe_errors: tuple[str, ...] = ()
+    retry_delay_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,10 +62,13 @@ class ProviderScheduleReport:
     sent_count: int
     failed_count: int
     safe_errors: tuple[str, ...] = ()
+    delivery_status: str = "NO_NEW_ITEMS"
+    delivery_safe_errors: tuple[str, ...] = ()
 
     def safe_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["safe_errors"] = list(self.safe_errors)
+        value["delivery_safe_errors"] = list(self.delivery_safe_errors)
         return value
 
 
@@ -76,6 +80,7 @@ class MultiProviderScheduleSummary:
     retry_failed_count: int = 0
     retry_exhausted_count: int = 0
     response_saved: bool = False
+    delivery_status: str = "NO_NEW_ITEMS"
 
     def safe_dict(self) -> dict[str, Any]:
         return {
@@ -85,10 +90,21 @@ class MultiProviderScheduleSummary:
             "retry_failed_count": self.retry_failed_count,
             "retry_exhausted_count": self.retry_exhausted_count,
             "response_saved": False,
+            "delivery_status": self.delivery_status,
         }
 
 
 ProviderExecutor = Callable[[], Awaitable[ProviderCycleResult]]
+
+
+class ProviderNotificationDispatcher(Protocol):
+    available: bool
+
+    async def deliver_new(
+        self, provider: str, items: tuple[ProviderDisplayItem, ...]
+    ) -> tuple[int, int, tuple[str, ...]]: ...
+
+    async def deliver_retries(self, limit: int = 5) -> tuple[int, int, int]: ...
 
 
 class ProviderTelegramFormatter:
@@ -118,6 +134,8 @@ class ProviderTelegramFormatter:
 
 class ReliableProviderNotificationService:
     """Reuse Notification's atomic claim/retry states for all approved providers."""
+
+    available = True
 
     def __init__(
         self,
@@ -189,6 +207,7 @@ class ReliableProviderNotificationService:
                         Notification.policy_rule_id == POLICY_ID,
                         Notification.retry_count < MAX_DELIVERY_ATTEMPTS,
                         or_(
+                            Notification.status == NotificationStatus.PENDING,
                             Notification.status == NotificationStatus.FAILED,
                             (Notification.status == NotificationStatus.SENDING)
                             & (Notification.scheduled_at < stale),
@@ -206,6 +225,7 @@ class ReliableProviderNotificationService:
                             Notification.id == notification_id,
                             Notification.retry_count < MAX_DELIVERY_ATTEMPTS,
                             or_(
+                                Notification.status == NotificationStatus.PENDING,
                                 Notification.status == NotificationStatus.FAILED,
                                 (Notification.status == NotificationStatus.SENDING)
                                 & (Notification.scheduled_at < stale),
@@ -213,7 +233,13 @@ class ReliableProviderNotificationService:
                         )
                         .values(
                             status=NotificationStatus.SENDING,
-                            retry_count=Notification.retry_count + 1,
+                            retry_count=case(
+                                (
+                                    Notification.status == NotificationStatus.PENDING,
+                                    Notification.retry_count,
+                                ),
+                                else_=Notification.retry_count + 1,
+                            ),
                             scheduled_at=now,
                             failure_code=None,
                         )
@@ -294,11 +320,50 @@ class ReliableProviderNotificationService:
             await session.commit()
 
 
+class PendingProviderNotificationService:
+    """Persist new notification intent without claiming or consuming delivery state."""
+
+    available = False
+
+    def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
+        self._factory = factory
+
+    async def deliver_new(
+        self, provider: str, items: tuple[ProviderDisplayItem, ...]
+    ) -> tuple[int, int, tuple[str, ...]]:
+        now = datetime.now(UTC)
+        async with self._factory() as session:
+            for item in items:
+                await session.execute(
+                    insert(Notification)
+                    .values(
+                        content_item_id=item.content_item_id,
+                        priority=NotificationPriority.P3,
+                        priority_reason=f"new_{provider}_display_item",
+                        policy_rule_id=POLICY_ID,
+                        policy_version="1",
+                        channel=NotificationChannel.TELEGRAM_PUSH,
+                        dedup_key=f"{provider}:telegram:{item.content_item_id}",
+                        payload_version=1,
+                        status=NotificationStatus.PENDING,
+                        scheduled_at=now,
+                        retry_count=0,
+                    )
+                    .on_conflict_do_nothing(index_elements=["dedup_key"])
+                )
+            await session.commit()
+        return 0, 0, ("telegram_runtime_credential_missing",)
+
+    async def deliver_retries(self, limit: int = 5) -> tuple[int, int, int]:
+        del limit
+        return 0, 0, 0
+
+
 class MultiProviderTelegramScheduler:
     def __init__(
         self,
         executors: Mapping[str, ProviderExecutor],
-        notifications: ReliableProviderNotificationService,
+        notifications: ProviderNotificationDispatcher,
     ) -> None:
         self._executors = dict(executors)
         self._notifications = notifications
@@ -326,18 +391,24 @@ class MultiProviderTelegramScheduler:
                     )
             sent = failed = 0
             errors = result.safe_errors
-            status = result.status
+            delivery_errors: tuple[str, ...] = (
+                () if self._notifications.available else ("telegram_runtime_credential_missing",)
+            )
+            delivery_status = "BLOCKED" if not self._notifications.available else "NO_NEW_ITEMS"
             if result.items:
                 sent, failed, delivery_errors = await self._notifications.deliver_new(
                     provider, result.items
                 )
-                errors = (*errors, *delivery_errors)
-                if failed:
-                    status = ProviderScheduleStatus.FAILED
+                if not self._notifications.available:
+                    delivery_status = "BLOCKED"
+                elif failed:
+                    delivery_status = "FAILED"
+                elif sent:
+                    delivery_status = "PASS"
             reports.append(
                 ProviderScheduleReport(
                     provider,
-                    status.value,
+                    result.status.value,
                     result.collection_status,
                     result.raw_item_count,
                     result.evidence_item_count,
@@ -345,9 +416,20 @@ class MultiProviderTelegramScheduler:
                     sent,
                     failed,
                     errors,
+                    delivery_status,
+                    delivery_errors,
                 )
             )
         retry_sent, retry_failed, exhausted = await self._notifications.deliver_retries()
+        delivery_status = (
+            "BLOCKED"
+            if not self._notifications.available
+            else "FAILED"
+            if retry_failed
+            else "PASS"
+            if retry_sent or any(report.delivery_status == "PASS" for report in reports)
+            else "NO_NEW_ITEMS"
+        )
         overall_status = (
             "PARTIAL"
             if any(
@@ -359,6 +441,7 @@ class MultiProviderTelegramScheduler:
                 }
                 for report in reports
             )
+            or delivery_status in {"BLOCKED", "FAILED"}
             else "PASS"
         )
         return MultiProviderScheduleSummary(
@@ -367,4 +450,5 @@ class MultiProviderTelegramScheduler:
             retry_sent,
             retry_failed,
             exhausted,
+            delivery_status=delivery_status,
         )

@@ -310,6 +310,12 @@ no-new-items 不发送。Notification unique dedup key 保证 SENT 不重发，F
 SENDING recovery 独立于当前 collection cycle。Finnhub/EIA 展示只含 content-safe metadata，不含
 quote/EIA numeric value；SEC 不下载 filing body。
 
+Telegram credential 缺失不会停止 collection：四家仍可写 RawItem/EvidenceItem/ContentItem，summary
+保留各自 `collection_status` 并将 `delivery_status` 标记为 `BLOCKED`。新 ContentItem 的 Notification
+保持 PENDING，既有 FAILED/SENDING 不被消费；credential 恢复后再由原子 claim 发送。Provider 的
+transient RETRY 使用 CollectionRunner 已计算的 bounded delay 和独立 Redis retry gate，不必等待完整
+正常 cadence；retry 成功后恢复正常 cadence，non-retryable failure 不快速重试。
+
 先启动依赖服务：
 
 ```bash

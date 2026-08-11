@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import os
@@ -9,7 +10,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text, update
+from redis.asyncio import Redis
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from market_intelligence.db import Base
@@ -22,6 +24,8 @@ from market_intelligence.db.models import (
     ContentKind,
     DeletedStatus,
     Notification,
+    NotificationChannel,
+    NotificationPriority,
     NotificationStatus,
     ParseStatus,
     RawItem,
@@ -36,10 +40,15 @@ from market_intelligence.scheduler.marketaux_telegram import (
 from market_intelligence.scheduler.multi_provider import (
     PROVIDER_ORDER,
     MultiProviderTelegramScheduler,
+    PendingProviderNotificationService,
     ProviderCycleResult,
     ProviderScheduleStatus,
     ProviderTelegramFormatter,
     ReliableProviderNotificationService,
+)
+from market_intelligence.scheduler.multi_provider_runtime import (
+    ProviderCadenceController,
+    collection_schedule_status,
 )
 from market_intelligence.telegram.manual_push import (
     TelegramRuntimeCredential,
@@ -50,6 +59,7 @@ POSTGRES_TEST_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
 )
+REDIS_TEST_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/13")
 SECRET = "scheduler-secret-never-render"
 
 
@@ -135,6 +145,8 @@ async def _display(factory, provider: str) -> ProviderDisplayItem:
 
 
 class FakeNotifications:
+    available = True
+
     def __init__(self) -> None:
         self.delivered: list[str] = []
         self.retry_calls = 0
@@ -340,6 +352,162 @@ def test_scheduler_default_dry_run_is_inert() -> None:
     assert completed.returncode == 0
     assert report["status"] == "DRY_RUN"
     assert all(item["status"] == "DRY_RUN" for item in report["providers"])
+    assert report["delivery_status"] == "NO_NEW_ITEMS"
+
+
+@pytest.mark.asyncio
+async def test_telegram_missing_preserves_collection_and_pending_delivery(scheduler_db) -> None:
+    items = {provider: await _display(scheduler_db, provider) for provider in PROVIDER_ORDER}
+    calls: list[str] = []
+
+    def executor(provider: str):
+        async def run():
+            calls.append(provider)
+            return ProviderCycleResult(
+                provider,
+                ProviderScheduleStatus.PASS,
+                "processed",
+                raw_item_count=1,
+                evidence_item_count=1,
+                content_item_count=1,
+                items=(items[provider],),
+            )
+
+        return run
+
+    summary = await MultiProviderTelegramScheduler(
+        {provider: executor(provider) for provider in PROVIDER_ORDER},
+        PendingProviderNotificationService(scheduler_db),
+    ).run()
+
+    assert calls == list(PROVIDER_ORDER)
+    assert all(report.status == "PASS" for report in summary.providers)
+    assert all(report.collection_status == "processed" for report in summary.providers)
+    assert all(report.delivery_status == "BLOCKED" for report in summary.providers)
+    assert all(
+        report.delivery_safe_errors == ("telegram_runtime_credential_missing",)
+        for report in summary.providers
+    )
+    async with scheduler_db() as session:
+        statuses = tuple(await session.scalars(select(Notification.status)))
+    assert statuses == (NotificationStatus.PENDING,) * 4
+
+
+@pytest.mark.asyncio
+async def test_telegram_missing_does_not_consume_historical_notifications(scheduler_db) -> None:
+    failed_item = await _display(scheduler_db, "finnhub")
+    stale_item = await _display(scheduler_db, "eia")
+    now = datetime.now(UTC)
+    async with scheduler_db.begin() as session:
+        session.add_all(
+            [
+                Notification(
+                    content_item_id=failed_item.content_item_id,
+                    priority=NotificationPriority.P3,
+                    priority_reason="synthetic",
+                    policy_rule_id="spec-0038-multi-provider-telegram",
+                    policy_version="1",
+                    channel=NotificationChannel.TELEGRAM_PUSH,
+                    dedup_key=f"historical-failed-{uuid.uuid4()}",
+                    payload_version=1,
+                    status=NotificationStatus.FAILED,
+                    scheduled_at=now,
+                    retry_count=1,
+                ),
+                Notification(
+                    content_item_id=stale_item.content_item_id,
+                    priority=NotificationPriority.P3,
+                    priority_reason="synthetic",
+                    policy_rule_id="spec-0038-multi-provider-telegram",
+                    policy_version="1",
+                    channel=NotificationChannel.TELEGRAM_PUSH,
+                    dedup_key=f"historical-sending-{uuid.uuid4()}",
+                    payload_version=1,
+                    status=NotificationStatus.SENDING,
+                    scheduled_at=now - timedelta(seconds=SENDING_STALE_AFTER_SECONDS + 1),
+                    retry_count=2,
+                ),
+            ]
+        )
+
+    service = PendingProviderNotificationService(scheduler_db)
+    assert await service.deliver_retries() == (0, 0, 0)
+
+    async with scheduler_db() as session:
+        rows = tuple(
+            (
+                await session.execute(
+                    select(Notification.status, Notification.retry_count).order_by(
+                        Notification.retry_count
+                    )
+                )
+            ).all()
+        )
+    assert rows == (
+        (NotificationStatus.FAILED, 1),
+        (NotificationStatus.SENDING, 2),
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_delivery_sends_after_telegram_credential_recovers(scheduler_db) -> None:
+    item = await _display(scheduler_db, "marketaux")
+    pending = PendingProviderNotificationService(scheduler_db)
+    await pending.deliver_new("marketaux", (item,))
+    telegram = MockTelegram()
+    recovered = ReliableProviderNotificationService(
+        scheduler_db,
+        TelegramRuntimeCredential(SECRET, "chat"),
+        telegram,
+    )
+
+    assert await recovered.deliver_retries() == (1, 0, 0)
+    async with scheduler_db() as session:
+        status = await session.scalar(select(Notification.status))
+    assert status is NotificationStatus.SENT
+    assert len(telegram.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_retry_gate_uses_short_delay_then_restores_cadence() -> None:
+    redis = Redis.from_url(REDIS_TEST_URL, decode_responses=True)
+    await redis.flushdb()
+    controller = ProviderCadenceController(redis, max_retry_delay=10)
+    run_id = uuid.uuid4()
+    try:
+        assert (await controller.claim("finnhub", 30)).status == "claimed"
+        assert await controller.schedule_retry("finnhub", 1, run_id, 1) == 1
+        assert (await controller.claim("finnhub", 30)).status == "retry_wait"
+        await asyncio.sleep(1.1)
+        retry_claim = await controller.claim("finnhub", 30)
+        assert retry_claim.status == "claimed"
+        assert retry_claim.collection_run_id == run_id
+        assert retry_claim.attempt == 1
+        assert (await controller.claim("finnhub", 30)).status == "not_due"
+    finally:
+        await redis.flushdb()
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_failure_keeps_normal_cadence() -> None:
+    redis = Redis.from_url(REDIS_TEST_URL, decode_responses=True)
+    await redis.flushdb()
+    controller = ProviderCadenceController(redis, max_retry_delay=10)
+    try:
+        assert (await controller.claim("sec_edgar", 30)).status == "claimed"
+        assert (await controller.claim("sec_edgar", 30)).status == "not_due"
+    finally:
+        await redis.flushdb()
+        await redis.aclose()
+
+
+def test_retryable_collection_error_maps_to_retry_status() -> None:
+    assert collection_schedule_status("COLLECTION_RATE_LIMITED") is ProviderScheduleStatus.RETRY
+    assert collection_schedule_status("COLLECTION_TIMEOUT") is ProviderScheduleStatus.RETRY
+    assert (
+        collection_schedule_status("COLLECTION_CONTRACT_INVALID") is ProviderScheduleStatus.FAILED
+    )
 
 
 def test_scheduler_source_audit() -> None:

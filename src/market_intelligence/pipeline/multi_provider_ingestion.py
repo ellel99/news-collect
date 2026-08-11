@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -251,8 +252,18 @@ class MultiProviderIngestionPipeline:
         self._pipeline = EndToEndMockEvidencePipeline(factory, runner, self._sidecar)
         self._feed = ProviderFeedService(factory)
 
-    async def run(self, target: CollectionTarget) -> EndToEndOutcome:
-        outcome = await self._pipeline.run(target)
+    async def run(
+        self,
+        target: CollectionTarget,
+        *,
+        collection_run_id: UUID | None = None,
+        attempt: int = 0,
+    ) -> EndToEndOutcome:
+        outcome = await self._pipeline.run(
+            target,
+            collection_run_id=collection_run_id,
+            attempt=attempt,
+        )
         if outcome.status is EndToEndStatus.PROCESSED and outcome.collection_run_id is not None:
             await self._feed.persist_run(outcome.collection_run_id, self._sidecar, self._provider)
         return outcome

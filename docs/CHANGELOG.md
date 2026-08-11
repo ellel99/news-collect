@@ -2,6 +2,12 @@
 
 ## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
 
+- PR #37 review fix 解耦 collection 与 Telegram credential：缺少 Telegram 配置时 Provider 继续采集，
+  新投递意图保持 PENDING，历史 FAILED/SENDING 不被消费；恢复凭证后由原子 claim 正常发送。
+- 将 CollectionRunner 已有 bounded retry delay 传递到 scheduler，使用独立 Redis retry gate 允许
+  transient RETRY 早于正常 cadence 再执行；成功恢复 cadence，non-retryable failure 不快速重试。
+- safe summary 分离 collection status 与 Telegram delivery status/errors；未请求真实 Provider/Telegram，
+  无 migration/ORM/schema change。
 - 将 SPEC-0037 标记为用户/ChatGPT approved/completed，并激活 SPEC-0038。
 - 新增统一 Celery Beat cycle，以独立 Redis cadence 串行隔离 Marketaux、Finnhub、EIA、SEC EDGAR；
   missing credential/target 或单家 failure 不阻断其他 Provider。

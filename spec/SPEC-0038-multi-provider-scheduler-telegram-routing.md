@@ -29,8 +29,14 @@ formal dedup、Event 或 clustering，也不启动 SPEC-0022。
   Provider。
 - execute 才读取 process environment credential；不读取 `.env`。tests/CI/package review 不启用
   execute，不访问真实 Provider 或 Telegram。
+- Telegram credential 与 collection credential 分离：Telegram token/chat id 缺失时四家 collection
+  仍执行并正常写 RawItem/EvidenceItem/ContentItem，只有 `delivery_status=BLOCKED`；不得把 delivery
+  配置错误写成 Provider collection failure。
 - 共享 ingestion pipeline 保留正常 `has_more`/pagination 语义；本 scheduler 不继承 SPEC-0037
   verifier 的 `max_batches=1` 限制。
+- 正常 cadence 与 transient retry gate 分离。CollectionRunner 的既有 RetryPolicy 继续计算 bounded
+  full-jitter/Retry-After delay；`RETRY` 会释放正常 cadence claim 并设置独立 Redis retry gate。delay
+  到期后的 tick 可重新执行，成功后恢复正常 cadence；non-retryable FAILED/永久配置错误不快速重试。
 
 ## 3. Visible ContentItem 与 routing
 
@@ -50,6 +56,8 @@ formal dedup、Event 或 clustering，也不启动 SPEC-0022。
 - stale `SENDING` 超过 300 秒可原子恢复；达到上限的记录计入 exhausted，不无限重试。
 - retry scan 独立于当前 Provider collection：即使某 Provider 本轮失败、not due 或 no-new-items，历史
   failed notification 仍可恢复。
+- Telegram credential 缺失时，新 ContentItem 只以 `PENDING` 保存投递意图，不 claim 为 SENDING；
+  历史 PENDING/FAILED/SENDING 不被消费或改写。凭证恢复后，现有原子 retry claim 正常发送 PENDING。
 - 不删除 Notification 绕过去重，不保存 Telegram response body，不静默丢失未推送状态。
 
 ## 5. 安全输出
@@ -61,6 +69,9 @@ DB/Redis、不访问网络、不写 DB。`--execute` 才启用 runtime。
 sent/failed/retry/exhausted counts、固定 safe error codes 与 `response_saved=false`。不得输出 credential、
 完整 URL、raw response、正文或 Provider numeric values。
 
+summary 明确分离 `collection_status` 与 `delivery_status` / `delivery_safe_errors`。Telegram blocked
+不会把 Provider 的 PASS/NO_NEW_ITEMS/RETRY/FAILED/BLOCKED collection status 覆盖掉。
+
 ## 6. 测试与验收
 
 - [x] 四 Provider 固定顺序执行，单家 exception 隔离。
@@ -70,6 +81,10 @@ sent/failed/retry/exhausted counts、固定 safe error codes 与 `response_saved
 - [x] 新 item 原子 claim；同一 ContentItem `SENT` 后不重复发送。
 - [x] Telegram failure、bounded retry、stale `SENDING` recovery 与 exhaustion 有 PostgreSQL tests。
 - [x] no-new-items 不发送；历史 retry 不依赖当前 collection 成功。
+- [x] Telegram credential 缺失时四家 executor 继续运行；新通知保持 PENDING，历史通知状态不变。
+- [x] Telegram credential 恢复后 PENDING 通知进入正常 delivery path。
+- [x] retryable collection error 返回 RETRY；retry delay 未到不执行，到期后可早于 cadence 重试。
+- [x] retry success 恢复正常 cadence；non-retryable failure 不进入快速 retry。
 - [x] 默认 smoke 完全 inert，不读取 credential、不访问 runtime、不写 DB。
 - [x] source audit 不依赖 `.env`、raw capture、AI、Event、clustering 或 recommendation。
 - [ ] Reviewer PASS。

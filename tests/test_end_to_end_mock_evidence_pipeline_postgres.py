@@ -132,7 +132,7 @@ def _settings() -> Settings:
 def _pipeline(factory, redis, response, sidecar=None):
     registry = ProviderAdapterRegistry()
     registry.register("marketaux", MarketauxAdapter())
-    transport = MockProviderTransport([response])
+    transport = MockProviderTransport(list(response) if isinstance(response, tuple) else [response])
     sidecar = sidecar or InMemoryProviderProjectionSidecar()
     runner = CollectionRunner(
         factory,
@@ -217,6 +217,7 @@ async def test_raw_item_persistence_failure_never_writes_evidence(e2e_runtime) -
     outcome = await pipeline.run(_target(source, account))
 
     assert outcome.status is EndToEndStatus.COLLECTION_FAILED
+    assert outcome.retry_delay is not None
     assert await _counts(factory) == (0, 0)
 
 
@@ -265,6 +266,32 @@ async def test_provider_failure_never_writes_evidence(e2e_runtime, response) -> 
 
     assert outcome.status is EndToEndStatus.COLLECTION_FAILED
     assert await _counts(factory) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_retry_continues_same_collection_run(e2e_runtime) -> None:
+    factory, redis = e2e_runtime
+    source, account = await _source(factory)
+    pipeline, transport = _pipeline(
+        factory,
+        redis,
+        (_response(status=429), _response(item_id="retry-success")),
+    )
+    target = _target(source, account)
+
+    first = await pipeline.run(target)
+    second = await pipeline.run(
+        target,
+        collection_run_id=first.collection_run_id,
+        attempt=1,
+    )
+
+    assert first.status is EndToEndStatus.COLLECTION_FAILED
+    assert first.retry_delay is not None
+    assert second.status is EndToEndStatus.PROCESSED
+    assert second.collection_run_id == first.collection_run_id
+    assert await _counts(factory) == (1, 1)
+    assert len(transport.calls) == 2
 
 
 @pytest.mark.asyncio
