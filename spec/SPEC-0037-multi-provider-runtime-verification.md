@@ -33,7 +33,9 @@ adapter 架构、migration、ORM 或 DB schema。
 - EIA：`EIA_API_KEY`，electricity monthly row，limit=1；不输出 numeric values，不 backfill。
 - SEC：`SEC_USER_AGENT` + `SEC_CONTACT_EMAIL`，AAPL submissions/recent，limit=1；不下载或解析
   filing body，不回显 contact/User-Agent。
-- EIA/SEC adapter 的 `has_more=false` 是显式单请求门禁；本 SPEC 不实现 pagination。
+- EIA/SEC adapter 保留真实 `has_more` 合同语义（response 行数大于 limit 时为 true）。bounded
+  verification 的单请求门禁由 verifier/orchestrator 负责：每个 executor 恰好调用一次，不读取
+  `has_more` 发起第二次请求，不做 pagination 或 backfill。
 - live summary 只含 provider/status/counts/booleans/fixed safe errors；不写 live output 文件。
 
 ## 4. 安全边界
@@ -50,7 +52,9 @@ adapter 架构、migration、ORM 或 DB schema。
 - [x] unified default dry-run 不读 environment、不调用 inspector/executor。
 - [x] doctor/bootstrap 串行覆盖三家且不调用 Provider executor。
 - [x] mocked execute 串行、每家恰好一次、safe counts 符合预期。
-- [x] EIA/SEC 多行 response 仍 `has_more=false`，不会触发第二请求。
+- [x] EIA/SEC response 行数大于 limit 时 `has_more=true`，保留 Provider contract 语义。
+- [x] unified verifier 即使收到 `has_more=true` 也只调用每个 Provider executor 一次，不触发
+  pagination/backfill。
 - [x] source audit 无 scheduler/Telegram/AI/Event/dedup/local capture 依赖。
 - [x] SPEC-0036 adapter/ingestion mock/PostgreSQL tests 保持通过。
 - [x] 完整 mock/local 验证与 review package PASS。

@@ -133,9 +133,7 @@ class SecEdgarAdapter:
                 sort_keys=True,
                 separators=(",", ":"),
             ),
-            # Submissions contains many recent rows, but this bounded adapter
-            # intentionally performs no pagination or second request.
-            has_more=False,
+            has_more=len(recent) > request.limit,
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,

@@ -50,7 +50,7 @@ async def run_multi_provider_verification(
     executor: Executor = execute_provider,
     inspector: Inspector = inspect_provider_target,
 ) -> tuple[MultiProviderVerificationReport, int]:
-    """Run each provider once, serially, with content-free summaries."""
+    """Run each provider executor once, serially, without pagination or backfill."""
 
     reports: list[Mapping[str, object]] = []
     codes: list[int] = []

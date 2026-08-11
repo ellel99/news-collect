@@ -67,6 +67,7 @@ async def test_execute_calls_each_provider_once_serially() -> None:
                 "content_item_count": 1 if provider == "sec_edgar" else 0,
                 "db_written": True,
                 "response_saved": False,
+                "has_more": True,
                 "safe_errors": [],
             },
             0,
@@ -80,6 +81,7 @@ async def test_execute_calls_each_provider_once_serially() -> None:
     assert report.status == "PASS"
     assert calls == list(PROVIDER_ORDER)
     assert len(calls) == len(set(calls)) == 3
+    assert all(item["has_more"] is True for item in report.reports)
 
 
 @pytest.mark.parametrize("mode", [VerificationMode.DOCTOR, VerificationMode.BOOTSTRAP])
@@ -121,7 +123,7 @@ def test_unified_cli_default_dry_run_is_safe() -> None:
 
 
 @pytest.mark.asyncio
-async def test_eia_and_sec_adapters_never_request_second_page() -> None:
+async def test_eia_and_sec_adapters_preserve_has_more_semantics() -> None:
     requests = {
         "eia": ProviderFetchRequest(
             uuid.uuid4(),
@@ -173,7 +175,7 @@ async def test_eia_and_sec_adapters_never_request_second_page() -> None:
             ),
         )
         assert len(result.raw_items) == 1
-        assert result.has_more is False
+        assert result.has_more is True
 
 
 def test_runtime_verification_source_has_no_forbidden_scope() -> None:

@@ -134,9 +134,7 @@ class EiaAdapter:
                 sort_keys=True,
                 separators=(",", ":"),
             ),
-            # SPEC-0037 runtime verification is deliberately single-request;
-            # pagination/backfill remains out of scope.
-            has_more=False,
+            has_more=len(rows) > request.limit,
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,
