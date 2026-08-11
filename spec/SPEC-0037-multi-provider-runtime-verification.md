@@ -36,6 +36,8 @@ adapter 架构、migration、ORM 或 DB schema。
 - EIA/SEC adapter 保留真实 `has_more` 合同语义（response 行数大于 limit 时为 true）。bounded
   verification 的单请求门禁由 verifier/orchestrator 负责：每个 executor 恰好调用一次，不读取
   `has_more` 发起第二次请求，不做 pagination 或 backfill。
+- 共享 `MultiProviderIngestionPipeline` 默认不设置 batch 上限并保留正常 pagination；只有本 SPEC
+  的 runtime `execute_provider` 显式注入 `max_batches=1`，production/scheduler path 不继承该限制。
 - live summary 只含 provider/status/counts/booleans/fixed safe errors；不写 live output 文件。
 
 ## 4. 安全边界
@@ -55,6 +57,7 @@ adapter 架构、migration、ORM 或 DB schema。
 - [x] EIA/SEC response 行数大于 limit 时 `has_more=true`，保留 Provider contract 语义。
 - [x] unified verifier 即使收到 `has_more=true` 也只调用每个 Provider executor 一次，不触发
   pagination/backfill。
+- [x] normal pipeline 在 `has_more=true` 时继续下一 batch；仅 verifier path 限制为一 batch。
 - [x] SEC submissions snapshot cursor 使用独立 policy：same cursor 合法返回 no-new-items，newer
   cursor 推进，older cursor fail closed；Marketaux/Finnhub/EIA 继续使用 strict successor。
 - [x] runtime summary 将成功空轮询报告为 `PASS` / `collection_status=no_new_items`，并只暴露

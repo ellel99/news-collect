@@ -163,7 +163,12 @@ async def execute_provider(
             collection_options=collection_options,
         )
         pipeline = MultiProviderIngestionPipeline(
-            factory, redis, settings, adapter, transport or HttpxProviderTransport()
+            factory,
+            redis,
+            settings,
+            adapter,
+            transport or HttpxProviderTransport(),
+            max_batches=1,
         )
         outcome = await pipeline.run(target)
         evidence_ids = tuple(

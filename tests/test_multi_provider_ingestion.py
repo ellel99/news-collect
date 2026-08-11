@@ -312,7 +312,12 @@ async def test_bounded_pipeline_ignores_has_more_after_one_request(
     target = await _target(factory, provider, options)
     transport = MockProviderTransport([_multi_row_response(provider)])
     pipeline = MultiProviderIngestionPipeline(
-        factory, redis, _settings(1), _adapter(provider), transport
+        factory,
+        redis,
+        _settings(1),
+        _adapter(provider),
+        transport,
+        max_batches=1,
     )
 
     outcome = await pipeline.run(target)
@@ -320,6 +325,43 @@ async def test_bounded_pipeline_ignores_has_more_after_one_request(
     assert outcome.status is EndToEndStatus.PROCESSED
     assert outcome.raw_item_count == 1
     assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_normal_pipeline_continues_when_provider_has_more(provider_runtime) -> None:
+    factory, redis = provider_runtime
+    target = await _target(factory, "eia", {"dataset": "electricity"})
+    first = ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "response": {
+                "data": [
+                    {"period": "2026-07", "price": 1, "stateid": "US", "sectorid": "ALL"},
+                    {"period": "2026-06", "price": 2, "stateid": "US", "sectorid": "ALL"},
+                ]
+            }
+        },
+    )
+    second = ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "response": {
+                "data": [{"period": "2026-08", "price": 3, "stateid": "US", "sectorid": "ALL"}]
+            }
+        },
+    )
+    transport = MockProviderTransport([first, second])
+    pipeline = MultiProviderIngestionPipeline(
+        factory, redis, _settings(1), _adapter("eia"), transport
+    )
+
+    outcome = await pipeline.run(target)
+
+    assert outcome.status is EndToEndStatus.PROCESSED
+    assert outcome.raw_item_count == 2
+    assert len(transport.calls) == 2
 
 
 @pytest.mark.parametrize("provider", ["finnhub", "eia", "sec_edgar"])

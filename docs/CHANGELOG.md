@@ -6,6 +6,8 @@
   older cursor fail closed；Marketaux/Finnhub/EIA 保持 strict cursor contract。
 - runtime summary 新增 content-free collection status/error diagnostics；本轮 review fix 未请求任何
   Provider API，等待用户进行一次 SEC post-fix live verification。
+- bounded `max_batches=1` 只由 SPEC-0037 runtime verifier 显式注入；共享 ingestion pipeline 默认
+  保留正常 pagination，避免 production/scheduler path 跳过后续 batch。
 - 将 SPEC-0036 标记为 PR #35 approved/completed，并激活 SPEC-0037。
 - 新增统一 `multi_provider_runtime_smoke.py`，支持 inert dry-run、三家 doctor/bootstrap 与显式 execute。
 - 固定 Finnhub → EIA → SEC 串行执行且每家最多一次 request；EIA/SEC bounded adapter 不分页。
