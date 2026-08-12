@@ -1,6 +1,6 @@
 # SPEC-0038 — Multi-provider Scheduler + Telegram Routing
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase 1 — Information Collection & Push
 
@@ -95,7 +95,7 @@ summary 明确分离 `collection_status` 与 `delivery_status` / `delivery_safe_
 - [x] Marketaux/Finnhub strict cursor 与 SEC snapshot cursor regression 保持通过。
 - [x] 默认 smoke 完全 inert，不读取 credential、不访问 runtime、不写 DB。
 - [x] source audit 不依赖 `.env`、raw capture、AI、Event、clustering 或 recommendation。
-- [ ] Reviewer PASS。
+- [x] Reviewer PASS；用户最终四 Provider unified scheduler 与 Telegram live verification 已通过。
 
 所有测试使用 mocked Provider/Telegram transports；不得在 CI/pytest/package review 中请求真实服务。
 
@@ -114,3 +114,4 @@ summary 明确分离 `collection_status` 与 `delivery_status` / `delivery_safe_
 | 1 | IN REVIEW | scheduler、routing、reliable notification、mock/PostgreSQL tests 与 review package | 等待用户/ChatGPT Review |
 | 2 | REQUEST CHANGES | Telegram credential 阻断 collection；RETRY 被正常 cadence 延迟 | 已解耦 delivery，并用 CollectionRunner retry delay + 独立 Redis gate 继续同一 run |
 | 3 | REQUEST CHANGES | EIA same monthly snapshot 被 strict successor 错判为 contract invalid | EIA 显式采用 snapshot policy；补 initial/same/newer/older/repeated 与 scheduler 回归 |
+| 4 | PASS | EIA post-fix live verification：succeeded/no-new-items、无重复 persistence/notification、safe_errors 为空 | Implementation Review approved；PR #37 可合并 |

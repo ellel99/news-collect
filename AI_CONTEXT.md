@@ -8,11 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`
+- 当前 Active SPEC：None（等待用户明确激活下一独立 SPEC）
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0037 runtime verification 已批准完成。SPEC-0038 只实现 Marketaux、Finnhub、
-  EIA、SEC EDGAR 的独立 cadence scheduler 与 provider-specific Telegram routing；默认 dry-run，
-  tests/CI mock-only，不读 `.env`，不实现 AI、投资建议或 formal dedup/Event。
+- 当前工作状态：SPEC-0038 Implementation Review 已批准完成；Marketaux、Finnhub、EIA、SEC EDGAR
+  独立 cadence scheduler 与 provider-specific Telegram routing 已进入完成态。当前不得继续扩展
+  scheduler，等待用户明确激活下一独立 SPEC。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -25,9 +25,8 @@
   或保存文章数据
 - GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
-- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。SPEC-0038 仅授权当前四家
-  最小 cadence scheduler/Telegram routing；进一步 scheduler expansion、AI、Event、formal
-  dedup/clustering、投资建议及其他独立 SPEC 范围仍未授权。
+- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。进一步 scheduler expansion、
+  AI、Event、formal dedup/clustering、投资建议及其他独立 SPEC 范围仍未授权。
 - Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
   `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。

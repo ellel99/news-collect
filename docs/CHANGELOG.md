@@ -2,6 +2,9 @@
 
 ## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
 
+- SPEC-0038 Implementation Review approved/completed：用户 EIA post-fix live verification 返回
+  succeeded/no-new-items，未重复 RawItem/EvidenceItem/ContentItem/Notification，且 safe_errors 为空；
+  Marketaux/Finnhub/SEC unified scheduler 与 Telegram delivery live PASS 保持有效。
 - 用户首次 unified scheduler live verification：Marketaux/Finnhub/SEC collection + Telegram PASS；EIA
   因相同 monthly snapshot 被 strict cursor 误判为 contract invalid。本轮未重跑任何 live request。
 - 将 snapshot cursor policy 显式扩展到 EIA：same latest monthly row 正常 succeeded/no-new-items，
