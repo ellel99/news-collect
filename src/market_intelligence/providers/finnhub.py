@@ -104,6 +104,13 @@ class FinnhubAdapter:
         return ProviderFetchResult(
             raw_items=(raw,),
             sanitized_metadata=(projection,),
+            display_projections=(
+                {
+                    "provider_item_id": item_id,
+                    "published_at": published_at,
+                    "display_title": f"Finnhub quote update — {symbol.upper()}",
+                },
+            ),
             next_cursor=_cursor(published_at, item_id),
             has_more=False,
             safe_errors=(),

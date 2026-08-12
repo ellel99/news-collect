@@ -92,7 +92,7 @@ class EiaAdapter:
                 "provider_response_shape_invalid",
                 False,
             )
-        raw_items, projections, cursor_candidates = [], [], []
+        raw_items, projections, displays, cursor_candidates = [], [], [], []
         for row in rows[: request.limit]:
             if not isinstance(row, dict):
                 return failed(
@@ -124,11 +124,19 @@ class EiaAdapter:
                 raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
             )
             projections.append(projection)
+            displays.append(
+                {
+                    "provider_item_id": item_id,
+                    "published_at": published_at,
+                    "display_title": f"EIA electricity update — {row.get('period')}",
+                }
+            )
             cursor_candidates.append((published_at, item_id))
         published_at, item_id = max(cursor_candidates)
         return ProviderFetchResult(
             raw_items=tuple(raw_items),
             sanitized_metadata=tuple(projections),
+            display_projections=tuple(displays),
             next_cursor=json.dumps(
                 {"provider_item_id": item_id, "published_at": published_at},
                 sort_keys=True,

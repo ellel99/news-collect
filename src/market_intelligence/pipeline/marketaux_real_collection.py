@@ -242,8 +242,18 @@ class MarketauxRealCollectionPipeline:
             factory, redis, settings, credential, transport, self._sidecar
         )
 
-    async def run(self, target: CollectionTarget) -> EndToEndOutcome:
-        outcome = await self._pipeline.run(target)
+    async def run(
+        self,
+        target: CollectionTarget,
+        *,
+        collection_run_id: UUID | None = None,
+        attempt: int = 0,
+    ) -> EndToEndOutcome:
+        outcome = await self._pipeline.run(
+            target,
+            collection_run_id=collection_run_id,
+            attempt=attempt,
+        )
         return await self._persist_feed(outcome)
 
     async def process_run(self, collection_run_id: UUID) -> EndToEndOutcome:

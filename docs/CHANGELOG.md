@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
+
+- SPEC-0038 Implementation Review approved/completed：用户 EIA post-fix live verification 返回
+  succeeded/no-new-items，未重复 RawItem/EvidenceItem/ContentItem/Notification，且 safe_errors 为空；
+  Marketaux/Finnhub/SEC unified scheduler 与 Telegram delivery live PASS 保持有效。
+- 用户首次 unified scheduler live verification：Marketaux/Finnhub/SEC collection + Telegram PASS；EIA
+  因相同 monthly snapshot 被 strict cursor 误判为 contract invalid。本轮未重跑任何 live request。
+- 将 snapshot cursor policy 显式扩展到 EIA：same latest monthly row 正常 succeeded/no-new-items，
+  newer 推进，older fail closed；Marketaux/Finnhub strict 与 SEC snapshot 语义保持不变。
+- 增加 EIA initial/same/repeated/newer/older PostgreSQL persistence regression，以及 EIA no-new-items
+  不产生 Notification、其他 Provider 继续且 overall PASS 的 scheduler regression；无 schema change。
+- PR #37 review fix 解耦 collection 与 Telegram credential：缺少 Telegram 配置时 Provider 继续采集，
+  新投递意图保持 PENDING，历史 FAILED/SENDING 不被消费；恢复凭证后由原子 claim 正常发送。
+- 将 CollectionRunner 已有 bounded retry delay 传递到 scheduler，使用独立 Redis retry gate 允许
+  transient RETRY 早于正常 cadence 再执行；成功恢复 cadence，non-retryable failure 不快速重试。
+- safe summary 分离 collection status 与 Telegram delivery status/errors；未请求真实 Provider/Telegram，
+  无 migration/ORM/schema change。
+- 将 SPEC-0037 标记为用户/ChatGPT approved/completed，并激活 SPEC-0038。
+- 新增统一 Celery Beat cycle，以独立 Redis cadence 串行隔离 Marketaux、Finnhub、EIA、SEC EDGAR；
+  missing credential/target 或单家 failure 不阻断其他 Provider。
+- Finnhub/EIA 新增 content-safe metadata-only display projection；复用现有 ContentItem、Notification
+  unique dedup marker、FAILED bounded retry 与 stale SENDING recovery，不修改 migration/ORM/schema。
+- 新增 provider-specific Telegram formatting 与 default-inert manual smoke；tests/CI mock-only，不请求
+  真实 Provider/Telegram，不读取 `.env`，不保存 raw response/live output。
+- 无 AI、投资建议、formal dedup/Event/clustering、新 Provider或 SPEC-0022。
+
 ## Unreleased — SPEC-0037 Multi Provider Runtime Verification
 
 - SPEC-0037 Implementation Review approved/completed：用户最终 SEC post-fix live verification 返回

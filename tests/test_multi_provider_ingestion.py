@@ -166,6 +166,25 @@ def _sec_response(accession: str, filing_date: str) -> ProviderTransportResponse
     )
 
 
+def _eia_response(period: str) -> ProviderTransportResponse:
+    return ProviderTransportResponse(
+        200,
+        datetime.now(UTC),
+        {
+            "response": {
+                "data": [
+                    {
+                        "period": period,
+                        "price": 12.3,
+                        "stateid": "AK",
+                        "sectorid": "ALL",
+                    }
+                ]
+            }
+        },
+    )
+
+
 def _multi_row_response(provider: str) -> ProviderTransportResponse:
     if provider == "eia":
         body = {
@@ -201,8 +220,8 @@ def _adapter(provider: str):
 @pytest.mark.parametrize(
     ("provider", "options", "content_count"),
     [
-        ("finnhub", {"symbol": "AAPL"}, 0),
-        ("eia", {"dataset": "electricity"}, 0),
+        ("finnhub", {"symbol": "AAPL"}, 1),
+        ("eia", {"dataset": "electricity"}, 1),
         ("sec_edgar", {"ticker": "AAPL", "cik": "0000320193"}, 1),
     ],
 )
@@ -290,6 +309,65 @@ async def test_sec_snapshot_polling_initial_same_newer_and_older(provider_runtim
     assert (raw_count, evidence_count, content_count) == (2, 2, 2)
     assert cursor is not None and filing_b in (cursor.cursor_value or "")
     assert cursor.last_published_at == datetime(2026, 8, 2, tzinfo=UTC)
+    assert all(run.status is CollectionRunStatus.SUCCEEDED for run in runs[:5])
+    assert all(run.error_count == 0 and run.error_code is None for run in runs[:5])
+    assert runs[-1].status is CollectionRunStatus.FAILED
+    assert runs[-1].error_code == "COLLECTION_CONTRACT_INVALID"
+    assert len(transport.calls) == 6
+
+
+@pytest.mark.asyncio
+async def test_eia_snapshot_polling_initial_same_newer_and_older(provider_runtime) -> None:
+    factory, redis = provider_runtime
+    target = await _target(factory, "eia", {"dataset": "electricity"})
+    transport = MockProviderTransport(
+        [
+            _eia_response("2026-05"),
+            _eia_response("2026-05"),
+            _eia_response("2026-05"),
+            _eia_response("2026-05"),
+            _eia_response("2026-06"),
+            _eia_response("2026-04"),
+        ]
+    )
+    pipeline = MultiProviderIngestionPipeline(
+        factory, redis, _settings(1), _adapter("eia"), transport
+    )
+
+    initial = await pipeline.run(target)
+    repeated = [await pipeline.run(target) for _ in range(3)]
+    newer = await pipeline.run(target)
+    older = await pipeline.run(target)
+
+    assert initial.status is EndToEndStatus.PROCESSED and initial.raw_item_count == 1
+    assert all(
+        outcome.status is EndToEndStatus.PROCESSED
+        and outcome.raw_item_count == 0
+        and outcome.trigger_outcomes == ()
+        and outcome.safe_errors == ()
+        for outcome in repeated
+    )
+    assert newer.status is EndToEndStatus.PROCESSED and newer.raw_item_count == 1
+    assert older.status is EndToEndStatus.COLLECTION_FAILED and older.raw_item_count == 0
+    async with factory() as session:
+        raw_count = int((await session.scalar(select(func.count()).select_from(RawItem))) or 0)
+        evidence_count = int(
+            (await session.scalar(select(func.count()).select_from(EvidenceItem))) or 0
+        )
+        content_count = int(
+            (await session.scalar(select(func.count()).select_from(ContentItem))) or 0
+        )
+        cursor = await session.scalar(
+            select(CollectionCursor).where(
+                CollectionCursor.source_account_id == target.source_account_id
+            )
+        )
+        runs = (
+            await session.scalars(select(CollectionRun).order_by(CollectionRun.started_at))
+        ).all()
+    assert (raw_count, evidence_count, content_count) == (2, 2, 2)
+    assert cursor is not None and "2026-06:AK:ALL" in (cursor.cursor_value or "")
+    assert cursor.last_published_at == datetime(2026, 6, 1, tzinfo=UTC)
     assert all(run.status is CollectionRunStatus.SUCCEEDED for run in runs[:5])
     assert all(run.error_count == 0 and run.error_code is None for run in runs[:5])
     assert runs[-1].status is CollectionRunStatus.FAILED

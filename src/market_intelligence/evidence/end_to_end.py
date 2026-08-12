@@ -94,6 +94,7 @@ class EndToEndOutcome:
     raw_item_count: int
     trigger_outcomes: tuple[EvidenceTriggerOutcome, ...] = ()
     safe_errors: tuple[EndToEndError, ...] = ()
+    retry_delay: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,13 +194,27 @@ class EndToEndMockEvidencePipeline:
         self._runner = runner
         self._sidecar = sidecar
 
-    async def run(self, target: CollectionTarget) -> EndToEndOutcome:
+    async def run(
+        self,
+        target: CollectionTarget,
+        *,
+        collection_run_id: uuid.UUID | None = None,
+        attempt: int = 0,
+    ) -> EndToEndOutcome:
         try:
-            collection = await self._runner.run(target)
+            collection = await self._runner.run(
+                target,
+                collection_run_id=collection_run_id,
+                attempt=attempt,
+            )
         except ClassifiedCollectionError:
             return _collection_failure(None, "collection_target_rejected")
         if collection.status != "succeeded" or collection.collection_run_id is None:
-            return _collection_failure(collection.collection_run_id, "collection_not_succeeded")
+            return _collection_failure(
+                collection.collection_run_id,
+                "collection_not_succeeded",
+                retry_delay=collection.retry_delay,
+            )
         return await self.process_run(collection.collection_run_id)
 
     async def process_run(self, collection_run_id: uuid.UUID) -> EndToEndOutcome:
@@ -246,10 +261,13 @@ class EndToEndMockEvidencePipeline:
         )
 
 
-def _collection_failure(run_id: uuid.UUID | None, code: str) -> EndToEndOutcome:
+def _collection_failure(
+    run_id: uuid.UUID | None, code: str, *, retry_delay: float | None = None
+) -> EndToEndOutcome:
     return EndToEndOutcome(
         status=EndToEndStatus.COLLECTION_FAILED,
         collection_run_id=run_id,
         raw_item_count=0,
         safe_errors=(EndToEndError(code, code),),
+        retry_delay=retry_delay,
     )

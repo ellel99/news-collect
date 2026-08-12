@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0037-multi-provider-runtime-verification.md`](spec/SPEC-0037-multi-provider-runtime-verification.md)，统一验证 Finnhub + EIA + SEC bounded runtime ingestion
+- 开发入口：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md)，四 Provider 最小 scheduler 与 Telegram routing
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0037-multi-provider-runtime-verification.md`](spec/SPEC-0037-multi-provider-runtime-verification.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md) — Implementation Review
 
 统一 runtime verification：
 
@@ -102,12 +102,11 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
-  SPEC-0030/0031 combined PR 已完成 Marketaux real adapter 与 bounded smoke harness，SPEC-0032 已完成
-  manual real adapter → CollectionRunner → RawItem → evidence_items runtime。当前只增加 metadata-only
-  visible ContentItem/feed 与 manual Telegram preview/push，并只用 mocked transport 测试；CI/pytest/
-  package review 不执行真实 Marketaux/Telegram，不实现 scheduler
-  或其他 Provider，不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/
-  `local_evaluation/`，不实现 formal normalization、dedup、Event 或 AI；SPEC-0022 未启动
+  SPEC-0030–0037 已完成 real adapters、bounded runtime 与现有 collection/evidence/feed 能力。
+  当前 SPEC-0038 只增加四 Provider 最小 cadence scheduler、content-safe ContentItem 与 Telegram
+  routing，并只用 mocked transport 测试；CI/pytest/package review 不执行真实 Provider/Telegram，
+  不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/`local_evaluation/`，不实现 formal
+  normalization、dedup、Event 或 AI；SPEC-0022 未启动
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向
@@ -287,6 +286,39 @@ dry-run 不读取 credential 或访问 runtime。自动投递使用 Notification
 最多重试 3 次，超过 300 秒的 stale SENDING 可被原子恢复。历史 retry 独立于当前 collection run，即使
 本轮没有新 item 或 Provider 失败也可继续安全投递。
 明确启用 worker runtime 时，凭证只来自 process environment；Notification 不会被删除来绕过去重。
+
+### Multi-provider scheduler + Telegram routing
+
+SPEC-0038 的统一 smoke 默认完全 inert，不读取 Provider/Telegram credential、不连接 runtime：
+
+```bash
+python3 scripts/multi_provider_scheduler_smoke.py
+```
+
+只有显式启用时才从 process environment 读取四 Provider 与 Telegram credential：
+
+```bash
+MARKETAUX_API_TOKEN=... FINNHUB_API_KEY=... EIA_API_KEY=... \
+SEC_USER_AGENT=... SEC_CONTACT_EMAIL=... \
+TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
+python3 scripts/multi_provider_scheduler_smoke.py --execute --limit 1
+```
+
+Celery Beat 注册 `multi_provider.telegram.run`，默认
+`MULTI_PROVIDER_SCHEDULER_EXECUTE=false`。四 Provider 使用独立 cadence；单家失败隔离，
+no-new-items 不发送。Notification unique dedup key 保证 SENT 不重发，FAILED bounded retry 和 stale
+SENDING recovery 独立于当前 collection cycle。Finnhub/EIA 展示只含 content-safe metadata，不含
+quote/EIA numeric value；SEC 不下载 filing body。
+
+Telegram credential 缺失不会停止 collection：四家仍可写 RawItem/EvidenceItem/ContentItem，summary
+保留各自 `collection_status` 并将 `delivery_status` 标记为 `BLOCKED`。新 ContentItem 的 Notification
+保持 PENDING，既有 FAILED/SENDING 不被消费；credential 恢复后再由原子 claim 发送。Provider 的
+transient RETRY 使用 CollectionRunner 已计算的 bounded delay 和独立 Redis retry gate，不必等待完整
+正常 cadence；retry 成功后恢复正常 cadence，non-retryable failure 不快速重试。
+
+EIA monthly 与 SEC submissions 是 snapshot polling：重复返回当前最新 cursor 时正常结束为
+no-new-items，不重复写 RawItem/EvidenceItem/ContentItem/Notification，也不推进 cursor/watermark；只有
+newer cursor 才写入，older cursor fail closed。Marketaux/Finnhub 继续要求 strict successor。
 
 先启动依赖服务：
 

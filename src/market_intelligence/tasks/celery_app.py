@@ -11,6 +11,7 @@ celery_app = Celery(
         "market_intelligence.tasks.health",
         "market_intelligence.tasks.collection",
         "market_intelligence.tasks.marketaux_telegram",
+        "market_intelligence.tasks.multi_provider_scheduler",
     ],
 )
 celery_app.conf.update(
@@ -28,9 +29,9 @@ celery_app.conf.update(
             "task": "collection.recover_stale_runs",
             "schedule": settings.COLLECTION_STALE_RUN_SCAN_SECONDS,
         },
-        "marketaux-telegram-cycle": {
-            "task": "marketaux.telegram.run",
-            "schedule": settings.MARKETAUX_TELEGRAM_SCHEDULER_INTERVAL_SECONDS,
+        "multi-provider-telegram-cycle": {
+            "task": "multi_provider.telegram.run",
+            "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
         },
     },
 )
