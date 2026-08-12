@@ -44,8 +44,10 @@ Minimal transition requested for v2.2:
 
 - Phase 1 Content First remains immutable historical behavior and its pipeline stays operational.
 - The next active engineering stage becomes Event Intelligence / Event First.
-- EvidenceItem remains the factual/provenance foundation; EventCandidate never replaces or deletes RawItem,
-  EvidenceItem, or ContentItem.
+- RawItem remains the original collection trace/provenance layer. EvidenceItem is the factual/provenance
+  authority for Event Intelligence. ContentItem remains a content-safe display/projection layer and may be a
+  safe deterministic clustering input, but is not Event factual authority. EventCandidate is additive and
+  never replaces, deletes, or overwrites any of these layers.
 - EventCandidate grouping must be deterministic, explainable, idempotent, reversible, and provider-neutral.
 - AI may only enter behind an `ImpactAnalyzer` contract after Event facts and evidence are assembled.
 - This SPEC permits a mock/deterministic analyzer only; no real LLM, recommendation, market-validation
@@ -69,12 +71,15 @@ importance scoring, and the ImpactAnalyzer contract. SPEC-0022 must not become a
 
 ## 5. Planned deterministic pre-dedup
 
-Inputs are approved internal EvidenceItem/ContentItem projections, never provider SDK objects or raw payloads.
-Candidate keys use the strongest available identity in order:
+Inputs are approved internal EvidenceItem data plus content-safe ContentItem projections, never provider SDK
+objects or raw payloads. EvidenceItem remains authoritative when display projection and evidence disagree.
+
+Every new candidate receives one deterministic **stable anchor** and derives `cluster_key` from that anchor.
+Anchor priority is:
 
 1. provider-scoped official identity (for example SEC accession);
-2. provider + stable external ID for exact same-provider identity;
-3. normalized canonical URL;
+2. normalized canonical URL;
+3. stable provider + external identity for exact same-provider identity;
 4. normalized title fingerprint constrained by shared entity/asset and a bounded publication time window;
 5. existing content/provider hash only when identity constraints remain fail-closed.
 
@@ -83,9 +88,23 @@ Rules:
 - exact official/provider identity is idempotent;
 - cross-provider grouping requires canonical URL or entity + title fingerprint + time-window agreement;
 - same company alone never merges events;
+- same ticker alone and a wide time window never merge events;
+- if incoming Evidence cannot stably match an existing candidate, create a new EventCandidate instead of
+  forcing a broad merge;
 - missing/ambiguous identity creates separate candidates rather than broad merging;
 - rerunning the same inputs yields the same candidate identity;
 - no RawItem/EvidenceItem is deleted or overwritten.
+
+Candidate identity rules:
+
+- after creation, `EventCandidate.id` and `cluster_key` are immutable;
+- `cluster_key` is derived from the stable initial anchor, never from the current complete Evidence membership
+  set, so adding/removing an association cannot change identity;
+- later matching Evidence only adds an association to the existing EventCandidate;
+- a later stronger official identity may enrich a separate canonical/strong-identity field, but must not rewrite
+  `cluster_key`, create a second candidate for the same accepted grouping, or destroy historical identity;
+- concurrent creation relies on the DB unique `cluster_key` plus a transactional insert/upsert-or-reload path;
+- identical inputs, including concurrent/repeated processing, resolve to the same EventCandidate.
 
 No embeddings, vector database, LLM clustering, or semantic similarity is included.
 
@@ -97,6 +116,8 @@ Implementation may introduce one isolated, reversible Alembic revision after app
 
 - UUID `id` primary key;
 - deterministic `cluster_key` unique and non-null;
+- immutable stable-anchor type/value (or their opaque deterministic representation) plus optional stronger
+  canonical identity enrichment; neither enrichment nor membership changes may rewrite `cluster_key`;
 - `event_type`, lifecycle `status`;
 - optional safe `canonical_title` / `fact_summary`;
 - `first_seen_at`, `latest_seen_at`, optional `occurred_at` / `published_at`;
@@ -107,15 +128,23 @@ Implementation may introduce one isolated, reversible Alembic revision after app
 ### `event_candidate_evidence`
 
 - `event_candidate_id` FK;
-- `evidence_item_id` FK with unique membership;
-- official-source flag and added timestamp;
-- deletion policy must preserve EvidenceItem provenance.
+- `evidence_item_id` FK;
+- `UNIQUE(event_candidate_id, evidence_item_id)` prevents duplicate membership within one candidate;
+- this first version does **not** add `UNIQUE(evidence_item_id)`: single-event ownership is not assumed without
+  an independently reviewed policy;
+- `match_rule` / `cluster_rule`, `rule_version`, official-source flag, and `added_at` explain every association;
+- minimal reversible history uses `active` plus nullable `removed_at`; regrouping deactivates an association and
+  adds a replacement instead of erasing history;
+- physical EvidenceItem deletion is never used to correct clustering, and association rows are not hard-deleted
+  during normal regrouping.
 
 Required invariants:
 
 - many EvidenceItems may support one EventCandidate;
 - every EventCandidate is traceable to EvidenceItem → RawItem → Source/Provider;
 - a repeated run cannot create another candidate or duplicate association;
+- candidate creation is concurrency-safe through unique `cluster_key` and transactional conflict handling;
+- each active or historical association explains its rule/version and supports future reversible regrouping;
 - persistence failures are explicit and do not mutate evidence;
 - migration upgrade/downgrade/re-upgrade must pass on PostgreSQL 16.
 
@@ -127,6 +156,7 @@ Level 1 only:
 - entity + normalized title fingerprint requires a bounded time window;
 - official filing and coverage may group only when identity/entity/time/fingerprint constraints agree;
 - time-window expiry or conflicting identity fails closed into separate candidates;
+- absence of a stable match creates a new EventCandidate; same company/ticker alone is never sufficient;
 - each decision exposes the rule/key used, without raw content or secrets.
 
 AI-assisted clustering is interface-only future work and is not implemented here.
@@ -168,11 +198,14 @@ model credential, generated recommendation, or Telegram AI delivery.
 
 - [ ] Migration upgrade/downgrade/re-upgrade on PostgreSQL 16.
 - [ ] Same provider/external ID and same official identity are idempotent.
+- [ ] EventCandidate id/cluster_key remain unchanged when later Evidence is associated or stronger identity enriches it.
+- [ ] Concurrent candidate creation resolves through DB uniqueness to one stable identity.
 - [ ] Same canonical URL across Providers produces one candidate.
 - [ ] Official filing + coverage groups only with entity/time/fingerprint agreement.
 - [ ] Same company but different fact remains separate; expired window remains separate.
 - [ ] Repeated processing creates neither duplicate EventCandidate nor duplicate association.
 - [ ] Multiple EvidenceItems map to one EventCandidate with full provenance traceability.
+- [ ] Association uniqueness is pair-scoped; rule/version and active/removed history make regrouping auditable.
 - [ ] Importance scoring is deterministic, bounded, and exposes component reasons.
 - [ ] ImpactAnalyzer mock validates all direction/horizon values and rejects trading-action language.
 - [ ] Tests/CI make no real Provider, Telegram, market-validation, or AI request.

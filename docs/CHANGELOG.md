@@ -2,6 +2,11 @@
 
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
+- PR #38 Review fix clarifies layer authority: RawItem is collection trace, EvidenceItem is Event factual/
+  provenance authority, and ContentItem is a safe display/projection input rather than factual authority.
+- Defines immutable candidate id/cluster_key from a stable anchor, pair-scoped Evidence association uniqueness,
+  match rule/version audit fields, and reversible `active`/`removed_at` regrouping history.
+- Matching now explicitly fails closed: no stable match creates a new candidate; company/ticker alone never merges.
 - 复用 SPEC-0030–0038 已审核 evidence，记录四 Provider 核心 Phase 1 Information Collection & Push
   technical acceptance；未重新请求 Provider/Telegram。
 - 新增 Foundation v2.2 最小 transition draft 与 D-025 Proposed Decision；v2.1-FROZEN 继续生效，

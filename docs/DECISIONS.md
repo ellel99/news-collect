@@ -172,9 +172,11 @@
 
 - 建议决定：基于 SPEC-0030–0038 的已审核 implementation/runtime evidence，批准四 Provider 核心
   Information Collection & Push 技术链路完成，并把下一工程阶段切换为 Event Intelligence / Event First。
-- 最小新增边界：EvidenceItem 继续作为事实/provenance authority；只允许 additive EventCandidate、
-  EventCandidate↔Evidence association、deterministic pre-dedup/rule clustering、importance contract 和
-  mock-only ImpactAnalyzer contract。
+- 最小新增边界：RawItem 是原始采集 trace/provenance layer；EvidenceItem 继续作为 Event Intelligence
+  的事实/provenance authority；ContentItem 只是 content-safe display/projection layer，可提供安全聚类
+  输入但不是事实 authority。只允许 additive EventCandidate、可审计/可撤销的 EventCandidate↔Evidence
+  association、deterministic pre-dedup/rule clustering、importance contract 和 mock-only ImpactAnalyzer
+  contract；EventCandidate 不删除、覆盖或替代上述既有层。
 - 不授权：真实 LLM、Market Validation runtime、BUY/SELL/HOLD、投资建议、自动交易、embedding、
   vector DB、新 Provider、X 或 event-bus infrastructure。
 - 追踪：SPEC-0022 的 Dedup/Event Candidate 候选范围由 SPEC-0039 absorb/supersede，避免竞争实现。
