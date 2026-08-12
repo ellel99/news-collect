@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
+
+- 复用 SPEC-0030–0038 已审核 evidence，记录四 Provider 核心 Phase 1 Information Collection & Push
+  technical acceptance；未重新请求 Provider/Telegram。
+- 新增 Foundation v2.2 最小 transition draft 与 D-025 Proposed Decision；v2.1-FROZEN 继续生效，
+  等待 Freeze Review。
+- 激活 SPEC-0039 Docs Review，定义 deterministic dedup、EventCandidate persistence/provenance、
+  importance foundation 与 mock-only ImpactAnalyzer implementation contract。
+- SPEC-0022 被 SPEC-0039 absorb/supersede pending review；未创建 migration、ORM 或 Python implementation。
+- 修正 README 的 stale SPEC-0038 Active 状态。
+
 ## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
 
 - SPEC-0038 Implementation Review approved/completed：用户 EIA post-fix live verification 返回

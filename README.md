@@ -19,7 +19,7 @@ Recommendation。
 - Foundation：v2.1-FROZEN
 - 状态：Frozen
 - 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md)，四 Provider 最小 scheduler 与 Telegram routing
+- 开发入口：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md)，当前仅 Docs Review / Foundation Freeze Review
 
 Phase 1 固定主链路：
 
@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md) — Implementation Review
+- Active SPEC：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Docs Review / Foundation Freeze Review required
 
 统一 runtime verification：
 
@@ -102,11 +102,10 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
-  SPEC-0030–0037 已完成 real adapters、bounded runtime 与现有 collection/evidence/feed 能力。
-  当前 SPEC-0038 只增加四 Provider 最小 cadence scheduler、content-safe ContentItem 与 Telegram
-  routing，并只用 mocked transport 测试；CI/pytest/package review 不执行真实 Provider/Telegram，
-  不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/`local_evaluation/`，不实现 formal
-  normalization、dedup、Event 或 AI；SPEC-0022 未启动
+  SPEC-0030–0038 已完成 real adapters、bounded runtime、collection/evidence/feed、四 Provider cadence
+  scheduler 与 Telegram routing。当前 SPEC-0039 仅进行 Phase 1 technical acceptance、Foundation v2.2
+  transition draft 与 Event Candidate Foundation Docs Review；Freeze Review 和 Docs Review PASS 前不创建
+  migration/ORM/Event implementation。SPEC-0022 已被 SPEC-0039 absorb/supersede pending review。
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向

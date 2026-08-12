@@ -8,11 +8,11 @@
 - 当前阶段：Phase 1
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None（等待用户明确激活下一独立 SPEC）
+- 当前 Active SPEC：`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0038 Implementation Review 已批准完成；Marketaux、Finnhub、EIA、SEC EDGAR
-  独立 cadence scheduler 与 provider-specific Telegram routing 已进入完成态。当前不得继续扩展
-  scheduler，等待用户明确激活下一独立 SPEC。
+- 当前工作状态：SPEC-0038 Implementation Review 已批准完成；SPEC-0039 正在进行 Docs Review 与
+  Foundation v2.2 Freeze Review preparation。实现仍被门禁：两项 Review PASS 前不得创建 Event
+  migration/ORM/service 或 AI runtime。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -45,7 +45,7 @@
 - SPEC-0030/0031 combined PR 已完成 real adapter boundary 与 bounded smoke harness；SPEC-0032 已完成
   manual Marketaux collection/evidence runtime；SPEC-0033 已完成 visible feed/manual Telegram；
   SPEC-0036 已完成 Finnhub/EIA/SEC adapters 与 ingestion pipeline。NewsAPI.ai/GDELT 均不激活。
-  SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X Source 范围不变。
+  SPEC-0022 已由 SPEC-0039 absorb/supersede pending review，SPEC-0005 X Source 范围不变。
 
 ## 架构修订状态
 

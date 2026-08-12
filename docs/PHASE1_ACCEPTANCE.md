@@ -35,6 +35,16 @@
 - PASS WITH ISSUES：仅有用户明确接受的非阻塞问题。
 - FAIL：范围偏差、安全问题、关键可靠性失败或真实主链路不完整。
 
+### 3.1 Core technical acceptance record（2026-08-13）
+
+基于 SPEC-0030–0038 已合并的 implementation reviews、PostgreSQL/mock regressions 与用户批准的
+bounded runtime evidence，四 Provider 核心链路 `Provider → RawItem → EvidenceItem → ContentItem →
+Scheduler → Telegram` 记为 **PASS**。本记录复用既有 evidence，不重新请求 Provider 或 Telegram。
+
+X source/account、完整 backup/restore operational exercise、management Bot 与更广 operations acceptance
+仍为独立后置能力，不在本记录中虚构为完成。该 core PASS 只支持发起 Foundation v2.2 Freeze Review，
+本身不授权 Event/AI implementation。
+
 ## 4. 后续架构提案与本验收标准的关系
 
 当前关于供应商中立混合采集、统一接入网关、可替换事件总线、Unified News Record、
