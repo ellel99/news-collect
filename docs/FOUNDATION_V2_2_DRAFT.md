@@ -1,8 +1,8 @@
 # Foundation v2.2 Transition Draft
 
-Status：Draft — Freeze Review required; not effective
+Status：Superseded by approved `docs/FOUNDATION_V2_2.md`
 
-Supersedes：nothing until approved. `FOUNDATION_FROZEN.md` v2.1-FROZEN remains authoritative.
+Historical review artifact：the approved text is frozen in `docs/FOUNDATION_V2_2.md`.
 
 ## Purpose
 

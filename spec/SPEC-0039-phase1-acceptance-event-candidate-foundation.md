@@ -1,10 +1,10 @@
 # SPEC-0039 — Phase 1 Acceptance + Event Candidate Foundation
 
-Status：Active — Docs Review / Foundation Freeze Review required
+Status：Active — Implementation Review
 
 Phase：Phase transition — Phase 1 technical acceptance to Event Intelligence
 
-Foundation：v2.1-FROZEN remains effective；v2.2 transition draft pending Freeze Review
+Foundation：v2.2-FROZEN（approved 2026-08-13）
 
 Depends on：SPEC-0018–0021、SPEC-0023–0038（Completed）
 
@@ -14,10 +14,8 @@ SPEC-0039 records Phase 1 core technical acceptance and defines one bounded Even
 
 `EvidenceItem + ContentItem → deterministic pre-dedup → EventCandidate ↔ Evidence provenance`
 
-It also defines provider/model-neutral importance and `ImpactAnalyzer` contracts. The user authorized the
-combined docs-and-implementation scope, but repository governance requires a Foundation Freeze Review and
-Docs Review before migration or Python implementation. Therefore this revision is documentation and
-governance preparation only. Implementation begins only after both reviews explicitly PASS.
+It also defines provider/model-neutral importance and `ImpactAnalyzer` contracts. Foundation Freeze Review
+and SPEC Docs Review passed on 2026-08-13; the bounded implementation is now in Implementation Review.
 
 ## 2. Phase 1 technical acceptance
 
@@ -53,8 +51,8 @@ Minimal transition requested for v2.2:
 - This SPEC permits a mock/deterministic analyzer only; no real LLM, recommendation, market-validation
   runtime, portfolio action, or trading semantics.
 
-The proposal is recorded in `docs/FOUNDATION_V2_2_DRAFT.md` and D-025. v2.1-FROZEN remains authoritative
-until Freeze Review PASS.
+The approved transition is frozen in `docs/FOUNDATION_V2_2.md` and D-025. v2.1 safety and trading-action
+boundaries continue under v2.2-FROZEN.
 
 ## 4. SPEC-0022 traceability
 
@@ -196,21 +194,21 @@ model credential, generated recommendation, or Telegram AI delivery.
 
 ## 10. Planned tests and acceptance
 
-- [ ] Migration upgrade/downgrade/re-upgrade on PostgreSQL 16.
-- [ ] Same provider/external ID and same official identity are idempotent.
-- [ ] EventCandidate id/cluster_key remain unchanged when later Evidence is associated or stronger identity enriches it.
-- [ ] Concurrent candidate creation resolves through DB uniqueness to one stable identity.
-- [ ] Same canonical URL across Providers produces one candidate.
-- [ ] Official filing + coverage groups only with entity/time/fingerprint agreement.
-- [ ] Same company but different fact remains separate; expired window remains separate.
-- [ ] Repeated processing creates neither duplicate EventCandidate nor duplicate association.
-- [ ] Multiple EvidenceItems map to one EventCandidate with full provenance traceability.
-- [ ] Association uniqueness is pair-scoped; rule/version and active/removed history make regrouping auditable.
-- [ ] Importance scoring is deterministic, bounded, and exposes component reasons.
-- [ ] ImpactAnalyzer mock validates all direction/horizon values and rejects trading-action language.
-- [ ] Tests/CI make no real Provider, Telegram, market-validation, or AI request.
-- [ ] Existing Phase 1 collection/evidence/scheduler/Telegram regressions remain PASS.
-- [ ] Reviewer approves Foundation v2.2 transition draft and this Docs Review.
+- [x] Migration upgrade/downgrade/re-upgrade on PostgreSQL 16.
+- [x] Same provider/external ID and same official identity are idempotent.
+- [x] EventCandidate id/cluster_key remain unchanged when later Evidence is associated or stronger identity enriches it.
+- [x] Concurrent candidate creation resolves through DB uniqueness to one stable identity.
+- [x] Same canonical URL across Providers produces one candidate.
+- [x] Official filing + coverage groups only with entity/time/fingerprint agreement.
+- [x] Same company but different fact remains separate; expired window remains separate.
+- [x] Repeated processing creates neither duplicate EventCandidate nor duplicate association.
+- [x] Multiple EvidenceItems map to one EventCandidate with full provenance traceability.
+- [x] Association uniqueness is pair-scoped; rule/version and active/removed history make regrouping auditable.
+- [x] Importance scoring is deterministic, bounded, and exposes component reasons.
+- [x] ImpactAnalyzer mock validates all direction/horizon values and rejects trading-action language.
+- [x] Tests make no real Provider, Telegram, market-validation, or AI request.
+- [x] Existing Phase 1 collection/evidence/scheduler/Telegram regressions remain PASS.
+- [x] Reviewer approved the Foundation v2.2 transition and SPEC-0039 Docs Review.
 
 ## 11. Explicit non-goals
 
@@ -224,4 +222,6 @@ model credential, generated recommendation, or Telegram AI delivery.
 
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
-| 1 | PENDING | Phase 1 evidence inventory, D-025 and v2.2 transition draft, bounded implementation contract | Await Foundation Freeze Review and SPEC Docs Review |
+| 1 | REQUEST CHANGES | Layer authority, stable candidate identity, and reversible association semantics required clarification | Clarified in commit 4092f6a |
+| 2 | PASS | Foundation v2.2 Freeze Review and SPEC-0039 Docs Review | Bounded implementation authorized in this PR |
+| 3 | PENDING | Bounded implementation, migration round trip, 440-test regression, and package review evidence | Await Implementation Review |

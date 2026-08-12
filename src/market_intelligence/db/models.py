@@ -11,6 +11,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -111,6 +112,12 @@ class OutboxStatus(enum.StrEnum):
     PUBLISHING = "publishing"
     PUBLISHED = "published"
     FAILED = "failed"
+
+
+class EventCandidateStatus(enum.StrEnum):
+    CANDIDATE = "candidate"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
 
 
 def enum_values(enum_class: type[enum.StrEnum]) -> list[str]:
@@ -636,6 +643,125 @@ class EvidenceItem(Base):
         overlaps="evidence_items,source",
     )
     content_item: Mapped[ContentItem | None] = relationship(back_populates="evidence_items")
+    event_candidate_links: Mapped[list[EventCandidateEvidence]] = relationship(
+        back_populates="evidence_item"
+    )
+
+
+class EventCandidate(Base):
+    __tablename__ = "event_candidates"
+    __table_args__ = (
+        CheckConstraint("cluster_key ~ '^[0-9a-f]{64}$'", name="ck_event_candidates_cluster_key"),
+        CheckConstraint(
+            "anchor_value_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_event_candidates_anchor_value_hash",
+        ),
+        CheckConstraint(
+            "strong_identity_hash IS NULL OR strong_identity_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_event_candidates_strong_identity_hash",
+        ),
+        CheckConstraint("evidence_count > 0", name="ck_event_candidates_evidence_positive"),
+        CheckConstraint("source_count > 0", name="ck_event_candidates_source_positive"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_event_candidates_confidence"),
+        CheckConstraint(
+            "importance_score BETWEEN 0 AND 100", name="ck_event_candidates_importance"
+        ),
+        CheckConstraint("latest_seen_at >= first_seen_at", name="ck_event_candidates_seen_order"),
+        Index("uq_event_candidates_cluster_key", "cluster_key", unique=True),
+        Index("ix_event_candidates_status_latest", "status", "latest_seen_at"),
+        Index("ix_event_candidates_strong_identity", "strong_identity_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    cluster_key: Mapped[str] = mapped_column(CHAR(64))
+    anchor_type: Mapped[str] = mapped_column(String(64))
+    anchor_value_hash: Mapped[str] = mapped_column(CHAR(64))
+    strong_identity_hash: Mapped[str | None] = mapped_column(CHAR(64))
+    identity_signatures: Mapped[list[Any]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
+    title_fingerprints: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    event_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[EventCandidateStatus] = mapped_column(
+        Enum(
+            EventCandidateStatus,
+            name="event_candidate_status",
+            values_callable=enum_values,
+        )
+    )
+    canonical_title: Mapped[str | None] = mapped_column(Text)
+    fact_summary: Mapped[str | None] = mapped_column(Text)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    latest_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    primary_entity: Mapped[str | None] = mapped_column(String(255))
+    entities: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    companies: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    assets: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    sectors: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    topics: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    evidence_count: Mapped[int] = mapped_column(Integer)
+    source_count: Mapped[int] = mapped_column(Integer)
+    confidence: Mapped[float] = mapped_column(Float)
+    importance_score: Mapped[float] = mapped_column(Float)
+    importance_reasons: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+    evidence_links: Mapped[list[EventCandidateEvidence]] = relationship(
+        back_populates="event_candidate"
+    )
+
+
+class EventCandidateEvidence(Base):
+    __tablename__ = "event_candidate_evidence"
+    __table_args__ = (
+        CheckConstraint("char_length(btrim(match_rule)) > 0", name="ck_event_evidence_rule"),
+        CheckConstraint("rule_version > 0", name="ck_event_evidence_rule_version"),
+        CheckConstraint(
+            "(active AND removed_at IS NULL) OR (NOT active AND removed_at IS NOT NULL)",
+            name="ck_event_evidence_active_removed",
+        ),
+        Index(
+            "uq_event_candidate_evidence_pair",
+            "event_candidate_id",
+            "evidence_item_id",
+            unique=True,
+        ),
+        Index("ix_event_candidate_evidence_item", "evidence_item_id"),
+        Index("ix_event_candidate_evidence_active", "event_candidate_id", "active"),
+    )
+
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_candidates.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    evidence_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_items.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    match_rule: Mapped[str] = mapped_column(String(100))
+    rule_version: Mapped[int] = mapped_column(Integer)
+    official_source: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    event_candidate: Mapped[EventCandidate] = relationship(back_populates="evidence_links")
+    evidence_item: Mapped[EvidenceItem] = relationship(back_populates="event_candidate_links")
 
 
 class Notification(Base):

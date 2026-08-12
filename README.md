@@ -67,7 +67,7 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 - Foundation：v2.1-FROZEN
 - 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Docs Review / Foundation Freeze Review required
+- Active SPEC：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Implementation Review
 
 统一 runtime verification：
 
@@ -104,8 +104,8 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
   SPEC-0030–0038 已完成 real adapters、bounded runtime、collection/evidence/feed、四 Provider cadence
   scheduler 与 Telegram routing。当前 SPEC-0039 仅进行 Phase 1 technical acceptance、Foundation v2.2
-  transition draft 与 Event Candidate Foundation Docs Review；Freeze Review 和 Docs Review PASS 前不创建
-  migration/ORM/Event implementation。SPEC-0022 已被 SPEC-0039 absorb/supersede pending review。
+  transition 与 Event Candidate Foundation implementation；Foundation v2.2 Freeze Review 和 Docs Review
+  已 PASS。SPEC-0022 已被 SPEC-0039 absorb/supersede。
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向

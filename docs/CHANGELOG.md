@@ -2,6 +2,10 @@
 
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
+- Foundation v2.2 Freeze Review 与 SPEC-0039 Docs Review PASS；D-025 Approved，SPEC-0039 进入 bounded
+  Implementation Review。
+- 新增 isolated revision 0005、EventCandidate/EventCandidateEvidence ORM、deterministic matcher/store、
+  deterministic ImportanceScorer 与 mock-only ImpactAnalyzer contract。
 - PR #38 Review fix clarifies layer authority: RawItem is collection trace, EvidenceItem is Event factual/
   provenance authority, and ContentItem is a safe display/projection input rather than factual authority.
 - Defines immutable candidate id/cluster_key from a stable anchor, pair-scoped Evidence association uniqueness,

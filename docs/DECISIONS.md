@@ -1,6 +1,6 @@
 # Decisions
 
-版本：2.1-FROZEN  
+版本：2.2-FROZEN
 状态：Frozen core decisions; append-only
 
 ## D-001 单用户、自用
@@ -168,7 +168,7 @@
 
 研究状态的安全命名、动作语义限制和候选替代标签由 `AI_RULES.md` 第 11 节统一定义。
 
-## D-025 Phase 1 technical acceptance and Event Candidate transition（Proposed）
+## D-025 Phase 1 technical acceptance and Event Candidate transition（Approved）
 
 - 建议决定：基于 SPEC-0030–0038 的已审核 implementation/runtime evidence，批准四 Provider 核心
   Information Collection & Push 技术链路完成，并把下一工程阶段切换为 Event Intelligence / Event First。
@@ -181,4 +181,4 @@
   vector DB、新 Provider、X 或 event-bus infrastructure。
 - 追踪：SPEC-0022 的 Dedup/Event Candidate 候选范围由 SPEC-0039 absorb/supersede，避免竞争实现。
 - 影响分析：见 `docs/FOUNDATION_V2_2_DRAFT.md`；v2.1-FROZEN 在 Freeze Review PASS 前继续生效。
-- 状态：Proposed，等待 Foundation v2.2 Freeze Review。
+- 状态：Approved；Foundation v2.2 Freeze Review PASS（2026-08-13）。实现严格限于 SPEC-0039。

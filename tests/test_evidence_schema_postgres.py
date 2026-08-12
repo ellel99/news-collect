@@ -113,8 +113,13 @@ async def test_evidence_migration_upgrade_downgrade_reupgrade() -> None:
         await setup_connection.commit()
 
     def run_round_trip(sync_connection: Any) -> None:
+        excluded_tables = {
+            "evidence_items",
+            "event_candidates",
+            "event_candidate_evidence",
+        }
         existing_tables = [
-            table for table in Base.metadata.sorted_tables if table.name != "evidence_items"
+            table for table in Base.metadata.sorted_tables if table.name not in excluded_tables
         ]
         Base.metadata.create_all(sync_connection, tables=existing_tables)
         sync_connection.execute(text("DROP INDEX uq_raw_items_id_source_id"))
