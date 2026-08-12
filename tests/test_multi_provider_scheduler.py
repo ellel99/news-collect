@@ -272,6 +272,52 @@ async def test_each_provider_routes_its_own_new_items() -> None:
     assert notifications.delivered == list(PROVIDER_ORDER)
 
 
+@pytest.mark.asyncio
+async def test_eia_same_snapshot_is_no_new_items_without_notification() -> None:
+    notifications = FakeNotifications()
+
+    def executor(provider: str):
+        async def run():
+            if provider == "eia":
+                return ProviderCycleResult(
+                    provider,
+                    ProviderScheduleStatus.NO_NEW_ITEMS,
+                    "no_new_items",
+                )
+            item = ProviderDisplayItem(
+                uuid.uuid4(),
+                provider,
+                f"Synthetic {provider}",
+                "Synthetic source",
+                datetime.now(UTC),
+                None,
+            )
+            return ProviderCycleResult(
+                provider,
+                ProviderScheduleStatus.PASS,
+                "processed",
+                raw_item_count=1,
+                evidence_item_count=1,
+                content_item_count=1,
+                items=(item,),
+            )
+
+        return run
+
+    summary = await MultiProviderTelegramScheduler(
+        {provider: executor(provider) for provider in PROVIDER_ORDER},
+        notifications,  # type: ignore[arg-type]
+    ).run()
+
+    assert summary.status == "PASS"
+    assert summary.providers[2].provider == "eia"
+    assert summary.providers[2].status == "NO_NEW_ITEMS"
+    assert summary.providers[2].collection_status == "no_new_items"
+    assert summary.providers[2].sent_count == 0
+    assert "eia" not in notifications.delivered
+    assert notifications.delivered == ["marketaux", "finnhub", "sec_edgar"]
+
+
 @pytest.mark.parametrize("provider", PROVIDER_ORDER)
 def test_provider_specific_telegram_formatter(provider: str) -> None:
     item = ProviderDisplayItem(

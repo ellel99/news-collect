@@ -71,6 +71,7 @@ class SnapshotCursorPolicy:
 _STRICT_CURSOR_POLICY = StrictCursorPolicy()
 _SNAPSHOT_CURSOR_POLICY = SnapshotCursorPolicy()
 _CURSOR_POLICIES: Mapping[str, ProviderCursorPolicy] = {
+    "eia": _SNAPSHOT_CURSOR_POLICY,
     "sec_edgar": _SNAPSHOT_CURSOR_POLICY,
 }
 

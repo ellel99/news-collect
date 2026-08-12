@@ -2,6 +2,12 @@
 
 ## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing
 
+- 用户首次 unified scheduler live verification：Marketaux/Finnhub/SEC collection + Telegram PASS；EIA
+  因相同 monthly snapshot 被 strict cursor 误判为 contract invalid。本轮未重跑任何 live request。
+- 将 snapshot cursor policy 显式扩展到 EIA：same latest monthly row 正常 succeeded/no-new-items，
+  newer 推进，older fail closed；Marketaux/Finnhub strict 与 SEC snapshot 语义保持不变。
+- 增加 EIA initial/same/repeated/newer/older PostgreSQL persistence regression，以及 EIA no-new-items
+  不产生 Notification、其他 Provider 继续且 overall PASS 的 scheduler regression；无 schema change。
 - PR #37 review fix 解耦 collection 与 Telegram credential：缺少 Telegram 配置时 Provider 继续采集，
   新投递意图保持 PENDING，历史 FAILED/SENDING 不被消费；恢复凭证后由原子 claim 正常发送。
 - 将 CollectionRunner 已有 bounded retry delay 传递到 scheduler，使用独立 Redis retry gate 允许

@@ -183,23 +183,24 @@ async def test_eia_and_sec_adapters_preserve_has_more_semantics() -> None:
         assert result.has_more is True
 
 
-def test_only_sec_uses_snapshot_same_cursor_policy() -> None:
+def test_only_eia_and_sec_use_snapshot_same_cursor_policy() -> None:
     cursor = json.dumps(
         {"provider_item_id": "synthetic-item", "published_at": "2026-08-01T00:00:00+00:00"}
     )
-    adapters = (
+    strict_adapters = (
         MarketauxAdapter(RuntimeCredential("MARKETAUX_API_TOKEN", "synthetic")),
         FinnhubAdapter(RuntimeCredential("FINNHUB_API_KEY", "synthetic")),
-        EiaAdapter(RuntimeCredential("EIA_API_KEY", "synthetic")),
     )
-    for adapter in adapters:
+    for adapter in strict_adapters:
         bridge = ProviderCollectionAdapter(adapter, MockProviderTransport([]))
         assert bridge.is_cursor_successor(cursor, cursor) is False
-    sec_bridge = ProviderCollectionAdapter(
+    snapshot_adapters = (
+        EiaAdapter(RuntimeCredential("EIA_API_KEY", "synthetic")),
         SecEdgarAdapter(RuntimeCredential("SEC_USER_AGENT", "synthetic contact")),
-        MockProviderTransport([]),
     )
-    assert sec_bridge.is_cursor_successor(cursor, cursor) is True
+    for adapter in snapshot_adapters:
+        bridge = ProviderCollectionAdapter(adapter, MockProviderTransport([]))
+        assert bridge.is_cursor_successor(cursor, cursor) is True
 
 
 def test_runtime_summary_treats_empty_success_as_no_new_items() -> None:

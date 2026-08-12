@@ -316,6 +316,10 @@ Telegram credential 缺失不会停止 collection：四家仍可写 RawItem/Evid
 transient RETRY 使用 CollectionRunner 已计算的 bounded delay 和独立 Redis retry gate，不必等待完整
 正常 cadence；retry 成功后恢复正常 cadence，non-retryable failure 不快速重试。
 
+EIA monthly 与 SEC submissions 是 snapshot polling：重复返回当前最新 cursor 时正常结束为
+no-new-items，不重复写 RawItem/EvidenceItem/ContentItem/Notification，也不推进 cursor/watermark；只有
+newer cursor 才写入，older cursor fail closed。Marketaux/Finnhub 继续要求 strict successor。
+
 先启动依赖服务：
 
 ```bash

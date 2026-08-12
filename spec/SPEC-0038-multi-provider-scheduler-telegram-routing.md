@@ -37,6 +37,10 @@ formal dedup、Event 或 clustering，也不启动 SPEC-0022。
 - 正常 cadence 与 transient retry gate 分离。CollectionRunner 的既有 RetryPolicy 继续计算 bounded
   full-jitter/Retry-After delay；`RETRY` 会释放正常 cadence claim 并设置独立 Redis retry gate。delay
   到期后的 tick 可重新执行，成功后恢复正常 cadence；non-retryable FAILED/永久配置错误不快速重试。
+- EIA electricity monthly endpoint 与 SEC submissions 均使用显式 snapshot cursor policy：candidate
+  大于 current 才写入并推进；相等时 CollectionRun succeeded/no-new-items，cursor/watermark 不变且
+  不创建 RawItem/EvidenceItem/ContentItem/Notification；小于 current 继续 fail closed。Marketaux 与
+  Finnhub 仍使用 strict successor policy，不做全局 `>=` 放宽。
 
 ## 3. Visible ContentItem 与 routing
 
@@ -85,6 +89,10 @@ summary 明确分离 `collection_status` 与 `delivery_status` / `delivery_safe_
 - [x] Telegram credential 恢复后 PENDING 通知进入正常 delivery path。
 - [x] retryable collection error 返回 RETRY；retry delay 未到不执行，到期后可早于 cadence 重试。
 - [x] retry success 恢复正常 cadence；non-retryable failure 不进入快速 retry。
+- [x] EIA initial → repeated same → newer → older snapshot PostgreSQL regression；same 可连续多轮且
+  不累计 error、不重复 persistence/notification，newer 推进，older fail closed。
+- [x] EIA same snapshot 在 scheduler 中为 NO_NEW_ITEMS，其他三家继续且 overall PASS。
+- [x] Marketaux/Finnhub strict cursor 与 SEC snapshot cursor regression 保持通过。
 - [x] 默认 smoke 完全 inert，不读取 credential、不访问 runtime、不写 DB。
 - [x] source audit 不依赖 `.env`、raw capture、AI、Event、clustering 或 recommendation。
 - [ ] Reviewer PASS。
@@ -104,3 +112,5 @@ summary 明确分离 `collection_status` 与 `delivery_status` / `delivery_safe_
 | Round | Result | Evidence | Resolution |
 |---|---|---|---|
 | 1 | IN REVIEW | scheduler、routing、reliable notification、mock/PostgreSQL tests 与 review package | 等待用户/ChatGPT Review |
+| 2 | REQUEST CHANGES | Telegram credential 阻断 collection；RETRY 被正常 cadence 延迟 | 已解耦 delivery，并用 CollectionRunner retry delay + 独立 Redis gate 继续同一 run |
+| 3 | REQUEST CHANGES | EIA same monthly snapshot 被 strict successor 错判为 contract invalid | EIA 显式采用 snapshot policy；补 initial/same/newer/older/repeated 与 scheduler 回归 |
