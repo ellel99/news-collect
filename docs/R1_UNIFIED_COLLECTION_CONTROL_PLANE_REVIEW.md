@@ -35,9 +35,14 @@ document only; a separate explicit implementation authorization is still require
   receives no R1 schema extension.
 - all initial Provider operations have `pagination_capability=none`; `has_more` becomes explicit incomplete coverage,
   never a repeated first-page request or false completion.
+- incomplete coverage persists as PARTIAL/`coverage_incomplete`, degraded health and unchanged complete watermark;
+  the DB state—not transient logs—is restart authority.
+- decoded response bytes are bounded in streaming transport before JSON parse or persistence.
 - RawItem/Run source/account equality is PostgreSQL-enforced with null-safe semantics; migration mismatch blocks.
 - scheduler and worker share one exact eligibility rule for Source, Account, Target, registry and revision state.
 - only one scheduler is authoritative; shadow mode performs no request/enqueue/write.
+- deployment is expand/contract: Migration A remains old/new-worker compatible, cursor rollback uses transactional
+  dual-write, and Migration B is applied only after the reviewed rollback window closes.
 - PR #39 Draft migrations are excluded; implementation revision derives from the then-current real main head.
 
 ## 3. Review checklist
@@ -48,13 +53,17 @@ document only; a separate explicit implementation authorization is still require
 - [ ] Four Provider operation v1 schemas do not expand operation scope.
 - [ ] cadence/cursor/lock/retry/run/health/dispatch ownership is target-specific.
 - [ ] request/page/runtime/byte budgets and rate-limit grouping fail closed.
+- [ ] response-byte enforcement occurs before JSON parse/persistence for both declared and streamed overflow.
 - [ ] initial pagination capability is none; has_more records incomplete coverage without a second request.
 - [ ] RawItem→Run→Target provenance is sufficient and consistency-protected.
 - [ ] null-safe RawItem→Run provenance is DB-enforced and Content/Evidence audit is a R2/R8 prerequisite.
 - [ ] collection remains independent from Notification/Telegram/Event delivery through durable PENDING intent,
   reconciliation and a delivery-only DB polling task.
+- [ ] Notification candidate policy, cutover watermark, bounded reconciler and no-default-history rule are exact.
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
-- [ ] shadow/cutover/rollback guarantee one authoritative scheduler.
+- [ ] Migration A compatibility, shadow/cutover, cursor dual-write rollback and Migration B finalization guarantee one
+  authoritative scheduler and a deployable rolling sequence.
+- [ ] the normative state matrix and config-revision in-flight state machine cover all terminal/retry/manual states.
 - [ ] exact implementation files, four batches and PostgreSQL/Redis/Celery test matrix are accepted.
 - [ ] R2–R8, Provider expansion, Event/Evidence/Fact/AI and Market Validation remain out of scope.
 - [ ] PR #39 remains Draft and untouched.

@@ -82,7 +82,6 @@ PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrat
 | `cadence_seconds` | integer | no | `1..86400` |
 | `batch_limit` | integer | no | operation unit；positive and registry ceiling |
 | `max_requests_per_run` | smallint | no / `1` | schema `1..20`; initial v1 registry requires `1` |
-| `pagination_capability` | varchar(20) | no / `none` | R1 registry-derived；initial operations only `none` |
 | `max_pages_per_run` | smallint | no / `1` | initial v1 operations must equal `1` |
 | `max_response_bytes` | integer | no | `1024..10_000_000` |
 | `request_timeout_seconds` | integer | no | `1..60` |
@@ -207,7 +206,9 @@ task, Redis, run, log or safe error.
 
 ### 6.1 Initial pagination capability
 
-All four v1 operations declare `pagination_capability=none` and require `max_pages_per_run=1`:
+`pagination_capability` is a registry property, **not a DB column or mutable target value**, so there is one
+authority. All four v1 operations declare `pagination_capability=none`; registry validation requires
+`max_pages_per_run=1` and `max_requests_per_run=1`:
 
 - Marketaux currently always requests `page=1`;
 - EIA has no offset/continuation implementation;
@@ -215,10 +216,16 @@ All four v1 operations declare `pagination_capability=none` and require `max_pag
 - Finnhub quote is a single snapshot and is not pageable.
 
 The generic control-plane interface may model future continuation, but it must not issue a second request for these
-operations. If an adapter reports `has_more=true`, the run persists the accepted first batch and records safe state
-`truncated=true`, `coverage_incomplete=true`, `continuation_status=unsupported`; it must not claim complete, advance
-a final coverage watermark, or repeat page 1. Real Marketaux page, EIA offset and SEC history continuation are R3–R5
-operation expansion and are not implemented by R1. No current Provider can claim pagination recovery acceptance.
+operations. If an adapter reports `has_more=true`, the run persists the accepted first batch and uses existing
+persistent fields as the sole coverage state: `CollectionRun.status=partial`, `error_code=coverage_incomplete`,
+`error_message_redacted='provider continuation is unsupported for this operation'`; target health becomes
+`degraded`, `last_error_code=coverage_incomplete`, `next_retry_at=NULL`, and `next_due_at` advances by normal cadence.
+This is a known coverage limitation, not an operational failure: `consecutive_failures` does not increment and
+complete-success `last_success_at` does not update. The observation cursor may advance to the maximum stable identity
+persisted in the accepted batch, but complete-window watermark does not advance. The run is never succeeded,
+complete or no-new-items, and restart can query the PARTIAL run/target health from DB. It must not repeat page 1.
+Real Marketaux page, EIA offset and SEC history continuation are R3–R5 operation expansion and are not implemented
+by R1. No current Provider can claim pagination recovery acceptance.
 
 ## 7. Request budgets and rate-limit groups
 
@@ -230,6 +237,20 @@ Initial `rate_limit_group` values are static provider groups (`marketaux:default
 `sec-edgar:public`). Future account-specific groups use an opaque internal account UUID, never credential/contact.
 Redis token/cooldown keys are group-scoped. 429 honors bounded Retry-After; group cooldown does not block targets
 outside the group.
+
+### 7.1 Enforceable response-byte boundary
+
+`ProviderTransportRequest` gains required `max_response_bytes`; the factory copies the effective target/registry
+budget into every request. `HttpxProviderTransport` must use HTTPX streaming rather than `response.json()` first.
+If a valid nonnegative `Content-Length` exceeds the budget, reject before body read. Otherwise read bounded decoded
+bytes (`aiter_bytes`, after HTTP content decoding), stop as soon as accumulated decoded bytes exceed the budget, and
+only then JSON-decode the bounded buffer. The normative budget is decoded response-body bytes; Content-Length is an
+early wire-length guard, not the final accounting source.
+
+Over-limit response is not parsed or persisted and returns safe code `provider_response_too_large`, non-retryable
+for the unchanged target budget. No length, payload fragment, URL or header value enters error output. Mock transport
+must exercise declared-too-large, streaming overflow, exact-boundary, missing/invalid Content-Length and no-parse/
+no-persistence behavior.
 
 ## 8. Generic future cursor interface, current non-pageable operations, backfill and revision
 
@@ -266,7 +287,26 @@ outside the group.
 One target failure/lock/retry cannot affect another target. Source success/failure fields become display-only
 aggregates and never gate target scheduling.
 
-### 9.1 Exact dispatch eligibility
+### 9.1 Config revision and in-flight run state machine
+
+- edit, pause, block, retire and rollback-as-forward-revision atomically increment `config_revision` under CAS;
+- pause clears `next_retry_at`; block/retire clear it and prevent automatic dispatch; retired is terminal;
+- stale queued/retry tasks delete only their own revision-scoped Redis retry/dispatch marker after owner-token/CAS
+  verification. They never delete a newer revision marker;
+- if state changes after dispatch but before run creation, worker exits `stale_target_revision` with no run;
+- if a run exists or worker holds lock when revision changes, the old worker must detect revision before every request
+  and checkpoint. It closes its run `FAILED`, safe code `target_revision_invalidated`, clears the old retry marker,
+  releases the partial unique RUNNING row and owner lock, and cannot update target health/cursor via CAS;
+- if revision changes while retry waits, stale retry closes the existing RUNNING run the same way before any request;
+- a new revision may create a new run only after no RUNNING row remains for target/run_mode and the old owner lock is
+  absent. Recovery may close an orphaned stale run but cannot advance cursor;
+- old worker updates target/run/cursor only with `WHERE target_id AND config_revision AND owner_token` equivalent
+  guards, preventing it from overwriting the newer generation.
+
+Manual pause without an in-flight run creates no CollectionRun. Manual block/retire requires value-free AuditLog.
+Rollback restores old semantic values as a new revision and follows the same drain/closure rules.
+
+### 9.2 Exact dispatch eligibility
 
 Scheduler and worker call the same pure eligibility policy:
 
@@ -318,34 +358,137 @@ would create competing claims/status and is forbidden. No Notification/Outbox sc
 contract. If implementation proves the atomic/reconciliation boundary impossible with current columns, it must stop
 and return for schema re-review rather than silently expanding migration scope.
 
+### 10.1 Exact intent/reconciler candidate contract
+
+- approved providers are exactly `marketaux`, `finnhub`, `eia`, `sec_edgar`;
+- eligible `ContentKind` is `article`, `feed_entry`, or `official_release`; `x_post` and unknown kinds are excluded;
+- Source must pass R1 execution authorization and Content must have nonblank safe title plus `source_published_at`;
+  canonical URL is optional, but when present must be sanitized public http(s) without userinfo/secret marker;
+- policy is fixed to `policy_rule_id=spec-0038-multi-provider-telegram`, `policy_version=1`,
+  `channel=telegram_push`, `payload_version=1`, priority P3;
+- deterministic dedup key remains `{provider}:telegram:{content_item_id}` and the existing unique index is authority;
+- Evidence-only rows, missing Content, unsafe/missing display, Event rows, non-Telegram policy and non-approved
+  provider content never create an intent.
+
+Cutover watermark is stored in existing `system_metadata` key `notification.intent.cutover.v1`; its value is the
+stable tuple `<content_items.created_at UTC ISO8601>|<content_items.id UUID>` (well below 500 chars). It is written
+exactly once in the same maintenance transaction that records legacy combined task drain complete, immediately
+before enabling the new intent producer/reconciler. Candidate ordering is `(created_at,id)` ascending. Only Content
+strictly after this watermark, or Content explicitly marked intent-required by the new producer transaction, is
+eligible. Historical Content is not backfilled by default; policy version changes do not reactivate it. Any bounded
+historical replay requires separate user authorization and its own reviewed command.
+
+The reconciler polls bounded batches (default 100, hard max 500), keyset ordered by `(created_at,id)`, and uses
+`FOR UPDATE SKIP LOCKED` or unique-key insert conflict handling for concurrent workers. Restart repeats from DB and
+the dedup key absorbs replay. Audit recovery rows use `AuditLog.action=notification_intent_recovery`,
+`target_type=content_item`, `target_id=<ContentItem.id>`, and value-free `after` metadata containing only policy id/
+version, status and safe error code—never title/URL/content.
+
+If projection sidecar/downstream projection fails and no ContentItem exists, record safe code
+`downstream_projection_incomplete` against the run/RawItem audit. The R1 reconciler must not read RawItem payload,
+provider projection sidecar or raw response to reconstruct Content; R2 owns durable projection recovery.
+
 ## 11. Legacy migration, shadow, cutover and rollback
 
 Migration must be additive and based on the implementation branch's real head (currently `0005`; never PR #39's
-Draft `0006/0007`). One linear revision creates target enums/table, target-owned cursor/run fields and constraints.
+Draft `0006/0007`). It uses two serial revisions; deployment never assumes migration and worker code are atomic.
 
-1. Create schema nullable where backfill requires it; keep legacy scheduler authoritative.
-2. Generate one target per existing source/account operation with deterministic non-secret target_key. Legacy
-   AAPL/technology/electricity/CIK values become `draft` or `paused`, never automatically active.
-3. Source-level fake rows get a source target. Ambiguous/invalid rows become `blocked` and produce value-free audit.
-4. Map every historical run to the deterministic historical target. Map each cursor only when account+cursor codec
-   has exactly one compatible target; ambiguity blocks migration before NOT NULL/final uniqueness.
-5. Apply final NOT NULL/FK/index/trigger constraints only after reconciliation counts match.
-6. Shadow mode compares old/new due decisions, target resolution and cursor position without network, enqueue or
-   duplicate write. No dual authoritative scheduler.
-7. Reviewer approves per-target activation. Stop legacy multi-provider Beat, drain in-flight runs, then enable the
-   unified dispatcher as the **single authoritative scheduler**.
-8. Rollback stops unified dispatch first, drains workers, restores legacy Beat, and preserves all target/run/cursor
-   audit. No `down -v`, volume deletion, Alembic stamp fabrication or published-history rewrite.
+### 11.1 Expand/contract deployment
 
-Downgrade is allowed only before target-owned production state exists or after verified export/reconciliation;
-otherwise it must fail closed. `SourceAccount.collection_options`, Source schedule and account cursor compatibility
-columns remain deprecated-but-present throughout R1; deletion is not part of this implementation.
+| phase | action | authoritative path | rollback condition |
+|---|---|---|---|
+| 0 | stop/drain stale-recovery and combined tasks only for the short expand maintenance window; record zero RUNNING legacy runs | legacy after drain | resume unchanged legacy tasks |
+| 1 / Migration A | create enums/target table; add nullable target/run/cursor compatibility fields, indexes and non-destructive checks | legacy | downgrade A only if no target-owned writes |
+| 2 | deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | legacy | abort on mismatch; keep targets paused/blocked |
+| 3 | deploy compatible runtime: legacy collection remains authoritative but new runtime writes `target_id` and dual-writes target+legacy cursor | legacy | deploy previous worker; nullable expand schema remains |
+| 4 | shadow read-only comparison of due/config/cursor; no request, enqueue or write | legacy | disable shadow |
+| 5 | reviewer approves each target; set approved rows paused→active with new config_revision and cutover-ready next_due_at | legacy | return target to paused with forward revision |
+| 6 | stop/drain legacy combined collection task and all in-flight runs; write Notification cutover watermark | none (maintenance boundary) | restart legacy before unified enable |
+| 7 | enable unified scheduler/worker as sole collection authority and delivery-only Beat as sole Telegram claimer | unified | stop/drain unified, reconcile cursors, restore legacy |
+| 8 | reconcile target/run/cursor/notification counts and operate through rollback window | unified + cursor dual-write | rollback only after verified target→legacy reconciliation |
+| 9 / Migration B | after rollback window exit, scan zero null/mismatch; add NOT NULL/final unique/FK/triggers | unified | forward recovery only; no runtime rollback |
+
+Migration B is never deployed while an old worker can run. Compatibility tests must prove old worker+Migration A and
+new worker+Migration A. There is no supported old worker+Migration B combination.
+
+### 11.2 Cursor rollback contract
+
+R1 chooses **transactional dual-write during the rollback window**. Every committed normal batch updates the
+target-owned cursor and compatible legacy account cursor in the same transaction; normal and `manual_bounded`
+backfill target cursors remain separate, and backfill never overwrites legacy normal cursor. Continuation,
+complete-window watermark and revision marker are target-owned; because initial operations are non-pageable,
+continuation is null. The legacy cursor receives only the committed observation position/watermark/revision values
+its existing codec can represent.
+
+Before rollback, stop/drain unified workers and compare every active target position with its legacy cursor. Any
+unrepresentable continuation/revision or mismatch blocks rollback. After restoring legacy, run duplicate/gap checks
+over stable provider identity and watermark boundaries before requests resume. The rollback window ends only after
+at least two normal cadences per active target, zero mismatch/incomplete reconciliation, notification recovery PASS,
+and explicit reviewer approval. Migration B then disables legacy cursor writes; runtime rollback is no longer
+allowed—only forward recovery. Legacy columns remain for audit until a later cleanup SPEC.
+
+### 11.3 Deterministic legacy identity and exact mapping
+
+Target key algorithm is fixed:
+
+- source-level: `legacy.<provider>.source.<source_uuid_lower_hex_with_hyphens>`;
+- account-level: `legacy.<provider>.account.<source_account_uuid_lower_hex_with_hyphens>`;
+- `<provider>` is the allowlisted normalized `Source.access_method` (`[a-z0-9_]+`), not user data;
+- result matches `^[a-z0-9][a-z0-9._-]{0,159}$`, contains no query/config/identity/secret, and is at most 100 chars;
+- same rows always yield the same key. UUID identity gives global uniqueness; any unique conflict or malformed
+  provider blocks migration with safe code `legacy_target_key_conflict`, never suffixes/guesses.
+
+| legacy source | operation/config mapping | initial target state |
+|---|---|---|
+| fake source-level/account | `fake/fake_sequence`; only currently allowlisted synthetic behavior fields | paused; strict cursor |
+| Marketaux account | `marketaux/news_all`; exact v1 query/language/symbols validation | paused; compound cursor |
+| Finnhub account | `finnhub/quote`; exact one symbol | paused; compound strict cursor |
+| EIA account | `eia/electricity_retail_sales`; dataset must equal electricity | paused; snapshot compound cursor |
+| SEC account | `sec_edgar/submissions_recent`; exact ticker+CIK | paused; snapshot/revision compound cursor |
+
+Unknown provider, multiple operation interpretations, missing required config, source-level real-provider row, or
+account/source inconsistency maps to `blocked`, not a guessed operation. Every created target starts
+`config_revision=1`, `health_status=unknown`, `consecutive_failures=0`, `next_retry_at=NULL`, `last_attempt_at=NULL`,
+`last_success_at=NULL`. `next_due_at` is the migration timestamp but paused/blocked status prevents dispatch; explicit
+activation sets a reviewed next_due_at and increments revision. Cadence is the positive legacy Source schedule when
+present, otherwise the already-configured provider cadence setting; if neither is valid, block. Rate groups are the
+four static groups in §7 (fake=`fake:test`). Budgets are exact §6/§7 v1 hard values, max pages/requests=1. No smoke
+value becomes authorization.
+
+### 11.4 Normative state transition matrix
+
+This table is the sole normative state authority; prose elsewhere must defer to it. `LA` means set
+`last_attempt_at=now`; `LS` means set `last_success_at=now`; `ND` means normal cadence from completion; `NR` means
+bounded retry time; `—` means unchanged/not applicable. Source aggregate is display-only and never gates dispatch.
+
+| event | CollectionRun | target status | health | last attempt | last success | failures | last error | next due | next retry | cursor/watermark | Source aggregate | recovery |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| success with items | SUCCEEDED | active | healthy | LA | LS | 0 | NULL | ND | NULL | observation+complete watermark advance atomically | recompute display | automatic cadence |
+| no-new-items | SUCCEEDED | active | healthy | LA | LS | 0 | NULL | ND | NULL | unchanged | recompute display | automatic cadence |
+| coverage incomplete | PARTIAL | active | degraded | LA | unchanged | unchanged | coverage_incomplete | ND | NULL | observation may advance; complete watermark unchanged | recompute display | normal cadence / later operation SPEC |
+| timeout/429/5xx retry | RUNNING retry-pending | active | degraded | LA | unchanged | +1 | classified safe code | unchanged | NR | unchanged | recompute display | automatic bounded retry |
+| retry exhausted | FAILED, or PARTIAL only if items already committed | active | degraded | LA | unchanged | +1 | retry_exhausted | ND | NULL | last committed checkpoint only | recompute display | normal cadence/manual review |
+| config/schema invalid | no run if precheck; otherwise FAILED | blocked | blocked | LA only if run | unchanged | unchanged | config_invalid | unchanged | NULL | unchanged | recompute display | manual fix + forward revision |
+| credential missing | no run | active | degraded | LA | unchanged | unchanged | credential_missing | ND | NULL | unchanged | recompute display | credential restore/manual retry |
+| Source authorization change | no run; in-flight FAILED | blocked | blocked | LA if in-flight | unchanged | unchanged | source_unauthorized | unchanged | NULL | unchanged | recompute display | manual authorization + forward revision |
+| Account identity change | no run; in-flight FAILED | blocked | blocked | LA if in-flight | unchanged | unchanged | account_identity_invalid | unchanged | NULL | unchanged | recompute display | verify identity + forward revision |
+| DB/checkpoint failure | RUNNING retry-pending, then FAILED on exhaustion | active | degraded | LA | unchanged | +1 | database_unavailable | unchanged | NR or NULL on exhaustion | unchanged | recompute display | retry; manual after exhaustion |
+| lock lost | FAILED | active | degraded | LA | unchanged | +1 | lock_lost | unchanged | NR | unchanged | recompute display | stale/automatic retry |
+| stale recovery | FAILED | active unless separately blocked | degraded | unchanged | unchanged | +1 | stale_run | unchanged | classified NR/ND | unchanged | recompute display | automatic classified recovery |
+| manual pause | no run; in-flight FAILED | paused | unchanged | —/LA if in-flight | unchanged | unchanged | target_paused if in-flight | unchanged | NULL | unchanged | recompute display | manual resume + forward revision |
+| manual block | no run; in-flight FAILED | blocked | blocked | —/LA if in-flight | unchanged | unchanged | target_blocked | unchanged | NULL | unchanged | recompute display | manual reviewed unblock |
+| manual retire | no run; in-flight FAILED | retired | blocked | —/LA if in-flight | unchanged | unchanged | target_retired | unchanged | NULL | unchanged | recompute display | none; create new target if later approved |
+| config revision invalidation | no run pre-create; existing run FAILED | new revision status | new revision health/unknown | LA only if existing run | unchanged | unchanged | target_revision_invalidated | new revision value | NULL old revision | unchanged | recompute display | close stale run; new revision may run |
+
+Credential/config/authorization failures do not fast-loop. Coverage limitation does not increment failures. Only a
+complete success or valid no-new-items updates `last_success_at`; partial/failed/blocked outcomes never do.
 
 ## 12. Exact implementation file scope
 
 Allowed new files:
 
-- `alembic/versions/<real-next>_create_collection_targets.py`
+- `alembic/versions/<real-next>_expand_collection_targets.py`
+- `alembic/versions/<following>_contract_collection_targets.py`
 - `src/market_intelligence/collection/target_configs.py`
 - `src/market_intelligence/collection/target_repository.py`
 - `src/market_intelligence/collection/adapter_factory.py`
@@ -353,6 +496,7 @@ Allowed new files:
 - `src/market_intelligence/providers/credential_resolver.py`
 - `src/market_intelligence/notifications/intent.py`
 - `src/market_intelligence/notifications/delivery.py`
+- `src/market_intelligence/tasks/notification_intent_reconcile.py`
 - `src/market_intelligence/tasks/notification_delivery.py`
 - `tests/test_collection_targets_postgres.py`
 - `tests/test_collection_control_plane_postgres.py`
@@ -364,14 +508,14 @@ Allowed modifications:
 - `src/market_intelligence/db/models.py`
 - `src/market_intelligence/collection/{contracts,scheduler,runner,locking,retry}.py`
 - `src/market_intelligence/tasks/{collection,celery_app}.py`
-- `src/market_intelligence/providers/{registry,runtime}.py`
+- `src/market_intelligence/providers/{contracts,http_transport,registry,runtime}.py`
 - `src/market_intelligence/pipeline/{provider_runtime,multi_provider_ingestion}.py`
 - `src/market_intelligence/scheduler/multi_provider_runtime.py` only to remove collection authority after cutover;
   delivery behavior remains
 - `src/market_intelligence/scheduler/{multi_provider,marketaux_telegram}.py` only to extract/reuse Notification
   intent/claim logic and retire combined collection+delivery authority
 - `src/market_intelligence/tasks/{multi_provider_scheduler,marketaux_telegram}.py` to retire combined tasks
-- relevant config templates, existing collection/scheduler tests and approved project docs.
+- relevant config templates, transport/adapter/collection/scheduler/notification tests and approved project docs.
 
 Not allowed: Provider route/field expansion, durable safe projection, Event/Evidence/Fact/AI modules, Telegram
 message/routing expansion, Market Validation, new Provider, PR #39 files, credential files, live data.
@@ -380,10 +524,11 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 
 | batch | scope | merge/acceptance gate |
 |---|---|---|
-| I | migration + ORM + typed config registry | exact schema/constraints; upgrade/downgrade/upgrade; legacy reconciliation; secret/config fail closed |
+| I-A | Migration A nullable expand + ORM compatibility + typed config registry | real-head linearity; old worker+A and new worker+A; deterministic target mapping; historical value-free audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
 | III | scheduler/claim/lock/retry/run/cursor/health | multi-target concurrency, target isolation, budgets, pagination-capability-none, restart/stale recovery |
-| IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | no dual collection/delivery claim; notification recovery; rollback drill; full regressions |
+| IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
+| I-B | Migration B final constraints after rollback-window approval | zero null/mismatch audit; new worker+B only; final constraints/triggers; forward recovery only |
 
 Each batch requires its own implementation review evidence inside the authorized implementation PR sequence.
 No batch may activate production targets or perform bounded live verification without separate user authorization.
@@ -392,9 +537,10 @@ No batch may activate production targets or perform bounded live verification wi
 
 - PostgreSQL: every column/enum/check/FK/unique/partial index/immutability trigger; source/account consistency;
   target/run provenance; null-safe RawItem/Run equality; Content/Evidence zero-mismatch prerequisite audit;
-  migration reconciliation and ambiguous fail-closed.
+  deterministic legacy target mapping; Migration A/B reconciliation and ambiguous fail-closed.
 - Redis: concurrent dispatch SET NX EX, owner-token acquire/renew/release/loss, rate-group cooldown, retry vs cadence,
-  stale recovery, restart markers and TTL coverage.
+  stale recovery, restart markers and TTL coverage; stale revision can remove only its own marker and cannot consume
+  a newer revision retry/dispatch key.
 - Celery: task payload allowlist, exact config_revision, worker reload/revision mismatch before credential, Beat
   replay/process restart, single enqueue per slot, retry lineage and no serialized config/credential.
 - concurrency: two same-provider targets both run; same target single owner; one failure does not block another;
@@ -402,15 +548,22 @@ No batch may activate production targets or perform bounded live verification wi
   rollback generation make stale tasks fail before credential/network.
 - budgets/pagination: operation units and request/runtime/byte ceilings; all initial operations require one page;
   `has_more=true` records truncated/incomplete/unsupported and never repeats page 1 or claims complete. Generic
-  continuation contract is unit-tested without claiming Provider recovery support.
-- cursor: strict, snapshot, compound, normal/backfill separation and revision cases; no v1 Provider page recovery.
+  continuation contract is unit-tested without claiming Provider recovery support. Transport rejects oversized
+  Content-Length and streamed decoded bodies before JSON parsing/persistence, including exact-boundary tests.
+- coverage state: DB restart observes PARTIAL/coverage_incomplete, degraded target, unchanged complete watermark,
+  normal cadence, no failure increment and no false complete/succeeded/no-new state.
+- cursor: strict, snapshot, compound, normal/backfill separation and revision cases; no v1 Provider page recovery;
+  target↔legacy transactional dual-write, mismatch blocking, rollback reconciliation and rollback-window exit.
 - eligibility: scheduler and worker share exact Source authorization/enabled, Account identity/enabled/source-level,
   target status/revision and registry rules; post-dispatch state change prevents network.
 - delivery: deterministic PENDING intent, atomic-or-reconcilable boundary, reconciler after intent failure,
   delivery-only DB polling/claim, missing credential preservation, retry/SENT dedup, Beat restart recovery and no
-  simultaneous old/new delivery claim; Event delivery cannot gate collection.
-- migration: real-head linearity, upgrade/downgrade/re-upgrade, shadow comparison, cutover/rollback, no double head,
-  no PR #39 Draft migration.
+  simultaneous old/new delivery claim; exact candidate policy, cutover watermark, bounded keyset recovery and no
+  default historical backfill; Event delivery cannot gate collection.
+- state machine: every row in §11.4, including config invalidation before/after run creation, pause/block/retire,
+  lock loss, stale recovery, retry exhaustion, credential/authorization changes and complete-success timestamps.
+- migration: real-head linearity, A upgrade/downgrade/re-upgrade, old worker+A, new worker+A, shadow comparison,
+  transactional cursor rollback drill, B finalization with new worker only, no double head and no PR #39 Draft migration.
 - regression: all current Provider/CollectionRunner/RawItem/Evidence/Content/Event/Scheduler/Telegram tests PASS;
   network tests mock-only and package review contains no secret/local data.
 

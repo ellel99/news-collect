@@ -106,6 +106,12 @@ completeness，真实 AI 才可重新评估。
 R1 最终合同规定：初始四 operation 均无真实 pagination capability；target execution 使用单调
 `config_revision` 防止 stale task；scheduler/worker 共用严格 eligibility；collection 只创建 durable
 PENDING Notification intent，独立 delivery-only task 从 DB claim/send，Telegram 不参与 collection 状态。
+配置世代、dispatch/task/Redis marker 必须 exact-match；stale generation 在 credential/network 前停止，
+并且只能清理自身 marker。HTTP transport 对 decoded body 在 JSON parse 前执行 hard byte budget。
+部署采用 Migration A nullable expand → old/new worker compatibility → shadow/cutover → cursor transactional
+dual-write rollback window → Migration B final constraints，禁止把 schema 与 worker 假定为原子部署。
+Notification intent 只覆盖审核过的四 Provider、安全 Content kind 和 cutover watermark 之后的候选；默认
+不回补历史，恢复由 bounded DB keyset reconciler + unique dedup key 完成。
 
 ### 2.1 Source Registry
 

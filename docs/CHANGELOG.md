@@ -9,6 +9,9 @@
 - Closes durable delivery contract with deterministic PENDING Notification intent, reconciliation and an independent
   delivery-only Celery task; no Notification/Outbox schema change.
 - Adds PostgreSQL null-safe RawItem→Run provenance enforcement and exact shared scheduler/worker eligibility rules.
+- Defines deployable Migration A/B expand-contract sequencing, transactional cursor dual-write rollback, immutable
+  legacy target mapping, exact notification cutover watermark/candidate policy and a single normative state matrix.
+- Requires decoded response-byte enforcement before JSON parsing and durable PARTIAL coverage-incomplete semantics.
 - 从 `main@9c68dd6` 重新审计 ORM、migration、generic dispatcher/task、CollectionRunner、Provider runtime、
   Notification/Outbox、Redis lock/retry 与测试，未复制旧架构假设。
 - 新增 implementation-ready SPEC-0041 contract：固定 global immutable `target_key`、最终

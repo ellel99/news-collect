@@ -12,7 +12,8 @@
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
-  SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
+  SPEC-0041 architecture Docs Review 已 PASS；R1 implementation contract Docs Review 仍为 PENDING，
+  这不授权代码或 migration。
   R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 Docs Review 已激活，但 implementation not
   authorized/not started。PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
@@ -20,7 +21,9 @@
   `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；不得开始 schema/scheduler 实现。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
-  delivery-only task 解耦；scheduler/worker 共用 exact eligibility。以上仍只是合同，不是实现事实。
+  delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
+  dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
+  合同。以上仍只是 Docs Review 内容，不是实现事实。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。

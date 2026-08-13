@@ -164,6 +164,11 @@ RawItem→CollectionRun→CollectionTarget 追溯；PostgreSQL 必须以 null-sa
 保护该链。ContentItem/EvidenceItem 已复制 provenance 的完整 DB audit/constraint 决策是 R2/R8 强制
 前置项，本 R1 Docs Review 不修改 schema。
 
+`pagination_capability` 不是数据库中的第二份配置，而是 typed operation registry 的唯一权威。首批四个
+v1 operation 均为 `none`、每 run 一次请求/一页；若 adapter 仍报告 `has_more=true`，run 必须持久化为
+PARTIAL/`coverage_incomplete`，完整窗口 watermark 不推进。状态字段、迁移 A/B 和唯一规范状态矩阵以
+SPEC-0041 implementation contract 为准，本文件不另行定义竞争语义。
+
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
 
 现有 bounded pipeline 的安全 projection 不能被描述为已完成的通用 durable contract。R2 将独立审核
