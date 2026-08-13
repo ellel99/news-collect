@@ -104,8 +104,8 @@ def upgrade() -> None:
             "strong_identity_hash IS NULL OR strong_identity_hash ~ '^[0-9a-f]{64}$'",
             name="ck_event_candidates_strong_identity_hash",
         ),
-        sa.CheckConstraint("evidence_count > 0", name="ck_event_candidates_evidence_positive"),
-        sa.CheckConstraint("source_count > 0", name="ck_event_candidates_source_positive"),
+        sa.CheckConstraint("evidence_count >= 0", name="ck_event_candidates_evidence_nonnegative"),
+        sa.CheckConstraint("source_count >= 0", name="ck_event_candidates_source_nonnegative"),
         sa.CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_event_candidates_confidence"),
         sa.CheckConstraint(
             "importance_score BETWEEN 0 AND 100", name="ck_event_candidates_importance"
@@ -145,16 +145,22 @@ def upgrade() -> None:
     op.create_table(
         "event_candidate_evidence",
         sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            primary_key=True,
+        ),
+        sa.Column(
             "event_candidate_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("event_candidates.id", ondelete="RESTRICT"),
-            primary_key=True,
+            nullable=False,
         ),
         sa.Column(
             "evidence_item_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("evidence_items.id", ondelete="RESTRICT"),
-            primary_key=True,
+            nullable=False,
         ),
         sa.Column("match_rule", sa.String(100), nullable=False),
         sa.Column("rule_version", sa.Integer(), nullable=False),
@@ -175,10 +181,11 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "uq_event_candidate_evidence_pair",
+        "uq_event_candidate_evidence_active_pair",
         "event_candidate_evidence",
         ["event_candidate_id", "evidence_item_id"],
         unique=True,
+        postgresql_where=sa.text("active"),
     )
     op.create_index(
         "ix_event_candidate_evidence_item", "event_candidate_evidence", ["evidence_item_id"]

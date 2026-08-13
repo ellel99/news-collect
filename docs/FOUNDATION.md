@@ -6,11 +6,15 @@
 
 ## 0. 冻结声明
 
-本版本是 Phase 1 开发基线。单用户、美股与 Crypto 范围、Broad Scan、Controlled Push、四阶段边界、Phase 1 技术基线、禁止自动交易和禁止隐式行为收窄已经冻结。普通功能开发不得顺带修改。
+本版本保留 Phase 1 开发基线，并批准进入 Event Intelligence foundation。单用户、美股与 Crypto
+范围、Broad Scan、Controlled Push、四阶段边界、Phase 1 技术基线、禁止自动交易和禁止隐式
+行为收窄继续冻结。普通功能开发不得顺带修改。
 
 Phase 1 只实现：采集、原始留痕、确定性标准化、确定性去重、存储、Notification Outbox、Telegram 推送和运维。
 
-Phase 1 不实现：AI/LLM、Event、Evidence、Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 或任何交易建议。
+Phase 1 历史范围不实现 AI/LLM 或 Event；v2.2 只增加 SPEC-0039 已审核的 EventCandidate、Evidence
+association、deterministic clustering、importance foundation 与 mock-only ImpactAnalyzer contract。
+真实 AI/Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 和交易建议仍不允许。
 
 ## 1. 项目愿景
 

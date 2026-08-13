@@ -83,6 +83,9 @@ Anchor priority is:
 
 Rules:
 
+- canonical URL normalization preserves all business query parameters, sorts query pairs deterministically,
+  normalizes scheme/hostname/default port/path, ignores fragments, and removes only the explicit tracking
+  allowlist (`utm_*`, `fbclid`, `gclid`); same path with different business query values must not merge;
 - exact official/provider identity is idempotent;
 - cross-provider grouping requires canonical URL or entity + title fingerprint + time-window agreement;
 - same company alone never merges events;
@@ -125,14 +128,17 @@ Implementation may introduce one isolated, reversible Alembic revision after app
 
 ### `event_candidate_evidence`
 
+- independent UUID association-generation `id` primary key;
 - `event_candidate_id` FK;
 - `evidence_item_id` FK;
-- `UNIQUE(event_candidate_id, evidence_item_id)` prevents duplicate membership within one candidate;
+- partial unique index on `(event_candidate_id, evidence_item_id) WHERE active = true` prevents duplicate
+  active membership while allowing multiple immutable inactive history generations;
 - this first version does **not** add `UNIQUE(evidence_item_id)`: single-event ownership is not assumed without
   an independently reviewed policy;
 - `match_rule` / `cluster_rule`, `rule_version`, official-source flag, and `added_at` explain every association;
-- minimal reversible history uses `active` plus nullable `removed_at`; regrouping deactivates an association and
-  adds a replacement instead of erasing history;
+- minimal reversible history uses append-only generations with `active` plus nullable `removed_at`; deactivate
+  preserves the old row, reactivation creates a new row, and regrouping deactivates the old candidate link then
+  adds a new target link without overwriting prior match rule/version/timestamps;
 - physical EvidenceItem deletion is never used to correct clustering, and association rows are not hard-deleted
   during normal regrouping.
 
@@ -143,6 +149,12 @@ Required invariants:
 - a repeated run cannot create another candidate or duplicate association;
 - candidate creation is concurrency-safe through unique `cluster_key` and transactional conflict handling;
 - each active or historical association explains its rule/version and supports future reversible regrouping;
+- repository lookup returns every active membership; more than one active candidate for the same Evidence is an
+  explicit ambiguity that fails closed without modifying candidates, creating another candidate, or dropping links;
+- evidence/source counts, confidence, importance and reasons describe active membership only and are recalculated
+  after create, deactivate, reactivate and regroup;
+- a candidate with no active Evidence remains as an auditable `rejected` candidate with evidence/source counts,
+  confidence and importance all zero; reactivation restores candidate status and active-only aggregates;
 - persistence failures are explicit and do not mutate evidence;
 - migration upgrade/downgrade/re-upgrade must pass on PostgreSQL 16.
 
@@ -199,11 +211,15 @@ model credential, generated recommendation, or Telegram AI delivery.
 - [x] EventCandidate id/cluster_key remain unchanged when later Evidence is associated or stronger identity enriches it.
 - [x] Concurrent candidate creation resolves through DB uniqueness to one stable identity.
 - [x] Same canonical URL across Providers produces one candidate.
+- [x] Different business query values remain distinct; allowlisted tracking-only differences normalize equally.
 - [x] Official filing + coverage groups only with entity/time/fingerprint agreement.
 - [x] Same company but different fact remains separate; expired window remains separate.
 - [x] Repeated processing creates neither duplicate EventCandidate nor duplicate association.
 - [x] Multiple EvidenceItems map to one EventCandidate with full provenance traceability.
-- [x] Association uniqueness is pair-scoped; rule/version and active/removed history make regrouping auditable.
+- [x] Active association generation uniqueness is pair-scoped; append-only rule/version and active/removed
+  history make regrouping auditable.
+- [x] Deactivate/reactivate/regroup refresh active-only aggregates; zero-active candidates remain auditable.
+- [x] Multiple active candidate associations for one Evidence fail closed without mutation or data loss.
 - [x] Importance scoring is deterministic, bounded, and exposes component reasons.
 - [x] ImpactAnalyzer mock validates all direction/horizon values and rejects trading-action language.
 - [x] Tests make no real Provider, Telegram, market-validation, or AI request.
@@ -224,4 +240,5 @@ model credential, generated recommendation, or Telegram AI delivery.
 |---|---|---|---|
 | 1 | REQUEST CHANGES | Layer authority, stable candidate identity, and reversible association semantics required clarification | Clarified in commit 4092f6a |
 | 2 | PASS | Foundation v2.2 Freeze Review and SPEC-0039 Docs Review | Bounded implementation authorized in this PR |
-| 3 | PENDING | Bounded implementation, migration round trip, 440-test regression, and package review evidence | Await Implementation Review |
+| 3 | REQUEST CHANGES | Canonical URL false-merge risk, overwritten association history, stale aggregates, active-membership ambiguity, and stale docs | Corrected in the next PR #38 revision |
+| 4 | PENDING | Conservative URL identity, append-only membership generations, active aggregate/regroup semantics, 444-test regression, migration round trip and package evidence | Await next Implementation Review |

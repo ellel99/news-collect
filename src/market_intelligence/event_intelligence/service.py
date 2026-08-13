@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,11 +19,15 @@ from market_intelligence.db.models import (
     EvidenceItem,
 )
 from market_intelligence.event_intelligence.matching import (
+    RULE_VERSION,
     CandidateProjection,
     EvidenceProjection,
     MatchDecision,
     MatchRule,
+    derive_anchor,
+    evidence_signatures,
     match_existing,
+    title_fingerprint,
 )
 from market_intelligence.event_intelligence.scoring import (
     DeterministicImportanceScorer,
@@ -87,20 +91,20 @@ class EventCandidateRepository:
             for value in values
         )
 
-    async def active_association(
+    async def active_associations(
         self, session: AsyncSession, evidence_item_id: UUID
-    ) -> EventCandidateEvidence | None:
-        return cast(
-            EventCandidateEvidence | None,
-            await session.scalar(
-                select(EventCandidateEvidence)
-                .where(
-                    EventCandidateEvidence.evidence_item_id == evidence_item_id,
-                    EventCandidateEvidence.active.is_(True),
+    ) -> tuple[EventCandidateEvidence, ...]:
+        return tuple(
+            (
+                await session.scalars(
+                    select(EventCandidateEvidence)
+                    .where(
+                        EventCandidateEvidence.evidence_item_id == evidence_item_id,
+                        EventCandidateEvidence.active.is_(True),
+                    )
+                    .order_by(EventCandidateEvidence.added_at, EventCandidateEvidence.id)
                 )
-                .order_by(EventCandidateEvidence.added_at)
-                .limit(1)
-            ),
+            ).all()
         )
 
     async def get_candidate(
@@ -133,8 +137,11 @@ class EventCandidateService:
         projection = await self.repository.load_evidence_projection(session, evidence_item_id)
         if projection is None:
             raise ValueError("evidence_item_not_found")
-        existing_link = await self.repository.active_association(session, evidence_item_id)
-        if existing_link is not None:
+        existing_links = await self.repository.active_associations(session, evidence_item_id)
+        if len(existing_links) > 1:
+            raise ValueError("event_candidate_association_ambiguous")
+        if existing_links:
+            existing_link = existing_links[0]
             existing_candidate = await self.repository.get_candidate(
                 session, existing_link.event_candidate_id
             )
@@ -219,25 +226,22 @@ class EventCandidateService:
         projection: EvidenceProjection,
         decision: MatchDecision,
     ) -> EventCandidateEvidence:
-        link = await session.get(
-            EventCandidateEvidence, (candidate.id, projection.evidence_item_id)
+        active = await self.repository.active_associations(session, projection.evidence_item_id)
+        same_candidate = [item for item in active if item.event_candidate_id == candidate.id]
+        if len(active) > 1 or (active and not same_candidate):
+            raise ValueError("event_candidate_association_ambiguous")
+        if same_candidate:
+            return same_candidate[0]
+        link = EventCandidateEvidence(
+            event_candidate_id=candidate.id,
+            evidence_item_id=projection.evidence_item_id,
+            match_rule=decision.match_rule.value,
+            rule_version=decision.rule_version,
+            official_source=projection.official_source,
+            active=True,
+            removed_at=None,
         )
-        if link is None:
-            link = EventCandidateEvidence(
-                event_candidate_id=candidate.id,
-                evidence_item_id=projection.evidence_item_id,
-                match_rule=decision.match_rule.value,
-                rule_version=decision.rule_version,
-                official_source=projection.official_source,
-                active=True,
-                removed_at=None,
-            )
-            session.add(link)
-        elif not link.active:
-            link.active = True
-            link.removed_at = None
-            link.match_rule = decision.match_rule.value
-            link.rule_version = decision.rule_version
+        session.add(link)
         await session.flush()
         return link
 
@@ -249,13 +253,64 @@ class EventCandidateService:
         *,
         removed_at: datetime | None = None,
     ) -> EventCandidateEvidence:
-        link = await session.get(EventCandidateEvidence, (event_candidate_id, evidence_item_id))
-        if link is None:
+        links = (
+            await session.scalars(
+                select(EventCandidateEvidence).where(
+                    EventCandidateEvidence.event_candidate_id == event_candidate_id,
+                    EventCandidateEvidence.evidence_item_id == evidence_item_id,
+                    EventCandidateEvidence.active.is_(True),
+                )
+            )
+        ).all()
+        if not links:
             raise ValueError("event_candidate_evidence_not_found")
+        if len(links) > 1:
+            raise ValueError("event_candidate_association_ambiguous")
+        link = links[0]
         link.active = False
         link.removed_at = removed_at or datetime.now(UTC)
         await session.flush()
+        candidate = await self.repository.get_candidate(session, event_candidate_id)
+        if candidate is None:
+            raise ValueError("event_candidate_not_found")
+        await self._recalculate_aggregates(session, candidate)
         return link
+
+    async def regroup_association(
+        self,
+        session: AsyncSession,
+        evidence_item_id: UUID,
+        from_candidate_id: UUID,
+        to_candidate_id: UUID,
+    ) -> EventCandidateOutcome:
+        if from_candidate_id == to_candidate_id:
+            raise ValueError("event_candidate_regroup_target_unchanged")
+        projection = await self.repository.load_evidence_projection(session, evidence_item_id)
+        if projection is None:
+            raise ValueError("evidence_item_not_found")
+        active = await self.repository.active_associations(session, evidence_item_id)
+        if len(active) != 1 or active[0].event_candidate_id != from_candidate_id:
+            raise ValueError("event_candidate_association_ambiguous")
+        target = await self.repository.get_candidate(session, to_candidate_id)
+        if target is None:
+            raise ValueError("event_candidate_not_found")
+        await self.deactivate_association(session, from_candidate_id, evidence_item_id)
+        signatures = evidence_signatures(projection)
+        decision = MatchDecision(
+            candidate_id=target.id,
+            match_rule=MatchRule.REVIEWED_REGROUP,
+            rule_version=RULE_VERSION,
+            anchor=derive_anchor(projection),
+            signatures=signatures,
+            title_fingerprint=title_fingerprint(projection.title),
+            strong_identity_hash=next(
+                (value.split(":", 1)[1] for value in signatures if value.startswith("official:")),
+                None,
+            ),
+        )
+        link = await self._associate(session, target, projection, decision)
+        await self._refresh_candidate(session, target, projection, decision)
+        return self._outcome(target, link, "regrouped")
 
     async def _refresh_candidate(
         self,
@@ -286,42 +341,61 @@ class EventCandidateService:
         observed = projection.event_time or projection.observed_at
         candidate.first_seen_at = min(candidate.first_seen_at, observed)
         candidate.latest_seen_at = max(candidate.latest_seen_at, observed)
-        counts = (
+        await self._recalculate_aggregates(session, candidate, projection.source_priority)
+        await session.flush()
+
+    async def _recalculate_aggregates(
+        self,
+        session: AsyncSession,
+        candidate: EventCandidate,
+        source_priority: int | None = None,
+    ) -> None:
+        active_evidence = (
             await session.execute(
                 select(
-                    func.count(EventCandidateEvidence.evidence_item_id),
-                    func.count(func.distinct(EvidenceItem.provider)),
-                    func.bool_or(EventCandidateEvidence.official_source),
+                    EvidenceItem.source_id,
+                    EvidenceItem.entity_refs,
+                    EventCandidateEvidence.official_source,
                 )
-                .join(
-                    EvidenceItem,
-                    EvidenceItem.id == EventCandidateEvidence.evidence_item_id,
-                )
+                .join(EvidenceItem, EvidenceItem.id == EventCandidateEvidence.evidence_item_id)
                 .where(
                     EventCandidateEvidence.event_candidate_id == candidate.id,
                     EventCandidateEvidence.active.is_(True),
                 )
             )
-        ).one()
-        candidate.evidence_count = int(counts[0])
-        candidate.source_count = int(counts[1])
+        ).all()
+        candidate.evidence_count = len(active_evidence)
+        candidate.source_count = len({row.source_id for row in active_evidence})
+        official_source = any(row.official_source for row in active_evidence)
+        active_entities = {
+            str(entity) for row in active_evidence for entity in (row.entity_refs or [])
+        }
+        if candidate.evidence_count == 0:
+            candidate.status = EventCandidateStatus.REJECTED
+        elif candidate.status is EventCandidateStatus.REJECTED:
+            candidate.status = EventCandidateStatus.CANDIDATE
         importance = self.importance_scorer.score(
             ImportanceInput(
-                official_source=bool(counts[2]),
+                official_source=official_source,
                 evidence_count=candidate.evidence_count,
                 source_count=candidate.source_count,
-                source_priority=projection.source_priority,
-                entity_count=len(candidate.entities),
+                source_priority=source_priority,
+                entity_count=len(active_entities),
                 corroborated=candidate.source_count > 1,
             )
         )
         candidate.importance_score = importance.score
         candidate.importance_reasons = list(importance.component_reasons)
-        candidate.confidence = min(
-            1.0,
-            0.45 + (0.2 if counts[2] else 0.0) + min(0.3, (candidate.source_count - 1) * 0.15),
+        candidate.confidence = (
+            0.0
+            if candidate.evidence_count == 0
+            else min(
+                1.0,
+                0.45
+                + (0.2 if official_source else 0.0)
+                + min(0.3, max(0, candidate.source_count - 1) * 0.15),
+            )
         )
-        await session.flush()
 
     @staticmethod
     def _outcome(

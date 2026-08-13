@@ -660,8 +660,8 @@ class EventCandidate(Base):
             "strong_identity_hash IS NULL OR strong_identity_hash ~ '^[0-9a-f]{64}$'",
             name="ck_event_candidates_strong_identity_hash",
         ),
-        CheckConstraint("evidence_count > 0", name="ck_event_candidates_evidence_positive"),
-        CheckConstraint("source_count > 0", name="ck_event_candidates_source_positive"),
+        CheckConstraint("evidence_count >= 0", name="ck_event_candidates_evidence_nonnegative"),
+        CheckConstraint("source_count >= 0", name="ck_event_candidates_source_nonnegative"),
         CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_event_candidates_confidence"),
         CheckConstraint(
             "importance_score BETWEEN 0 AND 100", name="ck_event_candidates_importance"
@@ -732,24 +732,26 @@ class EventCandidateEvidence(Base):
             name="ck_event_evidence_active_removed",
         ),
         Index(
-            "uq_event_candidate_evidence_pair",
+            "uq_event_candidate_evidence_active_pair",
             "event_candidate_id",
             "evidence_item_id",
             unique=True,
+            postgresql_where=text("active"),
         ),
         Index("ix_event_candidate_evidence_item", "evidence_item_id"),
         Index("ix_event_candidate_evidence_active", "event_candidate_id", "active"),
     )
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
     event_candidate_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("event_candidates.id", ondelete="RESTRICT"),
-        primary_key=True,
     )
     evidence_item_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("evidence_items.id", ondelete="RESTRICT"),
-        primary_key=True,
     )
     match_rule: Mapped[str] = mapped_column(String(100))
     rule_version: Mapped[int] = mapped_column(Integer)

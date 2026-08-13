@@ -97,7 +97,7 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0014 Market Data Validation Adapters | 定义可替换行情/财务数据 adapter 与市场验证合同 | SPEC-0013 |
 | SPEC-0015 Research Recommendation Contract | 定义研究参考状态、置信度、风险、催化剂和失效条件；不得自动执行 | SPEC-0013、SPEC-0014、AI boundary Freeze Review |
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
-| SPEC-0022 Dedup and Event Candidate Layer | Absorbed/superseded by SPEC-0039 pending review；不得单独激活 | SPEC-0021, Foundation revision review |
+| SPEC-0022 Dedup and Event Candidate Layer | Absorbed/superseded by SPEC-0039；不得单独激活 | SPEC-0021, Foundation v2.2-FROZEN |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、

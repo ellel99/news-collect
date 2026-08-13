@@ -17,6 +17,7 @@ from market_intelligence.event_intelligence.matching import (
     CandidateProjection,
     EvidenceProjection,
     MatchRule,
+    canonicalize_url,
     evidence_signatures,
     match_existing,
 )
@@ -84,7 +85,7 @@ def test_same_company_alone_does_not_merge() -> None:
 
 
 def test_same_canonical_url_groups_across_providers() -> None:
-    original = evidence(canonical_url="https://example.test/news?tracking=one")
+    original = evidence(canonical_url="https://EXAMPLE.test:443/news/?utm_source=one")
     existing = candidate(identity_signatures=evidence_signatures(original))
     incoming = evidence(
         provider="sec_edgar",
@@ -95,6 +96,25 @@ def test_same_canonical_url_groups_across_providers() -> None:
     result = match_existing(incoming, (existing,))
     assert result.candidate_id == existing.id
     assert result.match_rule is MatchRule.CANONICAL_URL
+
+
+def test_business_query_parameters_are_preserved_and_do_not_false_merge() -> None:
+    first = evidence(canonical_url="https://example.test/article?id=100")
+    existing = candidate(identity_signatures=evidence_signatures(first))
+    incoming = evidence(
+        provider="sec_edgar",
+        provider_item_id="filing-2",
+        official_source=True,
+        canonical_url="https://example.test/article?id=200",
+    )
+    result = match_existing(incoming, (existing,))
+    assert result.candidate_id is None
+
+
+def test_tracking_only_query_is_removed_with_stable_query_normalization() -> None:
+    assert canonicalize_url(
+        "HTTPS://Example.TEST:443/article/?z=2&utm_source=x&a=1#fragment"
+    ) == canonicalize_url("https://example.test/article?a=1&z=2")
 
 
 def test_expired_time_window_does_not_merge() -> None:

@@ -29,6 +29,8 @@ class ImportanceScorer(Protocol):
 
 class DeterministicImportanceScorer:
     def score(self, value: ImportanceInput) -> ImportanceResult:
+        if value.evidence_count == 0:
+            return ImportanceResult(score=0.0, component_reasons=("no_active_evidence:0",))
         score = 10.0
         reasons = ["base:10"]
         if value.official_source:

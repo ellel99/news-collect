@@ -69,6 +69,7 @@ async def create_evidence(
     entity: str = "entity:acme",
     event_time: datetime | None = None,
     official: bool = False,
+    canonical_url: str | None = None,
 ) -> uuid.UUID:
     now = event_time or datetime.now(UTC)
     source_id = (
@@ -108,10 +109,11 @@ async def create_evidence(
             text(
                 """
                 INSERT INTO content_items (
-                  raw_item_id, source_id, content_kind, external_id, title, body_availability,
+                  raw_item_id, source_id, content_kind, external_id, title, canonical_url,
+                  body_availability,
                   first_seen_at, deleted_status, metadata
                 ) VALUES (
-                  :raw, :source, 'article', :external, :title, 'summary_only', :now,
+                  :raw, :source, 'article', :external, :title, :canonical_url, 'summary_only', :now,
                   'present', '{}'::jsonb
                 ) RETURNING id
                 """
@@ -121,6 +123,7 @@ async def create_evidence(
                 "source": source_id,
                 "external": provider_item_id,
                 "title": title,
+                "canonical_url": canonical_url,
                 "now": now,
             },
         )
@@ -224,21 +227,173 @@ async def test_repeated_processing_and_association_reactivation_are_idempotent(
     second = await service.process(event_session, evidence_id)
     assert first.event_candidate_id == second.event_candidate_id
     assert second.status == "existing"
-    await service.deactivate_association(event_session, first.event_candidate_id, evidence_id)
-    await event_session.commit()
-    inactive = await event_session.get(
-        EventCandidateEvidence, (first.event_candidate_id, evidence_id)
+    old_link = await service.deactivate_association(
+        event_session, first.event_candidate_id, evidence_id
     )
+    await event_session.commit()
+    inactive = await event_session.get(EventCandidateEvidence, old_link.id)
     assert inactive is not None and not inactive.active and inactive.removed_at is not None
+    old_removed_at = inactive.removed_at
+    old_match_rule = inactive.match_rule
+    old_rule_version = inactive.rule_version
+    orphan = await event_session.get(EventCandidate, first.event_candidate_id)
+    assert orphan is not None
+    assert orphan.evidence_count == 0
+    assert orphan.source_count == 0
+    assert orphan.confidence == 0
+    assert orphan.importance_score == 0
+    assert orphan.status is EventCandidateStatus.REJECTED
     reactivated = await service.process(event_session, evidence_id)
     await event_session.commit()
-    active = await event_session.get(
-        EventCandidateEvidence, (first.event_candidate_id, evidence_id)
-    )
+    links = (
+        await event_session.scalars(
+            select(EventCandidateEvidence)
+            .where(
+                EventCandidateEvidence.event_candidate_id == first.event_candidate_id,
+                EventCandidateEvidence.evidence_item_id == evidence_id,
+            )
+            .order_by(EventCandidateEvidence.added_at, EventCandidateEvidence.id)
+        )
+    ).all()
     assert reactivated.event_candidate_id == first.event_candidate_id
-    assert active is not None and active.active and active.removed_at is None
+    assert len(links) == 2
+    historical = next(link for link in links if link.id == old_link.id)
+    current = next(link for link in links if link.id != old_link.id)
+    assert not historical.active and historical.removed_at == old_removed_at
+    assert historical.match_rule == old_match_rule
+    assert historical.rule_version == old_rule_version
+    assert current.active and current.removed_at is None
+    restored = await event_session.get(EventCandidate, first.event_candidate_id)
+    assert restored is not None
+    assert restored.evidence_count == 1
+    assert restored.source_count == 1
+    assert restored.confidence > 0
+    assert restored.importance_score > 0
+    assert restored.status is EventCandidateStatus.CANDIDATE
     assert await event_session.scalar(select(func.count()).select_from(EventCandidate)) == 1
-    assert await event_session.scalar(select(func.count()).select_from(EventCandidateEvidence)) == 1
+    assert await event_session.scalar(select(func.count()).select_from(EventCandidateEvidence)) == 2
+
+
+@pytest.mark.asyncio
+async def test_deactivate_refreshes_active_aggregates_and_retains_evidence(
+    event_session: AsyncSession,
+) -> None:
+    service = EventCandidateService()
+    first_id = await create_evidence(
+        event_session,
+        provider="marketaux",
+        provider_item_id="aggregate-1",
+        title="Acme aggregate event",
+    )
+    second_id = await create_evidence(
+        event_session,
+        provider="sec_edgar",
+        provider_item_id="aggregate-2",
+        title="Acme aggregate event",
+        official=True,
+    )
+    first = await service.process(event_session, first_id)
+    second = await service.process(event_session, second_id)
+    assert second.event_candidate_id == first.event_candidate_id
+    candidate = await event_session.get(EventCandidate, first.event_candidate_id)
+    assert candidate is not None
+    original_importance = candidate.importance_score
+    await service.deactivate_association(event_session, candidate.id, second_id)
+    await event_session.flush()
+    assert candidate.evidence_count == 1
+    assert candidate.source_count == 1
+    assert candidate.importance_score < original_importance
+    assert await event_session.get(EventCandidate, candidate.id) is not None
+    assert (
+        await event_session.scalar(
+            select(func.count())
+            .select_from(EventCandidateEvidence)
+            .where(
+                EventCandidateEvidence.evidence_item_id == second_id,
+                EventCandidateEvidence.active.is_(False),
+            )
+        )
+        == 1
+    )
+    assert (
+        await event_session.scalar(
+            text("SELECT count(*) FROM evidence_items WHERE id = :id"), {"id": second_id}
+        )
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_regroup_preserves_history_and_refreshes_both_candidates(
+    event_session: AsyncSession,
+) -> None:
+    service = EventCandidateService()
+    evidence_id = await create_evidence(
+        event_session,
+        provider="marketaux",
+        provider_item_id="regroup-1",
+        title="Acme reviewed regroup event",
+    )
+    original_outcome = await service.process(event_session, evidence_id)
+    original = await event_session.get(EventCandidate, original_outcome.event_candidate_id)
+    assert original is not None
+    target = EventCandidate(
+        cluster_key="d" * 64,
+        anchor_type="review_target",
+        anchor_value_hash="e" * 64,
+        strong_identity_hash=None,
+        identity_signatures=[],
+        title_fingerprints=[],
+        event_type="information_event",
+        status=EventCandidateStatus.REJECTED,
+        canonical_title=None,
+        fact_summary=None,
+        first_seen_at=original.first_seen_at,
+        latest_seen_at=original.latest_seen_at,
+        occurred_at=None,
+        published_at=None,
+        primary_entity=None,
+        entities=[],
+        companies=[],
+        assets=[],
+        sectors=[],
+        topics=[],
+        evidence_count=0,
+        source_count=0,
+        confidence=0,
+        importance_score=0,
+        importance_reasons=["no_active_evidence:0"],
+    )
+    event_session.add(target)
+    await event_session.flush()
+    result = await service.regroup_association(event_session, evidence_id, original.id, target.id)
+    await event_session.commit()
+    assert result.status == "regrouped"
+    assert result.event_candidate_id == target.id
+    assert original.evidence_count == 0 and original.source_count == 0
+    assert original.status is EventCandidateStatus.REJECTED
+    assert target.evidence_count == 1 and target.source_count == 1
+    assert target.status is EventCandidateStatus.CANDIDATE
+    links = (
+        await event_session.scalars(
+            select(EventCandidateEvidence)
+            .where(EventCandidateEvidence.evidence_item_id == evidence_id)
+            .order_by(EventCandidateEvidence.added_at, EventCandidateEvidence.id)
+        )
+    ).all()
+    assert len(links) == 2
+    historical = next(link for link in links if link.event_candidate_id == original.id)
+    current = next(link for link in links if link.event_candidate_id == target.id)
+    assert not historical.active and historical.removed_at is not None
+    assert historical.match_rule == original_outcome.match_rule.value
+    assert current.active and current.removed_at is None
+    assert current.match_rule == "reviewed_regroup"
+    assert (
+        await event_session.scalar(
+            text("SELECT count(*) FROM evidence_items WHERE id = :id"), {"id": evidence_id}
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -374,6 +529,56 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
             official_source=False,
             active=False,
             removed_at=datetime.now(UTC),
+        )
+    )
+    await event_session.commit()
+    assert (
+        await event_session.scalar(
+            select(func.count())
+            .select_from(EventCandidateEvidence)
+            .where(
+                EventCandidateEvidence.event_candidate_id == other.id,
+                EventCandidateEvidence.evidence_item_id == evidence_id,
+                EventCandidateEvidence.active.is_(False),
+            )
+        )
+        == 2
+    )
+    event_session.add(
+        EventCandidateEvidence(
+            event_candidate_id=other.id,
+            evidence_item_id=evidence_id,
+            match_rule="active_regroup",
+            rule_version=2,
+            official_source=False,
+            active=True,
+            removed_at=None,
+        )
+    )
+    await event_session.commit()
+    with pytest.raises(ValueError, match="event_candidate_association_ambiguous"):
+        await service.process(event_session, evidence_id)
+    assert await event_session.scalar(select(func.count()).select_from(EventCandidate)) == 2
+    assert (
+        await event_session.scalar(
+            select(func.count())
+            .select_from(EventCandidateEvidence)
+            .where(
+                EventCandidateEvidence.evidence_item_id == evidence_id,
+                EventCandidateEvidence.active.is_(True),
+            )
+        )
+        == 2
+    )
+    event_session.add(
+        EventCandidateEvidence(
+            event_candidate_id=other.id,
+            evidence_item_id=evidence_id,
+            match_rule="duplicate_active",
+            rule_version=2,
+            official_source=False,
+            active=True,
+            removed_at=None,
         )
     )
     with pytest.raises(IntegrityError):

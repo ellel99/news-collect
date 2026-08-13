@@ -8,16 +8,20 @@
   deterministic ImportanceScorer 与 mock-only ImpactAnalyzer contract。
 - PR #38 Review fix clarifies layer authority: RawItem is collection trace, EvidenceItem is Event factual/
   provenance authority, and ContentItem is a safe display/projection input rather than factual authority.
-- Defines immutable candidate id/cluster_key from a stable anchor, pair-scoped Evidence association uniqueness,
-  match rule/version audit fields, and reversible `active`/`removed_at` regrouping history.
+- Defines immutable candidate id/cluster_key from a stable anchor, active-generation pair uniqueness,
+  match rule/version audit fields, and append-only `active`/`removed_at` regrouping history.
+- Implementation Review fixes canonical URLs conservatively: only an explicit tracking allowlist is removed;
+  business query parameters remain deterministically ordered and identity-significant.
+- Association history now uses append-only generation rows plus active partial pair uniqueness; deactivate,
+  reactivate and regroup preserve prior rules/timestamps and refresh active-only candidate aggregates.
+- Zero-active candidates remain for audit with rejected status and zero counts/confidence/importance; multiple
+  active candidate memberships fail closed instead of silently choosing the first.
 - Matching now explicitly fails closed: no stable match creates a new candidate; company/ticker alone never merges.
 - 复用 SPEC-0030–0038 已审核 evidence，记录四 Provider 核心 Phase 1 Information Collection & Push
   technical acceptance；未重新请求 Provider/Telegram。
-- 新增 Foundation v2.2 最小 transition draft 与 D-025 Proposed Decision；v2.1-FROZEN 继续生效，
-  等待 Freeze Review。
-- 激活 SPEC-0039 Docs Review，定义 deterministic dedup、EventCandidate persistence/provenance、
-  importance foundation 与 mock-only ImpactAnalyzer implementation contract。
-- SPEC-0022 被 SPEC-0039 absorb/supersede pending review；未创建 migration、ORM 或 Python implementation。
+- Foundation v2.2-FROZEN 已生效，D-025 Approved；v2.1 安全边界继续有效。
+- SPEC-0039 Docs Review 已 PASS，当前为 Active — Implementation Review。
+- SPEC-0022 已被 SPEC-0039 absorb/supersede；未启动竞争实现。
 - 修正 README 的 stale SPEC-0038 Active 状态。
 
 ## Unreleased — SPEC-0038 Multi-provider Scheduler + Telegram Routing

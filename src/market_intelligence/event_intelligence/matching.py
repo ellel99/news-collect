@@ -7,11 +7,22 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 RULE_VERSION = 1
 _TOKEN = re.compile(r"[a-z0-9]+")
+_TRACKING_QUERY_PARAMETERS = frozenset(
+    {
+        "fbclid",
+        "gclid",
+        "utm_campaign",
+        "utm_content",
+        "utm_medium",
+        "utm_source",
+        "utm_term",
+    }
+)
 
 
 class MatchRule(StrEnum):
@@ -23,6 +34,7 @@ class MatchRule(StrEnum):
     APPROVED_HASH = "approved_hash"
     NEW_CANDIDATE = "new_candidate"
     AMBIGUOUS_NEW_CANDIDATE = "ambiguous_new_candidate"
+    REVIEWED_REGROUP = "reviewed_regroup"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,11 +92,25 @@ def canonicalize_url(value: str | None) -> str | None:
     if value is None:
         return None
     parts = urlsplit(value.strip())
-    if parts.scheme.casefold() not in {"http", "https"} or not parts.netloc:
+    scheme = parts.scheme.casefold()
+    if scheme not in {"http", "https"} or parts.hostname is None:
         return None
-    return urlunsplit(
-        (parts.scheme.casefold(), parts.netloc.casefold(), parts.path.rstrip("/"), "", "")
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname.casefold()
+    if ":" in host:
+        host = f"[{host}]"
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = host if port is None or default_port else f"{host}:{port}"
+    path = parts.path.rstrip("/") or "/"
+    query_items = sorted(
+        (key, item)
+        for key, item in parse_qsl(parts.query, keep_blank_values=True)
+        if key.casefold() not in _TRACKING_QUERY_PARAMETERS
     )
+    return urlunsplit((scheme, netloc, path, urlencode(query_items, doseq=True), ""))
 
 
 def title_fingerprint(value: str | None) -> str | None:
