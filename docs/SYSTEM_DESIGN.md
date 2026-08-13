@@ -103,6 +103,10 @@ implementation 仍需本 R1 Docs Review PASS 后的单独明确授权。之后�
 `docs/PRE_AI_COLLECTION_READINESS.md` 分步审核 durable projection、provider operations 和 factual
 completeness，真实 AI 才可重新评估。
 
+R1 最终合同规定：初始四 operation 均无真实 pagination capability；target execution 使用单调
+`config_revision` 防止 stale task；scheduler/worker 共用严格 eligibility；collection 只创建 durable
+PENDING Notification intent，独立 delivery-only task 从 DB claim/send，Telegram 不参与 collection 状态。
+
 ### 2.1 Source Registry
 
 保存来源类型、接入方式、授权状态、轮询策略、健康状态和内容保留等级。精确来源信息见 `SOURCE_CATALOG.md`。

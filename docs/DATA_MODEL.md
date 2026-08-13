@@ -158,6 +158,12 @@ cadence、budget、cursor strategy/version、lock、retry、run、health 与 dis
 或任意 endpoint。Source 继续拥有 provider/授权/retention，SourceAccount 只表达可选外部身份。
 字段、迁移和 rollback 见 SPEC-0041；Docs Review 不创建表。
 
+R1 最终合同还区分 `operation_config_version`（typed schema）、`provider_contract_version`（adapter）与
+单调 `config_revision`（执行 generation）。RawItem 不重复保存 target_id，而由不可变
+RawItem→CollectionRun→CollectionTarget 追溯；PostgreSQL 必须以 null-safe source/account 一致性约束
+保护该链。ContentItem/EvidenceItem 已复制 provenance 的完整 DB audit/constraint 决策是 R2/R8 强制
+前置项，本 R1 Docs Review 不修改 schema。
+
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
 
 现有 bounded pipeline 的安全 projection 不能被描述为已完成的通用 durable contract。R2 将独立审核

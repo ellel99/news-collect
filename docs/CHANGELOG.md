@@ -2,6 +2,13 @@
 
 ## Unreleased — R1 Unified Production Collection Control Plane Docs Review
 
+- Review fix separates typed schema/adapter versions from monotonic target `config_revision`, with exact dispatch/
+  worker generation checks and revision-race tests.
+- Corrects pagination claims: current Marketaux/EIA/SEC/Finnhub v1 operations are non-pageable; `has_more` records
+  truncated/incomplete/unsupported coverage without repeating page 1 or claiming completion.
+- Closes durable delivery contract with deterministic PENDING Notification intent, reconciliation and an independent
+  delivery-only Celery task; no Notification/Outbox schema change.
+- Adds PostgreSQL null-safe RawItem→Run provenance enforcement and exact shared scheduler/worker eligibility rules.
 - 从 `main@9c68dd6` 重新审计 ORM、migration、generic dispatcher/task、CollectionRunner、Provider runtime、
   Notification/Outbox、Redis lock/retry 与测试，未复制旧架构假设。
 - 新增 implementation-ready SPEC-0041 contract：固定 global immutable `target_key`、最终

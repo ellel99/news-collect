@@ -76,12 +76,14 @@ PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrat
 | `operation_key` | varchar(100) | no | static registry key；not URL/class path |
 | `operation_config_version` | smallint | no | `>0` |
 | `provider_contract_version` | smallint | no | `>0`；must match adapter |
+| `config_revision` | bigint | no / `1` | target execution generation；monotonic、`>0` |
 | `operation_config` | JSONB | no / `{}` | JSON object；typed non-secret allowlist |
 | `status` | `collection_target_status` | no / `draft` | sole lifecycle gate；no redundant `enabled` |
 | `cadence_seconds` | integer | no | `1..86400` |
 | `batch_limit` | integer | no | operation unit；positive and registry ceiling |
-| `max_requests_per_run` | smallint | no / `1` | `1..20` |
-| `max_pages_per_run` | smallint | no / `1` | `1..20` and `<=max_requests_per_run` |
+| `max_requests_per_run` | smallint | no / `1` | schema `1..20`; initial v1 registry requires `1` |
+| `pagination_capability` | varchar(20) | no / `none` | R1 registry-derived；initial operations only `none` |
+| `max_pages_per_run` | smallint | no / `1` | initial v1 operations must equal `1` |
 | `max_response_bytes` | integer | no | `1024..10_000_000` |
 | `request_timeout_seconds` | integer | no | `1..60` |
 | `max_runtime_seconds` | integer | no | `>=request_timeout_seconds`, `<=900` |
@@ -122,6 +124,18 @@ Additional constraints/indexes:
   requires explicit reviewed repair. Config change creates an audit entry, increments config version as required,
   resets health to unknown and cannot mutate `target_key`.
 
+`operation_config_version` means only the typed decoder/schema version. `provider_contract_version` means only the
+adapter contract version. `config_revision` is the target's monotonic execution generation. Every change to
+operation config, cadence, budget, operation/schema/contract version, cursor strategy/version, collection/backfill/
+revision policy, rate-limit group, priority or other execution semantics must atomically increment
+`config_revision`; status-only pause/resume also increments it so already-dispatched work becomes stale. Revision
+rollback is a new forward revision restoring reviewed values, never decrementing the generation.
+
+Dispatch identity, Celery payload and Redis marker include the exact `config_revision`. Worker DB reload compares
+exact equality before credential resolution or network. A mismatch, concurrent edit, pause/resume or rollback makes
+the stale task fail closed without request. The update service uses row lock or compare-and-swap
+`WHERE config_revision=:expected`, so concurrent writers cannot publish the same next generation.
+
 ## 5. Target-owned cursor, run and provenance
 
 ### 5.1 Cursor
@@ -150,6 +164,23 @@ watermark. It contains no secret, raw response or URL.
   redundant target value that can drift;
 - CollectionRun is immutable with respect to target/source/account after insert. Existing RawItem FK remains.
 
+PostgreSQL must also enforce RawItem→Run provenance rather than relying on service code:
+
+- add `UNIQUE NULLS NOT DISTINCT(collection_runs.id,source_id,source_account_id)` for identity support;
+- add a deferrable PostgreSQL constraint trigger requiring each RawItem's source to equal its CollectionRun source
+  and `RawItem.source_account_id IS NOT DISTINCT FROM CollectionRun.source_account_id`. A normal composite FK alone
+  is insufficient because `MATCH SIMPLE` would skip the nullable account check; a composite FK may be supplemental
+  for non-null rows but cannot replace the trigger;
+- add immutable constraint triggers for CollectionRun `target_id`, `source_id`, `source_account_id` and `run_mode`;
+- before enabling constraints, migration scans every historical RawItem/Run and Run/Target tuple. Any mismatch aborts
+  with a value-free audit count/code; it must never guess, rewrite or silently repair provenance.
+
+`ContentItem` and `EvidenceItem` currently copy source/account provenance. R1 regression checks their existing FK and
+write-path consistency but does not add new cross-table constraints outside the control-plane migration. A complete
+DB-level audit/constraint decision for `ContentItem/EvidenceItem ↔ RawItem/Run/Target` is a mandatory R2 durable-safe-
+projection prerequisite and R8 factual-completeness prerequisite; R2 cannot start without recording a zero-mismatch
+audit or an explicitly reviewed fail-closed remediation plan.
+
 ## 6. Typed operation registry and initial schemas
 
 Registry key is exactly `(Source.access_method, CollectionTarget.operation_key,
@@ -174,6 +205,21 @@ runtime-composed SEC User-Agent from `SEC_USER_AGENT`+`SEC_CONTACT_EMAIL`. Dispa
 reads only after reloading an active authorized target. No credential reference/value is stored in target/config,
 task, Redis, run, log or safe error.
 
+### 6.1 Initial pagination capability
+
+All four v1 operations declare `pagination_capability=none` and require `max_pages_per_run=1`:
+
+- Marketaux currently always requests `page=1`;
+- EIA has no offset/continuation implementation;
+- SEC reads only `submissions.recent` and does not follow historical files;
+- Finnhub quote is a single snapshot and is not pageable.
+
+The generic control-plane interface may model future continuation, but it must not issue a second request for these
+operations. If an adapter reports `has_more=true`, the run persists the accepted first batch and records safe state
+`truncated=true`, `coverage_incomplete=true`, `continuation_status=unsupported`; it must not claim complete, advance
+a final coverage watermark, or repeat page 1. Real Marketaux page, EIA offset and SEC history continuation are R3–R5
+operation expansion and are not implemented by R1. No current Provider can claim pagination recovery acceptance.
+
 ## 7. Request budgets and rate-limit groups
 
 Effective limits are the minimum of registry hard ceiling, verified plan ceiling, target value and worker emergency
@@ -185,14 +231,16 @@ Initial `rate_limit_group` values are static provider groups (`marketaux:default
 Redis token/cooldown keys are group-scoped. 429 honors bounded Retry-After; group cooldown does not block targets
 outside the group.
 
-## 8. Pagination, continuation, watermark, backfill and revision
+## 8. Generic future cursor interface, current non-pageable operations, backfill and revision
 
 - strict cursor advances only to `candidate>current`; equal is operation-defined duplicate/no-new, backward fails;
 - snapshot cursor: equal=`NO_NEW_ITEMS`, newer advances, older fails;
 - compound order is lexicographic stable tuple; missing tie-breaker fails closed;
-- each page is persisted before continuation checkpoint; hitting budget stores continuation and returns partial,
-  never false complete;
-- final watermark advances only after all pages for the bounded window complete;
+- the generic interface requires future pageable operations to persist each page before continuation checkpoint and
+  advance final watermark only after a bounded window completes; **none of the initial v1 operations may exercise
+  this interface in R1**;
+- for initial operations, `has_more=true` persists the accepted batch but records incomplete/unsupported coverage,
+  leaves final coverage watermark unchanged and stops after the single request;
 - normal and `manual_bounded` backfill use separate `run_mode` cursor rows; scheduler creates only normal runs;
 - backfill requires a future explicit command/review and bounded start/end; no generic historical backfill in R1;
 - revision operations retain official identity+revision marker; stale revision never overwrites newer factual state.
@@ -202,11 +250,12 @@ outside the group.
 1. Scheduler keyset-pages active targets ordered by effective eligible time, priority, id.
 2. It validates Source kill switch/authorization and Account enabled/identity before claim.
 3. Due time is `next_retry_at` when set, else `next_due_at`; permanent config errors do not fast-loop.
-4. Dispatch identity is `target_id + scheduled_slot + run_mode + operation_config_version`; Redis
+4. Dispatch identity is `target_id + scheduled_slot + run_mode + config_revision`; Redis
    `SET NX EX` TTL covers slot+deadline+retry window. Celery task id derives deterministically.
-5. Task payload is only `target_id`, scheduled slot, run mode and dispatch id—never config or credential.
-6. Worker reloads target/source/account/config, verifies the dispatch identity/version, resolves an allowlisted
-   factory, then credential. Paused/changed/unauthorized target fails closed before network.
+5. Task payload is only `target_id`, exact `config_revision`, scheduled slot, run mode and dispatch id—never config
+   or credential.
+6. Worker reloads target/source/account/config, verifies exact revision and eligibility, resolves an allowlisted
+   factory, then credential. Paused/changed/unauthorized/stale-revision target fails closed before credential/network.
 7. Worker acquires Redis owner-token target lock; renew/release compare owner token. Lost lock prevents checkpoint.
 8. Each successful batch atomically writes RawItem/run counters/cursor. Cursor never advances on persistence error.
 9. Retryable failure sets target `next_retry_at` using existing bounded RetryPolicy/Retry-After and preserves the
@@ -217,17 +266,57 @@ outside the group.
 One target failure/lock/retry cannot affect another target. Source success/failure fields become display-only
 aggregates and never gate target scheduling.
 
+### 9.1 Exact dispatch eligibility
+
+Scheduler and worker call the same pure eligibility policy:
+
+- `Source.enabled=true`;
+- `Source.authorization_status` is exactly `authorized` or `implemented`;
+- target `status=active` and its due/retry time is eligible;
+- if `source_account_id` is non-null, `SourceAccount.enabled=true`, it belongs to the same Source, and
+  `identity_status=verified`;
+- a source-level target (`source_account_id=NULL`) is allowed only when that Source has **no SourceAccount rows**;
+  the presence of even disabled/unverified accounts makes source-level execution invalid until explicitly modeled;
+- provider/operation/config/contract versions and Source `access_method` must match the static registry.
+
+The scheduler applies this before dispatch, and the worker repeats it after reload. Any state/revision change after
+dispatch blocks the task before credential resolution and network. `planned`, `access_tbd`, `degraded`, `blocked`,
+`disabled` Source authorization and `unverified`, `changed`, `disabled` account identity are never executable.
+
 ## 10. Delivery decoupling and Notification/Outbox decision
 
-R1 **reuses existing `notifications` and `outbox_messages` without schema extension**. Collection worker ends after
-RawItem/downstream pipeline persistence and emits no Telegram call. A separate delivery task continues to claim
-Notification rows and use existing dedup/retry/stale-SENDING semantics. Telegram/Event credentials or failures do
-not change target cadence, run status, cursor or health.
+Current code is not yet independent: `multi_provider.telegram.run` performs collection, calls `deliver_new()` to
+create/claim Notification rows, and sends Telegram in one cycle. R1 **reuses existing `notifications` and
+`outbox_messages` without schema extension**, but changes orchestration to this final flow:
 
-R1 does not require a new delivery outbox migration: existing Notification is the durable Telegram delivery state;
-existing Outbox remains available for transactional internal messages but is not made a second competing Telegram
-state machine. Any future Outbox payload/schema expansion requires its own SPEC. Cutover tests must prove pending
-notifications survive and are delivered independently.
+1. Collection/Content downstream transaction deterministically inserts a `PENDING` Notification intent using the
+   existing unique `dedup_key`. If the Content transaction cannot include it atomically, an idempotent reconciliation
+   task polls eligible Content rows and inserts missing intents; this is the required equivalent recoverable boundary.
+2. A successful collection run never reads Telegram credential and never sends Telegram.
+3. New Celery task `notification.telegram.deliver` polls DB and atomically claims `PENDING`, retryable `FAILED`, and
+   stale `SENDING` rows using `FOR UPDATE SKIP LOCKED`/conditional status updates. It alone reads Telegram runtime
+   credentials and invokes transport.
+4. Missing credential leaves rows `PENDING` (or preserves existing FAILED/SENDING state) with safe delivery status;
+   transport failure updates Notification retry state only. Neither changes CollectionRun, cursor or target health.
+5. Beat/task loss is recovered by DB polling; delivery intent is not dependent on an in-memory item list or current
+   collection cycle.
+
+`multi_provider.telegram.run` is retired as a collection authority at cutover. Its collection portion is replaced by
+the unified target dispatcher/worker; its delivery portion is replaced by `notification.telegram.deliver`. During
+cutover, stop and drain the legacy combined task before enabling the delivery-only Beat. A Redis/DB delivery claim
+plus Notification conditional state transition prevents concurrent claims, but old and new Beats must never be
+authoritative simultaneously.
+
+If collection/downstream persistence succeeds but Notification intent creation fails, collection remains succeeded;
+an existing `AuditLog` records only safe code `notification_intent_pending_recovery` against the ContentItem, and
+the idempotent reconciler finds eligible ContentItems with no matching dedup key and creates the missing PENDING row.
+It must not re-collect or roll back the cursor. The deterministic dedup key makes retries harmless.
+
+Existing Notification is the sole Telegram state machine and already carries dedup, status, retry, schedule and
+failure fields. Existing Outbox remains a generic transactional-message facility; using it as a second Telegram queue
+would create competing claims/status and is forbidden. No Notification/Outbox schema change is required by this
+contract. If implementation proves the atomic/reconciliation boundary impossible with current columns, it must stop
+and return for schema re-review rather than silently expanding migration scope.
 
 ## 11. Legacy migration, shadow, cutover and rollback
 
@@ -262,6 +351,9 @@ Allowed new files:
 - `src/market_intelligence/collection/adapter_factory.py`
 - `src/market_intelligence/collection/control_plane.py`
 - `src/market_intelligence/providers/credential_resolver.py`
+- `src/market_intelligence/notifications/intent.py`
+- `src/market_intelligence/notifications/delivery.py`
+- `src/market_intelligence/tasks/notification_delivery.py`
 - `tests/test_collection_targets_postgres.py`
 - `tests/test_collection_control_plane_postgres.py`
 - `tests/test_collection_control_plane_redis.py`
@@ -276,6 +368,9 @@ Allowed modifications:
 - `src/market_intelligence/pipeline/{provider_runtime,multi_provider_ingestion}.py`
 - `src/market_intelligence/scheduler/multi_provider_runtime.py` only to remove collection authority after cutover;
   delivery behavior remains
+- `src/market_intelligence/scheduler/{multi_provider,marketaux_telegram}.py` only to extract/reuse Notification
+  intent/claim logic and retire combined collection+delivery authority
+- `src/market_intelligence/tasks/{multi_provider_scheduler,marketaux_telegram}.py` to retire combined tasks
 - relevant config templates, existing collection/scheduler tests and approved project docs.
 
 Not allowed: Provider route/field expansion, durable safe projection, Event/Evidence/Fact/AI modules, Telegram
@@ -287,8 +382,8 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 |---|---|---|
 | I | migration + ORM + typed config registry | exact schema/constraints; upgrade/downgrade/upgrade; legacy reconciliation; secret/config fail closed |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
-| III | scheduler/claim/lock/retry/run/cursor/health | multi-target concurrency, target isolation, budgets, pagination, restart/stale recovery |
-| IV | shadow comparison + single-authority cutover + delivery separation | no dual collection; notification preserved; rollback drill; full regressions |
+| III | scheduler/claim/lock/retry/run/cursor/health | multi-target concurrency, target isolation, budgets, pagination-capability-none, restart/stale recovery |
+| IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | no dual collection/delivery claim; notification recovery; rollback drill; full regressions |
 
 Each batch requires its own implementation review evidence inside the authorized implementation PR sequence.
 No batch may activate production targets or perform bounded live verification without separate user authorization.
@@ -296,18 +391,24 @@ No batch may activate production targets or perform bounded live verification wi
 ## 14. Required test matrix
 
 - PostgreSQL: every column/enum/check/FK/unique/partial index/immutability trigger; source/account consistency;
-  target/run provenance; migration reconciliation and ambiguous fail-closed.
+  target/run provenance; null-safe RawItem/Run equality; Content/Evidence zero-mismatch prerequisite audit;
+  migration reconciliation and ambiguous fail-closed.
 - Redis: concurrent dispatch SET NX EX, owner-token acquire/renew/release/loss, rate-group cooldown, retry vs cadence,
   stale recovery, restart markers and TTL coverage.
-- Celery: task payload allowlist, worker reload/version mismatch, Beat replay/process restart, single enqueue per slot,
-  retry lineage and no serialized config/credential.
+- Celery: task payload allowlist, exact config_revision, worker reload/revision mismatch before credential, Beat
+  replay/process restart, single enqueue per slot, retry lineage and no serialized config/credential.
 - concurrency: two same-provider targets both run; same target single owner; one failure does not block another;
-  checkpoint compare-and-swap prevents stale overwrite.
-- budgets: operation units and all request/page/runtime/byte ceilings; `has_more=true` continues only within budget;
-  continuation persists at cap.
-- cursor: strict, snapshot, compound, page, date-window, normal/backfill separation and revision cases.
-- delivery: collection succeeds with Telegram missing/failed; Notification pending/retry/SENT dedup preserved; Event
-  delivery cannot gate collection.
+  checkpoint compare-and-swap prevents stale overwrite; concurrent config edit, duplicate dispatch, pause/resume and
+  rollback generation make stale tasks fail before credential/network.
+- budgets/pagination: operation units and request/runtime/byte ceilings; all initial operations require one page;
+  `has_more=true` records truncated/incomplete/unsupported and never repeats page 1 or claims complete. Generic
+  continuation contract is unit-tested without claiming Provider recovery support.
+- cursor: strict, snapshot, compound, normal/backfill separation and revision cases; no v1 Provider page recovery.
+- eligibility: scheduler and worker share exact Source authorization/enabled, Account identity/enabled/source-level,
+  target status/revision and registry rules; post-dispatch state change prevents network.
+- delivery: deterministic PENDING intent, atomic-or-reconcilable boundary, reconciler after intent failure,
+  delivery-only DB polling/claim, missing credential preservation, retry/SENT dedup, Beat restart recovery and no
+  simultaneous old/new delivery claim; Event delivery cannot gate collection.
 - migration: real-head linearity, upgrade/downgrade/re-upgrade, shadow comparison, cutover/rollback, no double head,
   no PR #39 Draft migration.
 - regression: all current Provider/CollectionRunner/RawItem/Evidence/Content/Event/Scheduler/Telegram tests PASS;
@@ -316,10 +417,11 @@ No batch may activate production targets or perform bounded live verification wi
 ## 15. Docs Review acceptance
 
 - [ ] Reviewer accepts global immutable `target_key` uniqueness and final schema.
+- [ ] Reviewer accepts monotonic `config_revision` and stale-task race semantics.
 - [ ] Reviewer accepts Source/Account/Target responsibilities and run-based RawItem provenance.
 - [ ] Reviewer accepts the four exact v1 operation schemas and no expansion.
-- [ ] Reviewer accepts target-owned scheduling/state, budget, cursor and recovery contracts.
-- [ ] Reviewer accepts reuse of Notification/Outbox without R1 delivery schema changes.
+- [ ] Reviewer accepts target-owned scheduling/state, budget, non-pageable v1 cursor and recovery contracts.
+- [ ] Reviewer accepts Notification intent/reconciler/delivery-only flow and Outbox non-use without schema changes.
 - [ ] Reviewer accepts legacy migration, shadow/cutover/rollback and single scheduler authority.
 - [ ] Reviewer accepts exact files, four implementation batches and test matrix.
 - [ ] Foundation v2.3-FROZEN/R0 PASS is recorded, while R1 implementation remains unauthorized.

@@ -18,6 +18,9 @@
   不由本分支修改、merge、rebase 或扩展。
 - Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 只审核
   `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；不得开始 schema/scheduler 实现。
+- R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
+  pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
+  delivery-only task 解耦；scheduler/worker 共用 exact eligibility。以上仍只是合同，不是实现事实。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。

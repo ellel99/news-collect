@@ -22,6 +22,8 @@ document only; a separate explicit implementation authorization is still require
 ## 2. Final choices made
 
 - `target_key` is globally unique and immutable; no source-scoped alternative remains.
+- schema/adapter versions are separated from monotonic target `config_revision`; dispatch and worker require exact
+  generation equality before credential/network.
 - lifecycle uses one enum (`draft/active/paused/blocked/retired`), without a competing enabled flag.
 - Source owns provider authorization/license/retention; SourceAccount owns optional identity; CollectionTarget owns
   typed operation, cadence, cursor/retry/run/health/dispatch identity and budgets.
@@ -31,6 +33,10 @@ document only; a separate explicit implementation authorization is still require
 - task payload carries identifiers only; credential resolution occurs only after worker DB reload.
 - Notification is reused as durable Telegram state; Outbox is not turned into a competing delivery state machine and
   receives no R1 schema extension.
+- all initial Provider operations have `pagination_capability=none`; `has_more` becomes explicit incomplete coverage,
+  never a repeated first-page request or false completion.
+- RawItem/Run source/account equality is PostgreSQL-enforced with null-safe semantics; migration mismatch blocks.
+- scheduler and worker share one exact eligibility rule for Source, Account, Target, registry and revision state.
 - only one scheduler is authoritative; shadow mode performs no request/enqueue/write.
 - PR #39 Draft migrations are excluded; implementation revision derives from the then-current real main head.
 
@@ -38,12 +44,15 @@ document only; a separate explicit implementation authorization is still require
 
 - [ ] Final fields, nullability, enums, checks, indexes, FKs and lifecycle are implementable.
 - [ ] Identity, config and secret constraints are unambiguous.
+- [ ] `config_revision` race, stale task, pause/resume and rollback semantics are accepted.
 - [ ] Four Provider operation v1 schemas do not expand operation scope.
 - [ ] cadence/cursor/lock/retry/run/health/dispatch ownership is target-specific.
 - [ ] request/page/runtime/byte budgets and rate-limit grouping fail closed.
-- [ ] pagination/continuation/watermark/backfill/revision semantics prevent gaps and false completion.
+- [ ] initial pagination capability is none; has_more records incomplete coverage without a second request.
 - [ ] RawItem→Run→Target provenance is sufficient and consistency-protected.
-- [ ] collection remains independent from Notification/Telegram/Event delivery.
+- [ ] null-safe RawItem→Run provenance is DB-enforced and Content/Evidence audit is a R2/R8 prerequisite.
+- [ ] collection remains independent from Notification/Telegram/Event delivery through durable PENDING intent,
+  reconciliation and a delivery-only DB polling task.
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
 - [ ] shadow/cutover/rollback guarantee one authoritative scheduler.
 - [ ] exact implementation files, four batches and PostgreSQL/Redis/Celery test matrix are accepted.
