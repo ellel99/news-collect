@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Foundation v2.3 R0 Freeze Review
+
+- 新增独立 R0 Freeze Review package，逐条对比 v2.2→v2.3 candidate diff，并列出 proposed
+  authorization、继续冻结边界、R1–R8 独立 Review gate 与 Reviewer PASS/REJECT form。
+- 当前结果保持 PENDING；v2.2-FROZEN 仍生效，Active SPEC=None。R0 PASS 不自动启动 R1。
+- PR #39/SPEC-0040 保持 Draft，未修改、merge 或 rebase；真实 AI、Market Validation、Recommendation、
+  Portfolio 仍未授权。
+- 本轮仅文档；无 Python、migration、ORM/schema、runtime config/test logic、外部请求、credential/
+  `.env` 读取或 live migration。
+
 ## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
 
 - Docs Review PASS（2026-08-13）；只批准设计，Foundation v2.3 Freeze Review 仍 PENDING，未授权

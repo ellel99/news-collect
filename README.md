@@ -25,7 +25,9 @@ Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为
   runtime/scheduler evidence 已通过；当前 special scheduler 仍不是 multi-target 通用生产控制面。
 - Foundation v2.2-FROZEN 仍生效并禁止 scheduler rewrite。v2.3 Pre-AI Collection Readiness 仅为
   [Draft Freeze Review proposal](docs/FOUNDATION_V2_3_DRAFT.md)；在明确 PASS 前不得实现。完整路线见
-  [Pre-AI Collection Readiness Program](docs/PRE_AI_COLLECTION_READINESS.md)。PR #39 保持 Draft。
+  [Pre-AI Collection Readiness Program](docs/PRE_AI_COLLECTION_READINESS.md)。当前只进行
+  [R0 Freeze Review](docs/FOUNDATION_V2_3_FREEZE_REVIEW.md)，结果 PENDING；即使 R0 PASS 也不自动
+  启动 R1。PR #39 保持 Draft。
 - 最近完成：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Completed, Implementation Review approved
 
 Phase 1 固定主链路：
@@ -75,8 +77,8 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.2-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0041 Unified Production Collection Control Plane（Docs Review only；
-  implementation not authorized）
+- Active SPEC：None。SPEC-0041 Docs Review 已 PASS；当前仅 R0 Foundation v2.3 Freeze Review
+  Draft/PENDING，不是 implementation SPEC。
 
 统一 runtime verification：
 

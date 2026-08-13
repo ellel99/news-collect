@@ -3,6 +3,7 @@
 Foundation：v2.2-FROZEN
 Current Phase：Event Intelligence foundation
 Active SPEC：None
+Active governance review：Foundation v2.3 R0 Freeze Review（Draft/PENDING；not an implementation SPEC）
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -109,3 +110,6 @@ v2.2-FROZEN 生效。v2.3 Draft Freeze Review 仍 PENDING；SPEC-0041 不授权�
 PR #39 的 SPEC-0040 是未合并 Draft，在 Pre-AI R0–R8 完成前不得合并；之后须基于最新 main
 重新审计/rebase。SPEC-0005 及其他 Planned/candidate 不代表批准；SPEC-0022 已被 SPEC-0039
 absorb/supersede。
+
+当前 R0 只审核 Foundation v2.3 candidate diff。即使 R0 PASS，也保持 Active SPEC=None，直到用户
+另行创建并激活 R1 SPEC；不得由 Foundation Review 自动开始 schema、migration 或 runtime 实现。

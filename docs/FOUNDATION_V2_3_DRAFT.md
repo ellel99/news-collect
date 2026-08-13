@@ -6,6 +6,8 @@ Proposed Date：2026-08-13
 
 Current effective Foundation：v2.2-FROZEN
 
+Review package：`docs/FOUNDATION_V2_3_FREEZE_REVIEW.md`
+
 ## 1. Why a Foundation revision is required
 
 Foundation v2.2-FROZEN prohibits a scheduler rewrite and limits implementation authority to SPEC-0039.
@@ -34,6 +36,24 @@ SPECs to:
 
 Approval of this Foundation would authorize creation/review of bounded implementation SPECs, not automatic
 implementation of every readiness step or provider operation.
+
+### 2.1 Exact authorization boundary
+
+The proposed authorization is limited to the following readiness domains:
+
+| Domain | What v2.3 would permit to be specified/reviewed | What it does not authorize |
+|---|---|---|
+| Pre-AI collection reliability | reliability work required before real AI | arbitrary Phase 1 rewrite |
+| CollectionTarget/state | target identity and target-owned schedule/cursor/lock/retry/run/health/dispatch state | credentials or provider payload in control data |
+| Unified control plane | replacement of fake-only/special-provider split | new provider or arbitrary endpoint |
+| Scheduler rewrite | bounded migration to target-driven production scheduling | implementation without an Active SPEC |
+| Delivery decoupling | collection independent from Telegram/Event delivery | Telegram content/routing expansion |
+| Durable safe projection | versioned, provider-neutral, provenance-preserving projection | raw payload propagation or unlicensed content |
+| Provider operation expansion | only operations approved by independent SPEC/contract/license review | automatic activation from smoke/bootstrap defaults |
+| R8 completeness | Event/Evidence/Fact completeness after collection readiness | real AI, Market Validation or recommendation |
+
+R1–R8 remain separately reviewed work. An R0 PASS changes the governance ceiling only; it does not activate a
+SPEC, create a branch, authorize a migration, or permit a runtime request.
 
 ## 3. Boundaries that remain frozen
 
@@ -76,3 +96,26 @@ Result：PENDING — no Freeze Review decision recorded.
 
 Until PASS, Foundation v2.2-FROZEN remains fully effective and SPEC-0041 cannot implement schema, scheduler,
 factory, migration, projection or provider expansion.
+
+## 7. Proposed v2.2 → v2.3 normative delta
+
+If Freeze Review later returns PASS, only the following Foundation-level delta may be applied:
+
+1. Replace the absolute v2.2 prohibition on `scheduler rewrite` with a narrow exception for the reviewed,
+   target-driven production collection control plane and its reversible migration.
+2. Replace “Active implementation authority: SPEC-0039” with “SPEC-0039 remains completed; R1–R8 may each be
+   activated only through an independent approved SPEC after R0.”
+3. Add `CollectionTarget` and target-owned state as permitted control-plane schema, without prescribing an
+   implementation before R1 review.
+4. Add durable safe projection as a permitted pre-AI foundation layer, subject to provenance, content/license/
+   retention and secret boundaries.
+5. Permit independently reviewed operation expansion for already approved or future separately approved sources;
+   do not activate any provider, route or target in Foundation.
+6. Require collection to remain operational independently from Telegram/Event delivery.
+7. Require R8 Event/Evidence/Fact completeness before any real AI routing review.
+8. Continue every v2.2 single-user, market-scope, Broad Scan, Controlled Push, credential, provenance,
+   content/license, no-unauthorized-access and no-trading boundary unchanged.
+9. Continue to prohibit real AI, Market Validation, Recommendation and Portfolio implementation. PR #39 remains
+   Draft until R0–R8 complete and must then be re-audited/rebased.
+
+No other v2.2 clause is proposed for deletion or relaxation.
