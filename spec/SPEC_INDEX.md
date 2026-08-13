@@ -2,7 +2,7 @@
 
 Foundation：v2.2-FROZEN
 Current Phase：Event Intelligence foundation
-Active SPEC：SPEC-0039（Implementation Review）
+Active SPEC：None
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Active SPEC：SPEC-0039（Implementation Review）
 | SPEC-0036 | Multi-provider Ingestion for Finnhub, EIA and SEC EDGAR | Completed — Implementation Review approved | SPEC-0035 |
 | SPEC-0037 | Multi Provider Runtime Verification | Completed — Implementation Review approved | SPEC-0036 |
 | SPEC-0038 | Multi-provider Scheduler + Telegram Routing | Completed — Implementation Review approved | SPEC-0035/0037 |
-| SPEC-0039 | Phase 1 Acceptance + Event Candidate Foundation | Active — Implementation Review | SPEC-0018–0021/0023–0038 |
+| SPEC-0039 | Phase 1 Acceptance + Event Candidate Foundation | Completed — Implementation Review approved | SPEC-0018–0021/0023–0038 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -102,6 +102,6 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-SPEC-0030–0038 已完成。唯一 Active SPEC 是 SPEC-0039 Implementation Review；Foundation v2.2 Freeze
-Review 与 Docs Review 已 PASS，只允许已审核的 bounded Event Candidate foundation。SPEC-0005 及其他
-Planned/candidate SPEC 均未激活；SPEC-0022 已被 SPEC-0039 absorb/supersede。
+SPEC-0030–0039 已完成。当前 Active SPEC 为 None；Foundation v2.2-FROZEN 生效。Active 为 None 时
+不得开始实现，只能进行用户明确授权的文档准备、审查或历史收尾。SPEC-0005 及其他 Planned/
+candidate 不代表批准；SPEC-0022 已被 SPEC-0039 absorb/supersede。

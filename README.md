@@ -20,7 +20,7 @@ Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为
 - Foundation：v2.2-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 开发入口：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Active Implementation Review
+- 最近完成：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Completed, Implementation Review approved
 
 Phase 1 固定主链路：
 
@@ -69,7 +69,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.2-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Implementation Review
+- Active SPEC：None
 
 统一 runtime verification：
 
@@ -105,9 +105,8 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
   SPEC-0030–0038 已完成 real adapters、bounded runtime、collection/evidence/feed、四 Provider cadence
-  scheduler 与 Telegram routing。当前 SPEC-0039 仅进行 Phase 1 technical acceptance、Foundation v2.2
-  transition 与 Event Candidate Foundation implementation；Foundation v2.2 Freeze Review 和 Docs Review
-  已 PASS。SPEC-0022 已被 SPEC-0039 absorb/supersede。
+  scheduler 与 Telegram routing。SPEC-0039 Phase 1 acceptance、Foundation v2.2 transition 与 Event
+  Candidate Foundation 已完成并通过 Implementation Review。SPEC-0022 已被 SPEC-0039 absorb/supersede。
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向

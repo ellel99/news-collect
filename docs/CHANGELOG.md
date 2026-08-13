@@ -2,6 +2,7 @@
 
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
+- SPEC-0039 final Implementation Review PASS；状态更新为 Completed — Implementation Review approved。
 - Foundation v2.2 Freeze Review 与 SPEC-0039 Docs Review PASS；D-025 Approved，SPEC-0039 进入 bounded
   Implementation Review。
 - 新增 isolated revision 0005、EventCandidate/EventCandidateEvidence ORM、deterministic matcher/store、

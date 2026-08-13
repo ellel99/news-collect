@@ -1,6 +1,6 @@
 # SPEC-0039 — Phase 1 Acceptance + Event Candidate Foundation
 
-Status：Active — Implementation Review
+Status：Completed — Implementation Review approved
 
 Phase：Phase transition — Phase 1 technical acceptance to Event Intelligence
 
@@ -15,7 +15,7 @@ SPEC-0039 records Phase 1 core technical acceptance and defines one bounded Even
 `EvidenceItem + ContentItem → deterministic pre-dedup → EventCandidate ↔ Evidence provenance`
 
 It also defines provider/model-neutral importance and `ImpactAnalyzer` contracts. Foundation Freeze Review
-and SPEC Docs Review passed on 2026-08-13; the bounded implementation is now in Implementation Review.
+and SPEC Docs Review passed on 2026-08-13; final Implementation Review passed on 2026-08-13.
 
 ## 2. Phase 1 technical acceptance
 
@@ -56,8 +56,8 @@ boundaries continue under v2.2-FROZEN.
 
 ## 4. SPEC-0022 traceability
 
-The candidate `SPEC-0022 Dedup and Event Candidate Layer` is **absorbed/superseded by SPEC-0039 pending
-review**. Reused design intent:
+The candidate `SPEC-0022 Dedup and Event Candidate Layer` is **absorbed/superseded by SPEC-0039**. Reused
+design intent:
 
 - deterministic dedup before Event creation;
 - Evidence provenance preservation;
@@ -241,4 +241,4 @@ model credential, generated recommendation, or Telegram AI delivery.
 | 1 | REQUEST CHANGES | Layer authority, stable candidate identity, and reversible association semantics required clarification | Clarified in commit 4092f6a |
 | 2 | PASS | Foundation v2.2 Freeze Review and SPEC-0039 Docs Review | Bounded implementation authorized in this PR |
 | 3 | REQUEST CHANGES | Canonical URL false-merge risk, overwritten association history, stale aggregates, active-membership ambiguity, and stale docs | Corrected in the next PR #38 revision |
-| 4 | PENDING | Conservative URL identity, append-only membership generations, active aggregate/regroup semantics, 444-test regression, migration round trip and package evidence | Await next Implementation Review |
+| 4 | PASS | Conservative URL identity, append-only membership generations, active aggregate/regroup semantics, 444-test regression, migration round trip and package evidence | Implementation Review approved; SPEC completed |

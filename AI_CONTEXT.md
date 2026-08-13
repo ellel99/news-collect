@@ -8,11 +8,11 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`
+- 当前 Active SPEC：None
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：Foundation v2.2 Freeze Review 与 SPEC-0039 Docs Review 已 PASS；SPEC-0039 bounded
-  Event Candidate foundation 正在 Implementation Review。只允许 deterministic clustering、provenance
-  persistence、importance scoring 与 mock-only ImpactAnalyzer；禁止真实 AI/Recommendation。
+- 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
+  deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
+  Active SPEC，禁止继续实现真实 AI/Recommendation。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -54,7 +54,7 @@
 - 用户已确认长期产品目标是面向个人投资研究的实时信息采集与 AI 分析系统；这项产品目标不是当前实现状态或实现授权。
 - 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
 - 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
-- Deterministic EventCandidate foundation 已由 SPEC-0039 获准进入 Implementation Review；真实 AI、
+- Deterministic EventCandidate foundation 已由 SPEC-0039 完成并通过 Implementation Review；真实 AI、
   Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义仍须
   适用的独立 SPEC 和 Review。
 - SPEC-0004 的 Active 状态不是 Adapter 实现授权；独立 preflight scaffold 仅因用户明确授权而
