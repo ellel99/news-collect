@@ -4,20 +4,19 @@
 
 ## 当前冻结状态
 
-- Foundation：v2.2-FROZEN
+- Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：None
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
-  deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
+  deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
   SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
-  Foundation v2.3 Freeze Review 仍 PENDING。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge、
-  rebase 或扩展。
-- Foundation governance：v2.2-FROZEN 禁止 scheduler rewrite 且只授权 SPEC-0039。SPEC-0041 的
-  implementation 必须先取得 `docs/FOUNDATION_V2_3_DRAFT.md` Freeze Review PASS；当前结果 PENDING，
-  不得把 Docs Review 当作 schema/scheduler 实现授权。
+  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 not started/not authorized。PR #39/SPEC-0040 保持独立 Draft，
+  不由本分支修改、merge、rebase 或扩展。
+- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。SPEC-0041 Docs Review
+  PASS 不等于 implementation authorization；当前无 Active SPEC，不得开始 schema/scheduler 实现。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。
@@ -28,6 +27,9 @@
 - NewsAPI.ai / Event Registry：future / blocked；不得请求或执行 smoke
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
+- R7 boundary：R0/R7 不创建、激活或请求任何 Provider/Source/feed/endpoint；只可为现有 Collection
+  Scope 内的 Company IR、official RSS、政府/宏观/监管官方 endpoint family 准备独立 SPEC，并完成
+  全部 identity、license/access、typed contract、runtime/live 与 production activation gates。
 - GDELT Project DOC 2.0：runtime blocked / future evaluation only；不再是 primary pilot
 - GDELT 历史证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
   或保存文章数据
@@ -60,7 +62,7 @@
 
 ## 架构修订状态
 
-- 当前生效：Foundation v2.2-FROZEN；v2.1 的安全、单用户、市场和交易动作边界继续生效。
+- 当前生效：Foundation v2.3-FROZEN；v2.2 的安全、单用户、市场、许可、provenance 和交易动作边界继续生效。
 - 用户已确认长期产品目标是面向个人投资研究的实时信息采集与 AI 分析系统；这项产品目标不是当前实现状态或实现授权。
 - 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
 - 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
@@ -69,7 +71,8 @@
   适用的独立 SPEC 和 Review。
 - SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
   由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
-- Foundation v2.2-FROZEN 生效；D-020–D-024 Proposed Decisions 仍不等于实现授权。
+- Foundation v2.3-FROZEN 生效；R0 PASS/Completed。D-026/D-027 仅在 v2.3 的有限 Foundation ceiling
+  内获准，均不等于实现授权；R1 尚未启动且未获授权。
 
 ## Phase 1 允许
 
@@ -90,8 +93,8 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 5. `docs/AI_RULES.md`
 6. `docs/GLOSSARY.md`
 7. 当前 Active SPEC；若为“无”，读取最近完成 SPEC 与 `spec/SPEC_INDEX.md`
-8. 若处于 SPEC-0041，读取 `docs/FOUNDATION_V2_3_DRAFT.md` 与
-   `docs/PRE_AI_COLLECTION_READINESS.md`
+8. 若处于 SPEC-0041/R0，读取 `docs/FOUNDATION_V2_3_DRAFT.md`、
+   `docs/FOUNDATION_V2_3_FREEZE_REVIEW.md` 与 `docs/PRE_AI_COLLECTION_READINESS.md`
 9. 真实代码、迁移、测试和最近交付报告
 
 不得只根据聊天记录、旧 ZIP 名称或未验证的文档描述判断当前实现状态。
@@ -99,7 +102,9 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 ## 不可违反的规则
 
 1. 项目是单用户、自用系统，不引入多租户、Workspace、团队协作或 SaaS 设计。
-2. 市场范围是美股与 Crypto；宏观、能源、政治等是解释这两个市场的情报域，不是新增交易市场。
+2. U.S. equities、U.S. ETFs、Crypto 和 related cash positions 是直接 market/portfolio scope；宏观、
+   能源、监管、债券、FX 与商品是解释性输入，除非未来 Foundation Revision 改变边界。该继承不授权
+   Portfolio/Holding/Investment Plan implementation。
 3. 执行 Broad Scan，采集与分析范围不得因点击、忽略、阅读频率或历史关注行为而收窄。
 4. 执行 Controlled Push，通知可按明确规则、优先级、静默时间和事件增量进行控制。
 5. AI 不得自动下单，也不得给出替用户决定的买入、卖出、加仓、减仓或清仓指令。

@@ -1,15 +1,18 @@
 # Foundation Frozen
 
 Project：Market Intelligence Collector  
-Foundation：v2.2-FROZEN
+Foundation：v2.3-FROZEN
 Frozen Date：2026-08-13
 Result：PASS  
-Development Entry：`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`
+Freeze Review：PASS（reviewed baseline `4df76e1f0ed9812d962369b9766bf372b102d952`）
+Development Entry：`docs/FOUNDATION_V2_3.md`
 
-冻结内容：保留 v2.1 全部单用户、市场范围、安全、交易动作和技术基线；Phase 1 核心采集/
-Evidence/ContentItem/Scheduler/Telegram 技术链路完成；下一阶段进入 Event Intelligence / Event First。
-RawItem 是采集 trace，EvidenceItem 是 Event factual/provenance authority，ContentItem 是安全展示投影，
-EventCandidate 为 additive intelligence layer。仅批准 deterministic Event Candidate foundation 与
-mock-only ImpactAnalyzer boundary；不批准真实 AI、投资建议、Market Validation runtime 或自动交易。
+冻结内容：完整保留 v2.2 的单用户、市场、安全、许可、provenance 与禁止交易边界；有限授权 R1–R8
+可通过独立 SPEC/Review 接受 Pre-AI collection reliability、CollectionTarget/target-owned state、统一
+生产采集控制面、scheduler rewrite、collection/delivery 解耦、durable safe projection、受控 operation
+readiness 及 Event/Evidence/Fact completeness 的审核。R0 PASS 不启动 R1，也不授权任何实现或请求。
+真实 AI、Market Validation、Recommendation、Portfolio/Holding/Investment Plan 仍禁止。
+
+v2.2-FROZEN 保留为历史 frozen version，不删除、不重写。
 
 修改冻结内容必须有用户明确确认、新 Decision、影响分析、新 Foundation 版本和新 Freeze Review。普通功能开发不得顺带修改。

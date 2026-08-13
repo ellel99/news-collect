@@ -3,10 +3,10 @@
 用户已确认本项目的长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
 提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。
 
-这是产品目标，不是所有未来能力的实现授权。当前生效边界是 Foundation v2.2-FROZEN：保留
-v2.1 的单用户、自用、美股/ETF/Crypto 与交易安全边界，并批准 provider-neutral Event
-Intelligence foundation；真实 AI、Market Validation 和 Research Recommendation 仍未授权。
-Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为当前版本号使用。
+这是产品目标，不是所有未来能力的实现授权。当前生效边界是 Foundation v2.3-FROZEN：完整保留
+v2.2 的单用户、自用、直接市场范围、安全、许可与 provenance 边界，并有限授权 R1–R8 分别进入
+独立 SPEC/Review；真实 AI、Market Validation 和 Research Recommendation 仍未授权。
+Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 完整保留。
 
 系统按四个阶段演进：
 
@@ -17,14 +17,14 @@ Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为
 
 ## 冻结状态
 
-- Foundation：v2.2-FROZEN
+- Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
 - 当前 Active SPEC：None。SPEC-0041 Unified Production Collection Control Plane Docs Review 已 PASS，
-  但 implementation 仍受 Foundation v2.3 Freeze Review gate 阻塞。四 Provider 的 bounded adapter/
+  但 implementation 尚未由独立 R1 SPEC 授权。四 Provider 的 bounded adapter/
   runtime/scheduler evidence 已通过；当前 special scheduler 仍不是 multi-target 通用生产控制面。
-- Foundation v2.2-FROZEN 仍生效并禁止 scheduler rewrite。v2.3 Pre-AI Collection Readiness 仅为
-  [Draft Freeze Review proposal](docs/FOUNDATION_V2_3_DRAFT.md)；在明确 PASS 前不得实现。完整路线见
+- Foundation v2.3-FROZEN 已通过 [R0 Freeze Review](docs/FOUNDATION_V2_3_FREEZE_REVIEW.md)；R0
+  Completed/PASS，但不自动启动 R1，也不授权代码、migration、schema、runtime 或外部请求。完整路线见
   [Pre-AI Collection Readiness Program](docs/PRE_AI_COLLECTION_READINESS.md)。PR #39 保持 Draft。
 - 最近完成：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Completed, Implementation Review approved
 
@@ -48,7 +48,9 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 ## 核心边界
 
-- 覆盖市场：美股、ETF、Crypto，以及解释二者所需的宏观、政策、AI 产业链和能源信息。
+- 直接 market/portfolio scope：U.S. equities、U.S. ETFs、Crypto 和 related cash positions；宏观、
+  能源、监管、债券、FX 与商品仅作为解释性输入，除非未来 Foundation Revision 改变边界。该范围
+  不授权 Portfolio/Holding/Investment Plan implementation。
 - 第一阶段交互入口：Telegram 管理 Bot 与情报推送 Bot。
 - 系统不自动交易，不自动下单，也不输出替用户作出买卖决定的指令。
 - AI 不得擅自修改投资计划、风险规则或持仓逻辑。
@@ -73,10 +75,9 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 ## 当前状态
 
-- Foundation：v2.2-FROZEN
+- Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0041 Unified Production Collection Control Plane（Docs Review only；
-  implementation not authorized）
+- Active SPEC：None。R0 Foundation v2.3 Freeze Review 已 PASS；R1 not started/not authorized。
 
 统一 runtime verification：
 
@@ -120,7 +121,7 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
 
 已确认的产品目标是“一键了解重要事件 → AI 事实与影响分析 → 市场数据验证 → 可解释研究参考”，而不是普通新闻列表或对外转载平台。供应商无关混合采集、统一逻辑新闻记录、事件驱动处理与回补能力见 `docs/SYSTEM_DESIGN.md` 和 `docs/DATA_MODEL.md`。
 
-产品目标已经确认，但相关工程能力不代表均已实现或获准。Foundation v2.2-FROZEN 已批准
+产品目标已经确认，但相关工程能力不代表均已实现或获准。Foundation v2.3-FROZEN 继承并保留
 deterministic EventCandidate foundation；真实 AI 分析、Market Validation、Research Recommendation、
 多用户、商品直接投资域和交易动作语义仍须独立 SPEC/Review。v2.1 的禁止自动交易、合法授权
 和 Phase 1 运行边界继续生效。

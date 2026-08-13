@@ -1,8 +1,8 @@
 # Pre-AI Collection Readiness Program
 
-Status：PROPOSED — Docs Review only
+Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：Foundation v2.3 Draft Freeze Review PENDING
+Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 not started / not authorized
 
 ## 1. Purpose and release gate
 
@@ -40,14 +40,15 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 
 ### R0 — Foundation Revision / Freeze Review
 
-- **Current limitation:** v2.2 prohibits scheduler rewrite and limits implementation to SPEC-0039.
+- **Current limitation:** v2.2 prohibited scheduler rewrite and limited implementation to SPEC-0039.
 - **Target:** explicit authority for pre-AI reliability, target schema/control plane and delivery decoupling.
 - **Safety/license:** all existing single-user, Broad Scan, secret, licensed-content and no-trading boundaries stay.
 - **Non-goals:** code, migration, provider request, AI request or automatic PR #39 approval.
-- **Dependencies:** current v2.2-FROZEN and SPEC-0039 PASS.
+- **Dependencies:** historical v2.2-FROZEN and SPEC-0039 PASS.
 - **Impact:** documents only; no runtime/config/schema change.
 - **Verification gate:** Foundation diff, decision impact and downstream-document review.
-- **Acceptance:** explicit user/Reviewer Freeze Review PASS; otherwise all R1+ implementation is BLOCKED.
+- **Acceptance:** PASS（2026-08-13；baseline `4df76e1f0ed9812d962369b9766bf372b102d952`）。
+  R0 is completed; R1 remains not started/not authorized until an independent SPEC/Review.
 
 ### R1 — Unified Production Collection Control Plane
 
@@ -150,19 +151,25 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 ### R7 — Company IR, Official RSS, Macro and Regulatory Sources
 
 - **Current limitation:** these are catalog/planned evidence layers, not implemented production sources.
-- **Target:** prioritized official-source inventory and provider-neutral polling operations for explicitly reviewed
-  Company IR/official RSS and macro/regulatory feeds relevant to U.S. equities/Crypto.
+- **Target:** prepare independent SPECs for prioritized, provider-neutral official-source operations covering
+  Company IR, official RSS and government/macro/regulatory feeds that fit existing Collection Scope and explain
+  U.S. equities, U.S. ETFs, Crypto and related cash positions. R0/R7 itself creates, activates and requests nothing.
 - **Safety/license:** source-by-source terms/robots/retention/attribution, official identity verification, metadata/
   link-only default and no arbitrary web fallback.
 - **Non-goals:** new commercial provider selection, X, unrestricted crawling, full-text assumption, streaming or
   webhook infrastructure.
 - **Dependencies:** R1/R2; Source Catalog review; one independent provider/operation SPEC per endpoint family.
+  Every family must independently complete official identity verification; access/license/robots/retention/
+  attribution review; typed operation/adapter contract; request budget/cursor/revision/recovery contract; mock/
+  integration verification; user-authorized bounded live verification; and production activation review.
 - **Impact:** new Source/Account/Target records and adapter/config only after authorization; migration only for
   genuinely new generic contracts.
 - **Verification gate:** official documentation, mock/fixture contracts and package safety first; each endpoint gets
   explicit bounded live authorization and license review.
-- **Acceptance:** every active official target has verified identity, operation allowlist, retention/access policy,
-  stable ID/time/cursor/revision contract, budget and recovery evidence.
+- **Acceptance:** independent Docs/Implementation/production-activation reviews explicitly PASS every gate before
+  a target becomes active. A reviewable independent SPEC is not automatic approval to implement or activate.
+  Commercial news Providers, X, streaming/webhook/event-bus, arbitrary web crawlers/endpoints remain prohibited;
+  sources beyond current Collection Scope, market scope or safety boundaries require a new Foundation Revision.
 
 ### R8 — Event / Evidence / Fact Completeness
 
