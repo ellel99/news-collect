@@ -1,8 +1,8 @@
 # SPEC Index
 
-Foundation：v2.1-FROZEN  
-Current Phase：Phase 1  
-Active SPEC：None（SPEC-0038 Implementation Review approved；等待 SPEC-0039 独立激活）
+Foundation：v2.2-FROZEN
+Current Phase：Event Intelligence foundation
+Active SPEC：None
 
 | SPEC | 名称 | 状态 | 依赖 |
 |---|---|---|---|
@@ -38,6 +38,7 @@ Active SPEC：None（SPEC-0038 Implementation Review approved；等待 SPEC-0039
 | SPEC-0036 | Multi-provider Ingestion for Finnhub, EIA and SEC EDGAR | Completed — Implementation Review approved | SPEC-0035 |
 | SPEC-0037 | Multi Provider Runtime Verification | Completed — Implementation Review approved | SPEC-0036 |
 | SPEC-0038 | Multi-provider Scheduler + Telegram Routing | Completed — Implementation Review approved | SPEC-0035/0037 |
+| SPEC-0039 | Phase 1 Acceptance + Event Candidate Foundation | Completed — Implementation Review approved | SPEC-0018–0021/0023–0038 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -96,11 +97,11 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 | SPEC-0014 Market Data Validation Adapters | 定义可替换行情/财务数据 adapter 与市场验证合同 | SPEC-0013 |
 | SPEC-0015 Research Recommendation Contract | 定义研究参考状态、置信度、风险、催化剂和失效条件；不得自动执行 | SPEC-0013、SPEC-0014、AI boundary Freeze Review |
 | SPEC-0016 Personal Research Home Experience | 定义 1h/6h/24h 事件视图、证据链接、等待确认和风险呈现 | SPEC-0013–0015 |
-| SPEC-0022 Dedup and Event Candidate Layer | 评估 dedup/Event candidate 边界 | SPEC-0021, Foundation revision review |
+| SPEC-0022 Dedup and Event Candidate Layer | Absorbed/superseded by SPEC-0039；不得单独激活 | SPEC-0021, Foundation v2.2-FROZEN |
 
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-SPEC-0030–0038 已完成。当前 Active SPEC 为 None；不得继续扩展 scheduler 或开始 AI、investment
-recommendation、formal dedup/Event，直到用户明确激活新的独立 SPEC。SPEC-0005 及其他
-Planned/candidate SPEC 均未激活；SPEC-0022 继续保留为 Dedup and Event Candidate Layer 且未启动。
+SPEC-0030–0039 已完成。当前 Active SPEC 为 None；Foundation v2.2-FROZEN 生效。Active 为 None 时
+不得开始实现，只能进行用户明确授权的文档准备、审查或历史收尾。SPEC-0005 及其他 Planned/
+candidate 不代表批准；SPEC-0022 已被 SPEC-0039 absorb/supersede。

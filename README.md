@@ -3,9 +3,10 @@
 用户已确认本项目的长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
 提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。
 
-这是产品目标，不是当前实现状态或实现授权。当前生效边界仍是 Foundation v2.1-FROZEN：
-单用户、自用、美股/ETF/Crypto，且 Phase 1 禁止 AI、Event、Market Validation 和 Research
-Recommendation。
+这是产品目标，不是所有未来能力的实现授权。当前生效边界是 Foundation v2.2-FROZEN：保留
+v2.1 的单用户、自用、美股/ETF/Crypto 与交易安全边界，并批准 provider-neutral Event
+Intelligence foundation；真实 AI、Market Validation 和 Research Recommendation 仍未授权。
+Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为当前版本号使用。
 
 系统按四个阶段演进：
 
@@ -16,10 +17,10 @@ Recommendation。
 
 ## 冻结状态
 
-- Foundation：v2.1-FROZEN
+- Foundation：v2.2-FROZEN
 - 状态：Frozen
-- 当前阶段：Phase 1 — Information Collection & Push
-- 开发入口：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md)，四 Provider 最小 scheduler 与 Telegram routing
+- 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
+- 最近完成：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Completed, Implementation Review approved
 
 Phase 1 固定主链路：
 
@@ -36,7 +37,8 @@ Source Registry
 → Operations / Health / Audit
 ```
 
-Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Investment Plan、Candidate Rule 或交易建议。
+Phase 1 历史边界不包含 LLM、AI 摘要或 Event；v2.2 仅新增已审核的 EventCandidate/Evidence
+foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candidate Rule 或交易建议。
 
 ## 核心边界
 
@@ -65,9 +67,9 @@ Phase 1 不包含 LLM、AI 摘要、Event、Evidence、Portfolio、Holding、Inv
 
 ## 当前状态
 
-- Foundation：v2.1-FROZEN
-- 当前阶段：Phase 1 — Information Collection & Push
-- Active SPEC：[`spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md`](spec/SPEC-0038-multi-provider-scheduler-telegram-routing.md) — Implementation Review
+- Foundation：v2.2-FROZEN
+- 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
+- Active SPEC：None
 
 统一 runtime verification：
 
@@ -102,21 +104,19 @@ eligible targets 会 fail closed。API key、SEC User-Agent/contact 不写入 DB
   Completed，SPEC-0023 Write Path、SPEC-0024 Adapter Integration Docs Review 与 SPEC-0025 Adapter
   Scaffold、SPEC-0026 Collection Runner mocked integration 与 SPEC-0027 RawItem-to-Evidence
   orchestration、SPEC-0028 projection trigger 与 SPEC-0029 mock E2E implementation 也已 Completed。
-  SPEC-0030–0037 已完成 real adapters、bounded runtime 与现有 collection/evidence/feed 能力。
-  当前 SPEC-0038 只增加四 Provider 最小 cadence scheduler、content-safe ContentItem 与 Telegram
-  routing，并只用 mocked transport 测试；CI/pytest/package review 不执行真实 Provider/Telegram，
-  不修改 migration、ORM 或 DB schema，不读取 `.env`/raw capture/`local_evaluation/`，不实现 formal
-  normalization、dedup、Event 或 AI；SPEC-0022 未启动
+  SPEC-0030–0038 已完成 real adapters、bounded runtime、collection/evidence/feed、四 Provider cadence
+  scheduler 与 Telegram routing。SPEC-0039 Phase 1 acceptance、Foundation v2.2 transition 与 Event
+  Candidate Foundation 已完成并通过 Implementation Review。SPEC-0022 已被 SPEC-0039 absorb/supersede。
 - SPEC-0005 仍为 X Source and Account Collection Planned 范围，不由当前 SPEC 改写
 
 ## 长期产品与架构方向
 
 已确认的产品目标是“一键了解重要事件 → AI 事实与影响分析 → 市场数据验证 → 可解释研究参考”，而不是普通新闻列表或对外转载平台。供应商无关混合采集、统一逻辑新闻记录、事件驱动处理与回补能力见 `docs/SYSTEM_DESIGN.md` 和 `docs/DATA_MODEL.md`。
 
-产品目标已经确认，但相关工程能力不代表已实现或已获准实现。AI 分析、Event、Market
-Validation、Research Recommendation、多用户、商品直接投资域和交易动作语义，必须分别
-完成 Foundation revision、Freeze Review 和独立 SPEC；当前 v2.1-FROZEN 的 Phase 1、
-禁止自动交易和合法授权边界继续生效。
+产品目标已经确认，但相关工程能力不代表均已实现或获准。Foundation v2.2-FROZEN 已批准
+deterministic EventCandidate foundation；真实 AI 分析、Market Validation、Research Recommendation、
+多用户、商品直接投资域和交易动作语义仍须独立 SPEC/Review。v2.1 的禁止自动交易、合法授权
+和 Phase 1 运行边界继续生效。
 
 ## 目录
 

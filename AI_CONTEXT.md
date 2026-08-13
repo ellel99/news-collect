@@ -4,15 +4,15 @@
 
 ## 当前冻结状态
 
-- Foundation：v2.1-FROZEN
-- 当前阶段：Phase 1
+- Foundation：v2.2-FROZEN
+- 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None（等待用户明确激活下一独立 SPEC）
+- 当前 Active SPEC：None
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0038 Implementation Review 已批准完成；Marketaux、Finnhub、EIA、SEC EDGAR
-  独立 cadence scheduler 与 provider-specific Telegram routing 已进入完成态。当前不得继续扩展
-  scheduler，等待用户明确激活下一独立 SPEC。
+- 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
+  deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
+  Active SPEC，禁止继续实现真实 AI/Recommendation。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -25,8 +25,9 @@
   或保存文章数据
 - GDELT corrected smoke 历史证据：冷却超过 60 分钟后唯一 GET 使用 `timespan=15min`，仍返回 HTTP
   429，未获得有效 JSON 或文章字段
-- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。进一步 scheduler expansion、
-  AI、Event、formal dedup/clustering、投资建议及其他独立 SPEC 范围仍未授权。
+- 当前门禁：不得自行请求任何 Provider；不得请求 NewsAPI.ai 或 GDELT。SPEC-0039 仅授权
+  deterministic EventCandidate foundation；进一步 scheduler expansion、真实 AI、复杂 semantic
+  clustering、投资建议及其他独立 SPEC 范围仍未授权。
 - Preflight 工具默认 dry-run；只有用户逐平台提供凭证、确认合同并明确授权后，才可使用
   `--execute`。运行方式与官方合同见 `docs/PROVIDER_SMOKE_RUNBOOK.md` 和
   `docs/PROVIDER_OFFICIAL_CONTRACTS.md`。
@@ -45,18 +46,20 @@
 - SPEC-0030/0031 combined PR 已完成 real adapter boundary 与 bounded smoke harness；SPEC-0032 已完成
   manual Marketaux collection/evidence runtime；SPEC-0033 已完成 visible feed/manual Telegram；
   SPEC-0036 已完成 Finnhub/EIA/SEC adapters 与 ingestion pipeline。NewsAPI.ai/GDELT 均不激活。
-  SPEC-0022 仍为非 Active Dedup/Event candidate，SPEC-0005 X Source 范围不变。
+  SPEC-0022 已由 SPEC-0039 absorb/supersede，不得单独激活；SPEC-0005 X Source 范围不变。
 
 ## 架构修订状态
 
-- 当前仍生效：Foundation v2.1-FROZEN。
+- 当前生效：Foundation v2.2-FROZEN；v2.1 的安全、单用户、市场和交易动作边界继续生效。
 - 用户已确认长期产品目标是面向个人投资研究的实时信息采集与 AI 分析系统；这项产品目标不是当前实现状态或实现授权。
 - 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
 - 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
-- AI 分析、Event、Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义，必须完成适用的 Foundation revision、Freeze Review 和独立 SPEC 后才能实施。
+- Deterministic EventCandidate foundation 已由 SPEC-0039 完成并通过 Implementation Review；真实 AI、
+  Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义仍须
+  适用的独立 SPEC 和 Review。
 - SPEC-0004 的 Active 状态不是 Adapter 实现授权；独立 preflight scaffold 仅因用户明确授权而
   存在，不得扩展为业务代码、迁移、依赖、真实来源请求或 adapter registration。
-- Foundation v2.1-FROZEN 仍然生效；Proposed Decisions 不等于实现授权。
+- Foundation v2.2-FROZEN 生效；D-020–D-024 Proposed Decisions 仍不等于实现授权。
 
 ## Phase 1 允许
 

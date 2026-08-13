@@ -13,6 +13,11 @@ PHASE1_TABLES = {
     "evidence_items",
 }
 
+EVENT_INTELLIGENCE_FOUNDATION_TABLES = {
+    "event_candidates",
+    "event_candidate_evidence",
+}
+
 FUTURE_TABLE_NAMES = {
     "events",
     "event_versions",
@@ -29,7 +34,9 @@ FUTURE_TABLE_NAMES = {
 
 
 def test_metadata_contains_only_phase1_business_tables() -> None:
-    assert set(Base.metadata.tables) == PHASE1_TABLES | {"system_metadata"}
+    assert set(Base.metadata.tables) == (
+        PHASE1_TABLES | EVENT_INTELLIGENCE_FOUNDATION_TABLES | {"system_metadata"}
+    )
     assert set(Base.metadata.tables).isdisjoint(FUTURE_TABLE_NAMES)
 
 

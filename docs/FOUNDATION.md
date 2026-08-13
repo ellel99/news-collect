@@ -1,16 +1,20 @@
 # Foundation
 
-版本：2.1-FROZEN  
+版本：2.2-FROZEN
 状态：Frozen  
 适用范围：所有设计、SPEC、代码、测试和审核
 
 ## 0. 冻结声明
 
-本版本是 Phase 1 开发基线。单用户、美股与 Crypto 范围、Broad Scan、Controlled Push、四阶段边界、Phase 1 技术基线、禁止自动交易和禁止隐式行为收窄已经冻结。普通功能开发不得顺带修改。
+本版本保留 Phase 1 开发基线，并批准进入 Event Intelligence foundation。单用户、美股与 Crypto
+范围、Broad Scan、Controlled Push、四阶段边界、Phase 1 技术基线、禁止自动交易和禁止隐式
+行为收窄继续冻结。普通功能开发不得顺带修改。
 
 Phase 1 只实现：采集、原始留痕、确定性标准化、确定性去重、存储、Notification Outbox、Telegram 推送和运维。
 
-Phase 1 不实现：AI/LLM、Event、Evidence、Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 或任何交易建议。
+Phase 1 历史范围不实现 AI/LLM 或 Event；v2.2 只增加 SPEC-0039 已审核的 EventCandidate、Evidence
+association、deterministic clustering、importance foundation 与 mock-only ImpactAnalyzer contract。
+真实 AI/Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 和交易建议仍不允许。
 
 ## 1. 项目愿景
 
@@ -225,19 +229,21 @@ AI 只能：
 3. 更新版本与 `CHANGELOG.md`；
 4. 检查所有下游文档和 Active SPEC。
 
-## 12. 待审核的下一版方向
+## 12. v2.2 Event Intelligence transition
 
 2026-07-29 用户确认了长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
 提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。该产品目标已经
 确认，不表示相关能力已实现或已获准实现。
 
 支撑该目标的供应商无关混合采集、统一逻辑新闻记录、事件驱动处理、市场数据验证与研究
-参考工程方向记录在 `DECISIONS.md` 的 D-020–D-024，状态为 Proposed。
+参考工程方向记录在 `DECISIONS.md` 的 D-020–D-024，仍为 Proposed。D-025 已通过 Freeze Review，
+只批准从 Phase 1 core technical acceptance 进入 deterministic Event Candidate foundation。
 
-在新 Foundation 版本完成影响分析和 Freeze Review 前：
+v2.2 的批准边界：
 
-- 本文件的 v2.1-FROZEN 条款继续是唯一生效边界；
+- v2.1 的安全、单用户、市场与交易动作条款继续生效；
 - 不把 Proposed Decisions 当成实现授权；
-- 不改变 Phase 1 schema、四阶段边界或已完成 SPEC；
+- 不重写或破坏 Phase 1 pipeline；
 - 不启用多用户、商品直接投资域或带交易动作语义的 AI 结论；
-- 可以在 Living 架构文档中定义供应商无关接口和候选后续 SPEC。
+- SPEC-0039 只可实现已审核的 EventCandidate、Evidence association、deterministic clustering、
+  importance foundation 与 mock-only ImpactAnalyzer contract。
