@@ -8,15 +8,16 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None
+- 当前 Active SPEC：SPEC-0041 Implementation — Unified Production Collection Control Plane（Docs Review only）
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
   SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
-  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 not started/not authorized。PR #39/SPEC-0040 保持独立 Draft，
+  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 Docs Review 已激活，但 implementation not
+  authorized/not started。PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
-- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。SPEC-0041 Docs Review
-  PASS 不等于 implementation authorization；当前无 Active SPEC，不得开始 schema/scheduler 实现。
+- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 只审核
+  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；不得开始 schema/scheduler 实现。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。
@@ -72,7 +73,7 @@
 - SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
   由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
 - Foundation v2.3-FROZEN 生效；R0 PASS/Completed。D-026/D-027 仅在 v2.3 的有限 Foundation ceiling
-  内获准，均不等于实现授权；R1 尚未启动且未获授权。
+  内获准，均不等于实现授权；R1 Docs Review 已激活，implementation 尚未授权或开始。
 
 ## Phase 1 允许
 

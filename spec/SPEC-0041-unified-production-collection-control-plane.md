@@ -1,6 +1,6 @@
 # SPEC-0041 — Unified Production Collection Control Plane
 
-状态：Completed — Docs Review approved；implementation blocked pending Foundation v2.3 Freeze Review
+状态：Completed — Architecture Docs Review approved；Foundation v2.3 R0 PASS
 
 阶段：Cross-phase collection reliability
 
@@ -18,7 +18,9 @@ Provider 与未来官方来源共享同一调度、执行、cursor、retry、hea
 
 ## 2. 基线与现状审计
 
-设计基线为 `main@047c56410733cdcbf3b82e3b909a5cd6b05170dd`。PR #39
+历史设计基线为 `main@047c56410733cdcbf3b82e3b909a5cd6b05170dd`。R1 最终实施合同已按
+`main@9c68dd6effe67d6f798fb080fdbffa6f80b77532` 重新审计并收敛到
+`spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`。PR #39
 `1688e1ffb26d6c91214fee59f7da6d858924c750` 保持 Draft；其 SPEC-0040 与 migrations
 `0006/0007` 不属于本分支，也不得被合并、重放或扩展。
 
@@ -49,15 +51,12 @@ flowchart TD
 现有四 Provider 的 adapter、bounded runtime、最小 pipeline 与 scheduler evidence 均保留为已实现
 事实；本审计只说明它们尚未形成多 target 通用控制面，不撤销既有 PASS。
 
-## 3. Foundation 与治理边界
+## 3. Foundation 与治理边界（R0 closeout 后）
 
-- Active Foundation：v2.2-FROZEN。该版本明确禁止 scheduler rewrite，并把 implementation authority
-  限于 SPEC-0039，因此 **SPEC-0041 当前无权实施** CollectionTarget/schema、target state migration、
-  unified scheduler rewrite 或 delivery decoupling。
-- 本 PR 新增 `docs/FOUNDATION_V2_3_DRAFT.md`，只准备 Foundation Revision / Freeze Review。v2.3
-  必须获得用户/Reviewer 明确 PASS 后，才能更新有效 Foundation 并另行授权实现。
-- Proposed v2.3 只请求在真实 AI 前回补 collection reliability：CollectionTarget/state schema、统一
-  production control plane、collection 与 Telegram/Event delivery 解耦，以及后续 Pre-AI Readiness。
+- Active Foundation：v2.3-FROZEN；R0 Freeze Review 已 PASS/Completed。该 PASS 只允许 R1 进入独立
+  SPEC/Docs Review，不授权 CollectionTarget/schema、migration、runtime 或外部请求。
+- R1 Docs Review 的唯一实施合同为
+  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；implementation not authorized。
 - Provider-neutral、failure-visible、credential isolation、Broad Scan 与 Controlled Push 决策继续生效。
 - SPEC-0041 是唯一 Docs Review；不与 PR #39 的未合并 SPEC-0040 并行实施。
 - NewsAPI.ai / Event Registry 保持 future/blocked；GDELT 保持 runtime blocked/future evaluation。
@@ -337,7 +336,7 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 - [ ] notification/Event 与 collection 解耦且不重写既有 Phase 1/Event pipeline。
 - [ ] legacy/default/cursor migration 不扩大授权、不丢失审计。
 - [ ] PR #39 merge ordering 与 Alembic 双 head 处理明确。
-- [ ] Foundation v2.3 Draft 明确覆盖 v2.2 scheduler prohibition，且 Freeze Review 仍为 PENDING。
+- [x] Foundation v2.3-FROZEN 已通过 R0；R1 implementation 仍需独立授权。
 - [ ] Pre-AI Collection Readiness R0–R9 的限制、目标、边界、依赖、影响、验证与验收均可审核。
 - [ ] 测试矩阵、实现文件范围、风险与 rollback 可审核。
 - [ ] NewsAPI.ai/GDELT/X/new Provider 未激活。
@@ -359,7 +358,7 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 
 | Step | 后续主题 | 依赖/门禁 |
 |---|---|---|
-| R0 | Foundation v2.3 Freeze Review | 本 Docs Review；必须显式 PASS |
+| R0 | Foundation v2.3 Freeze Review | Completed/PASS |
 | R1 | Unified Production Collection Control Plane | R0；最新 main/migration inventory |
 | R2 | Durable Safe Projection | R1 target/provenance contract |
 | R3 | Marketaux query/topic/entity/page/window | R1/R2；plan/license/operation review |
@@ -371,7 +370,7 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 | R9 | deterministic+model AI routing re-audit | all R0–R8 PASS；PR #39 re-audit/rebase on latest main |
 
 不得把 R3–R7 合并成模糊 provider expansion；每个 operation 仍有独立 mock/integration/live gate。实现
-不得在 R0 PASS 前开始，也不得由本编号自动启动 SPEC-0042 或覆盖 PR #39。
+不得在 R1 implementation 明确授权前开始，也不得由本编号自动启动后续 SPEC 或覆盖 PR #39。
 
 ## 18. Verification Evidence
 
@@ -400,4 +399,6 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 | 轮次 | 结果 | 主要问题 | 处理 |
 |---|---|---|---|
 | Docs Review 0 | REQUEST CHANGES | Foundation conflict、readiness 路线、PR #39 freeze、Provider 状态 | 新增 v2.3 Draft、R0–R9 program 并统一状态 |
-| Docs Review 1 | PASS（2026-08-13） | 文档范围与治理门禁通过 | 仅批准 Docs Review；v2.3 Freeze Review 仍 PENDING，禁止 implementation |
+| Docs Review 1 | PASS（2026-08-13） | 文档范围与治理门禁通过 | 仅批准 architecture Docs Review |
+| R0 Freeze Review | PASS（2026-08-13） | 八项有限 Foundation authorization | v2.3-FROZEN；不自动启动 R1 |
+| R1 Docs Review | PENDING | 最终 implementation contract | Active docs-only；implementation not authorized |

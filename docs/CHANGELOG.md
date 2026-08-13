@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — R1 Unified Production Collection Control Plane Docs Review
+
+- 从 `main@9c68dd6` 重新审计 ORM、migration、generic dispatcher/task、CollectionRunner、Provider runtime、
+  Notification/Outbox、Redis lock/retry 与测试，未复制旧架构假设。
+- 新增 implementation-ready SPEC-0041 contract：固定 global immutable `target_key`、最终
+  CollectionTarget schema/lifecycle、target-owned cursor/run/health、RawItem run-based provenance、四
+  Provider typed operation v1 schema、预算/分页/恢复、worker reload/credential boundary 及单 scheduler cutover。
+- 明确复用 Notification/Outbox 且 R1 不新增 delivery schema；collection 与 Telegram/Event delivery 解耦。
+- 新增 R1 Docs Review package、四批 implementation gate 及 PostgreSQL/Redis/Celery/concurrency/restart/
+  migration/regression test matrix。
+- Foundation v2.3-FROZEN、R0 Completed/PASS；R1 Active — Docs Review only，implementation not authorized。
+- PR #39/SPEC-0040 保持 Draft、未修改/merge/rebase；本轮无 Python、migration、ORM/schema、runtime、
+  external request、credential/`.env` read 或 live migration。
+
 ## Unreleased — Foundation v2.3 R0 Freeze Review
 
 - R0 Freeze Review PASS（2026-08-13；reviewed baseline

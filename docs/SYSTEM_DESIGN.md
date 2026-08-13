@@ -95,8 +95,11 @@ SPEC-0041 提议以 `CollectionTarget` 作为 cadence、cursor、lock、retry、
 idempotency 的共同 owner，并以 typed/versioned config 和显式 adapter factory 替代无版本
 `SourceAccount.collection_options` 与 provider `if/elif`。Telegram/事件处理消费持久结果，不能决定
 collection 是否运行。完整设计见 `spec/SPEC-0041-unified-production-collection-control-plane.md`；
-当前只审核设计，不代表 schema 或 runtime 已实现。由于 v2.2 明确禁止 scheduler rewrite，必须先由
-`docs/FOUNDATION_V2_3_DRAFT.md` 获得 Freeze Review PASS。之后仍须按
+R1 最终实施合同见
+`spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`，当前仅 Docs Review，
+implementation 未授权。
+当前只审核设计，不代表 schema 或 runtime 已实现。Foundation v2.3 R0 Freeze Review 已 PASS，但
+implementation 仍需本 R1 Docs Review PASS 后的单独明确授权。之后仍须按
 `docs/PRE_AI_COLLECTION_READINESS.md` 分步审核 durable projection、provider operations 和 factual
 completeness，真实 AI 才可重新评估。
 
