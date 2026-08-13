@@ -129,7 +129,7 @@ def _settings() -> Settings:
     )
 
 
-def _pipeline(factory, redis, response, sidecar=None):
+def _pipeline(factory, redis, response, sidecar=None, event_enqueuer=None):
     registry = ProviderAdapterRegistry()
     registry.register("marketaux", MarketauxAdapter())
     transport = MockProviderTransport(list(response) if isinstance(response, tuple) else [response])
@@ -143,7 +143,7 @@ def _pipeline(factory, redis, response, sidecar=None):
         provider_transport=transport,
         provider_result_observer=sidecar,
     )
-    return EndToEndMockEvidencePipeline(factory, runner, sidecar), transport
+    return EndToEndMockEvidencePipeline(factory, runner, sidecar, event_enqueuer), transport
 
 
 def _target(source: Source, account: SourceAccount) -> CollectionTarget:
@@ -205,6 +205,33 @@ async def test_reprocessing_run_is_idempotent(e2e_runtime) -> None:
 
     assert second.trigger_outcomes[0].pipeline_outcome is not None
     assert second.trigger_outcomes[0].pipeline_outcome.status is EvidencePipelineStatus.DUPLICATE
+    assert await _counts(factory) == (1, 1)
+
+
+class _EventEnqueuer:
+    def __init__(self, fail: bool = False) -> None:
+        self.ids = []
+        self.fail = fail
+
+    def enqueue(self, evidence_item_id) -> None:
+        self.ids.append(evidence_item_id)
+        if self.fail:
+            raise RuntimeError("broker unavailable")
+
+
+@pytest.mark.asyncio
+async def test_evidence_commit_precedes_event_enqueue_and_failure_does_not_rollback(
+    e2e_runtime,
+) -> None:
+    factory, redis = e2e_runtime
+    source, account = await _source(factory)
+    enqueuer = _EventEnqueuer(fail=True)
+    pipeline, _ = _pipeline(factory, redis, _response(), event_enqueuer=enqueuer)
+
+    outcome = await pipeline.run(_target(source, account))
+
+    assert outcome.status is EndToEndStatus.PROCESSED
+    assert len(enqueuer.ids) == 1
     assert await _counts(factory) == (1, 1)
 
 

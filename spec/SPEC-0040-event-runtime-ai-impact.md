@@ -38,6 +38,23 @@ It reads active Evidence associations plus approved ContentItem title projection
 objects, raw provider responses, credentials, unrestricted body, local captures, or `.env`. No Evidence yields a
 fail-closed result. Conflicting safe projections are represented as contradiction/uncertainty rather than hidden.
 
+### Provider content audit and EvidenceFactDigest
+
+| Provider | Approved/current response fields | Before this review | Digest after enrichment | Still excluded |
+|---|---|---|---|---|
+| Marketaux | uuid, title, description, snippet, public url, published_at | presence flags; ContentItem title/url; Fact title only | bounded title + safe summary/snippet + public URL | raw response, article body, page crawl |
+| Finnhub | quote c/d/dp/h/l/o/pc/t and runtime symbol | numeric count/symbol/timestamp; no values in Fact | typed market observation fields | raw response, fabricated news prose |
+| EIA | period, geography/state, sector, price, optional unit | geography/sector/value-presence; no value in Fact | dataset/period/geography/sector/metric/value/unit | raw response, extra request/backfill |
+| SEC EDGAR | recent accession, form, filing date, primary-document presence, ticker | metadata projection; display title only | official typed filing metadata | filing body, primary document, full XBRL crawl |
+
+This audit comes from current adapters, mock contracts and approved provider contracts; it does not infer fields.
+`EvidenceFactDigest` is provider-neutral, deterministic, bounded and provenance-preserving. It contains approved
+title/summary or typed structured facts, never credentials, SDK objects, arbitrary JSON, unrestricted bodies or raw
+responses. Input is capped at 12 digests, 500 title chars, 1000 summary chars and 16 structured fields. Ordering is
+official-first, newest-first, then deterministic provider/Evidence identity; total/included/truncated counts remain
+visible. LOW input may run only with confidence capped at 0.35, required market validation and an
+`insufficient_evidence_context` uncertainty.
+
 ## ImpactAnalyzer boundary
 
 The existing provider/model-neutral `ImpactAnalyzer` protocol and deterministic mock remain authoritative.
@@ -57,7 +74,10 @@ rebalance/allocate/trade-now language fail closed. Provider/model SDK types neve
 
 ## Persistence
 
-Revision `0006` creates `impact_analyses` only. Each row records EventCandidate FK, monotonically increasing
+Revision `0006` creates `impact_analyses` only. Revision `0007` adds minimal `event_fact_snapshots` metadata.
+First unique Fact hash is version 1, the same hash reuses that version, and each new hash increments the candidate
+version. Candidate/hash and candidate/version unique constraints make this concurrency-safe. Each Impact row records
+EventCandidate FK, monotonically increasing
 analysis version, fact version/hash, analyzer provider/model/contract identity, validated structured output,
 status, safe errors, optional superseded analysis FK, and creation time. Old versions are retained.
 
@@ -86,6 +106,18 @@ It never reads `.env`, saves response/prompt/content, or prints credentials.
 - Smoke dry-run inert and execute-missing-credential fail closed; tests never make a real AI request.
 - Revision 0006 PostgreSQL upgrade/downgrade/re-upgrade and Alembic check.
 - All EventCandidate and Phase 1 Provider/scheduler/Telegram regressions remain PASS.
+
+## Post-persistence Event enqueue and benchmark foundation
+
+- Evidence pipeline supports a post-commit enqueue boundary. Broker failure cannot roll Evidence back;
+  deterministic task IDs and Event idempotency tolerate duplicate delivery; adapters never call Event code.
+- Fixed candidates, with no winner selected: GPT-5.6 Terra, Claude Sonnet 5, Gemini Pro and DeepSeek V4 Pro.
+  `ImpactBenchmarkCase/Runner/Result` and four wrappers give every model the same Fact/Digest/Analysis contract;
+  CI transports are mock-only.
+- Metrics cover schema/contract/forbidden language, latency, token/cost placeholders, direction/horizon/confidence
+  and affected/uncertainty counts. Human scoring remains empty and cannot be model self-scored.
+- Dataset selection stores only event ID, Fact hash, category and source/evidence counts across filing, company,
+  AI/chip, energy, macro/regulation, crypto, polarity, corroborated and contradictory cases—not raw responses.
 
 ## Non-goals
 

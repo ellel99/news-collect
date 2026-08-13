@@ -151,7 +151,7 @@ async def test_collected_marketaux_item_becomes_visible_content(feed_runtime) ->
     assert count == 1
     assert content is not None
     assert content.body is None
-    assert content.source_summary is None
+    assert content.source_summary == "must not be persisted"
 
 
 @pytest.mark.asyncio

@@ -109,3 +109,13 @@ def safe_identifier(value: object, *, max_length: int = 255) -> str | None:
     if not normalized or len(normalized) > max_length or SECRET_MARKER.search(normalized):
         return None
     return normalized
+
+
+def safe_number(value: object) -> int | float | None:
+    """Return a finite provider numeric observation without coercing arbitrary text."""
+
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value

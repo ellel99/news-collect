@@ -14,6 +14,7 @@ from market_intelligence.event_intelligence.analysis import (
     ImpactHorizon,
     ImpactRequest,
 )
+from market_intelligence.event_intelligence.fact_layer import evidence_digest_payload
 from market_intelligence.providers.credentials import RuntimeCredential
 
 _ENDPOINT = "https://api.openai.com/v1/responses"
@@ -55,6 +56,10 @@ class OpenAIResponsesImpactAnalyzer:
                 "affected_asset_refs": list(request.affected_asset_refs),
                 "affected_sector_refs": list(request.affected_sector_refs),
                 "uncertainty": list(request.uncertainty),
+                "evidence_digests": [
+                    evidence_digest_payload(item) for item in request.evidence_digests
+                ],
+                "analysis_input_quality": request.analysis_input_quality,
             },
         )
         return parse_impact_analysis(payload)

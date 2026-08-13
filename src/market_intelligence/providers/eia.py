@@ -11,6 +11,7 @@ from market_intelligence.providers.adapter_support import (
     response_error,
     safe_field_names,
     safe_identifier,
+    safe_number,
 )
 from market_intelligence.providers.contracts import (
     ProviderAdapterErrorCode,
@@ -119,6 +120,11 @@ class EiaAdapter:
                 "geography": geography,
                 "sector": sector,
                 "has_numeric_value": isinstance(row.get("price"), (int, float)),
+                "dataset": "electricity",
+                "period": str(row.get("period")),
+                "metric": "price",
+                "value": safe_number(row.get("price")),
+                "unit": safe_identifier(row.get("price-units") or row.get("unit"), max_length=50),
             }
             raw_items.append(
                 raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
@@ -129,6 +135,17 @@ class EiaAdapter:
                     "provider_item_id": item_id,
                     "published_at": published_at,
                     "display_title": f"EIA electricity update — {row.get('period')}",
+                    "structured_facts": {
+                        "dataset": "electricity",
+                        "period": str(row.get("period")),
+                        "geography": geography,
+                        "sector": sector,
+                        "metric": "price",
+                        "value": safe_number(row.get("price")),
+                        "unit": safe_identifier(
+                            row.get("price-units") or row.get("unit"), max_length=50
+                        ),
+                    },
                 }
             )
             cursor_candidates.append((published_at, item_id))

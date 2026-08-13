@@ -846,6 +846,50 @@ class ImpactAnalysisRecord(Base):
     )
 
 
+class EventFactSnapshotRecord(Base):
+    __tablename__ = "event_fact_snapshots"
+    __table_args__ = (
+        CheckConstraint("fact_version > 0", name="ck_event_fact_snapshots_version"),
+        CheckConstraint("snapshot_hash ~ '^[0-9a-f]{64}$'", name="ck_event_fact_snapshots_hash"),
+        CheckConstraint(
+            "evidence_total_count >= evidence_included_count AND evidence_included_count > 0",
+            name="ck_event_fact_snapshots_counts",
+        ),
+        CheckConstraint(
+            "input_quality IN ('LOW','MEDIUM','HIGH')",
+            name="ck_event_fact_snapshots_quality",
+        ),
+        Index(
+            "uq_event_fact_snapshots_hash",
+            "event_candidate_id",
+            "snapshot_hash",
+            unique=True,
+        ),
+        Index(
+            "uq_event_fact_snapshots_version",
+            "event_candidate_id",
+            "fact_version",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT")
+    )
+    fact_version: Mapped[int] = mapped_column(Integer)
+    snapshot_hash: Mapped[str] = mapped_column(CHAR(64))
+    evidence_total_count: Mapped[int] = mapped_column(Integer)
+    evidence_included_count: Mapped[int] = mapped_column(Integer)
+    evidence_truncated: Mapped[bool] = mapped_column(Boolean)
+    input_quality: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (

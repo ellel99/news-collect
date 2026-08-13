@@ -41,6 +41,71 @@ _SAFE_PROJECTION_FIELDS = {
             "has_description",
             "has_snippet",
             "has_source_url",
+            "safe_title",
+            "safe_summary",
+            "public_url",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "finnhub": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "symbol",
+            "numeric_field_count",
+            "current",
+            "previous_close",
+            "absolute_change",
+            "change_percent",
+            "high",
+            "low",
+            "open",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "eia": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "geography",
+            "sector",
+            "has_numeric_value",
+            "dataset",
+            "period",
+            "metric",
+            "value",
+            "unit",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+    "sec_edgar": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "ticker",
+            "form",
+            "has_primary_document",
+            "payload_hash",
+            "payload_reference",
+        }
+    ),
+}
+_BASE_PROJECTION_FIELDS = {
+    "marketaux": frozenset(
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "has_title",
+            "has_description",
+            "has_snippet",
+            "has_source_url",
             "payload_hash",
             "payload_reference",
         }
@@ -68,18 +133,7 @@ _SAFE_PROJECTION_FIELDS = {
             "payload_reference",
         }
     ),
-    "sec_edgar": frozenset(
-        {
-            "provider_item_id",
-            "published_at",
-            "field_names",
-            "ticker",
-            "form",
-            "has_primary_document",
-            "payload_hash",
-            "payload_reference",
-        }
-    ),
+    "sec_edgar": _SAFE_PROJECTION_FIELDS["sec_edgar"],
 }
 
 
@@ -174,7 +228,8 @@ def validate_provider_projection(
     provider: str, projection: Mapping[str, object]
 ) -> dict[str, object] | None:
     expected = _SAFE_PROJECTION_FIELDS.get(provider)
-    if expected is None or set(projection) != expected:
+    base = _BASE_PROJECTION_FIELDS.get(provider)
+    if expected is None or base is None or not base <= set(projection) <= expected:
         return None
     item_id = projection.get("provider_item_id")
     published_at = projection.get("published_at")
@@ -203,12 +258,29 @@ def validate_provider_projection(
     if provider == "finnhub" and (
         not _safe_text(projection.get("symbol"))
         or not isinstance(projection.get("numeric_field_count"), int)
+        or any(
+            not _safe_optional_number(projection.get(field))
+            for field in (
+                "current",
+                "previous_close",
+                "absolute_change",
+                "change_percent",
+                "high",
+                "low",
+                "open",
+            )
+        )
     ):
         return None
     if provider == "eia" and (
         not _safe_text(projection.get("geography"))
         or not _safe_text(projection.get("sector"))
         or not isinstance(projection.get("has_numeric_value"), bool)
+        or ("dataset" in projection and not _safe_text(projection.get("dataset")))
+        or ("period" in projection and not _safe_text(projection.get("period")))
+        or ("metric" in projection and not _safe_text(projection.get("metric")))
+        or ("value" in projection and not _safe_optional_number(projection.get("value")))
+        or (projection.get("unit") is not None and not _safe_text(projection.get("unit")))
     ):
         return None
     if provider == "sec_edgar" and (
@@ -268,6 +340,15 @@ def _map_projection(
 
 def _safe_text(value: object) -> bool:
     return isinstance(value, str) and bool(value) and _SECRET.search(value) is None
+
+
+def _safe_optional_number(value: object) -> bool:
+    return value is None or (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and value == value
+        and value not in (float("inf"), float("-inf"))
+    )
 
 
 def _failed(

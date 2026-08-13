@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from market_intelligence.db import Base, ImpactAnalysisRecord
+from market_intelligence.db import Base, EventFactSnapshotRecord, ImpactAnalysisRecord
 from market_intelligence.event_intelligence.analysis import (
     DeterministicMockImpactAnalyzer,
     ImpactAnalysis,
@@ -166,7 +166,11 @@ async def test_runtime_is_idempotent_and_persists_mock_analysis(
     assert first.status is EventRuntimeStatus.PASS
     assert second.status is EventRuntimeStatus.NO_CHANGE
     assert first.analysis_id == second.analysis_id
+    assert first.analysis_version == second.analysis_version == 1
     assert await runtime_session.scalar(select(func.count()).select_from(ImpactAnalysisRecord)) == 1
+    assert (
+        await runtime_session.scalar(select(func.count()).select_from(EventFactSnapshotRecord)) == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -193,6 +197,8 @@ async def test_fact_layer_aggregates_official_and_news_with_provenance_and_uncer
     assert fact.source_count == 2
     assert fact.official_evidence_present
     assert len(fact.evidence_refs) == 2
+    assert len(fact.evidence_digests) == 2
+    assert fact.analysis_input_quality.value == "MEDIUM"
     assert "cross_source" in fact.corroboration
     assert "multiple_content_safe_titles" in fact.contradictions
     assert all("raw" not in value for value in fact.provenance_summary)
@@ -218,6 +224,8 @@ async def test_changed_fact_creates_new_version_and_preserves_previous(
     two = await store.persist_valid(runtime_session, fact_two, identity, analysis)
     await runtime_session.commit()
     assert fact_one.snapshot_hash != fact_two.snapshot_hash
+    assert (fact_one.fact_version, fact_two.fact_version) == (1, 2)
+    assert (await builder.build(runtime_session, candidate.event_candidate_id)).fact_version == 2
     assert (one.analysis_version, two.analysis_version) == (1, 2)
     rows = (
         await runtime_session.scalars(

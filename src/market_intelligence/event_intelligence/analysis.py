@@ -7,6 +7,8 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
+from market_intelligence.event_intelligence.fact_layer import EvidenceFactDigest
+
 
 class ImpactDirection(StrEnum):
     POSITIVE = "positive"
@@ -33,6 +35,8 @@ class ImpactRequest:
     affected_asset_refs: tuple[str, ...]
     affected_sector_refs: tuple[str, ...]
     uncertainty: tuple[str, ...] = ()
+    evidence_digests: tuple[EvidenceFactDigest, ...] = ()
+    analysis_input_quality: str = "LOW"
 
 
 @dataclass(frozen=True, slots=True)

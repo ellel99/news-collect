@@ -7,6 +7,9 @@
 - 新增显式 bounded OpenAI Responses structured-output adapter；不将 Foundation 锁定到单一 AI provider。
 - 未执行真实 AI/Provider/Telegram 请求；未读取 `.env` 或 credential；不包含 recommendation、Market
   Validation runtime、portfolio/trading、semantic clustering 或 Telegram AI push。
+- Second-review enrichment adds bounded provider-neutral EvidenceFactDigest inputs, Marketaux safe summaries,
+  typed Finnhub/EIA/SEC facts, revision 0007 Fact version metadata, post-commit Event enqueue boundary and a
+  mock-only four-model benchmark foundation; no raw response or unrestricted content is stored.
 
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 

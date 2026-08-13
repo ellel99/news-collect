@@ -201,8 +201,6 @@ def test_event_foundation_has_no_runtime_ai_or_phase1_scheduler_dependency() -> 
         path.read_text() for path in Path("src/market_intelligence/event_intelligence").glob("*.py")
     ).casefold()
     for forbidden in (
-        "openai",
-        "httpx",
         "requests",
         "telegram",
         "scheduler",

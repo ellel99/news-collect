@@ -87,6 +87,45 @@ async def test_real_adapter_builds_non_secret_provider_request() -> None:
     assert request.runtime_credential is not None
     assert SECRET not in repr(request)
     assert SECRET not in repr(result)
+    assert result.sanitized_metadata[0]["safe_summary"] == "value is never emitted"
+    assert result.display_projections[0]["display_summary"] == "value is never emitted"
+
+
+@pytest.mark.asyncio
+async def test_marketaux_safe_summary_is_bounded_and_secret_filtered() -> None:
+    long_text = "summary " * 500
+    bounded_body = {
+        "data": [
+            {
+                "uuid": "safe",
+                "published_at": "2026-08-04T00:00:00Z",
+                "title": "Safe title",
+                "description": long_text,
+                "snippet": "fallback",
+                "url": "https://example.invalid/safe",
+            }
+        ]
+    }
+    bounded = await MarketauxRealAdapter(_credential()).fetch(
+        _request(), MockProviderTransport([_response(body=bounded_body)])
+    )
+    assert len(bounded.sanitized_metadata[0]["safe_summary"]) == 1000
+    filtered_body = {
+        "data": [
+            {
+                "uuid": "safe-2",
+                "published_at": "2026-08-04T00:00:00Z",
+                "title": "Safe title",
+                "description": "api_key=never-store",
+                "snippet": "safe fallback",
+                "url": "https://example.invalid/safe",
+            }
+        ]
+    }
+    filtered = await MarketauxRealAdapter(_credential()).fetch(
+        _request(), MockProviderTransport([_response(body=filtered_body)])
+    )
+    assert filtered.sanitized_metadata[0]["safe_summary"] == "safe fallback"
 
 
 @pytest.mark.asyncio

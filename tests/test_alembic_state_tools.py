@@ -56,11 +56,13 @@ async def compatible_database() -> AsyncIterator[AsyncEngine]:
 
 
 def inventory() -> MigrationInventory:
-    return MigrationInventory(("0001", "0002", "0003", "0004", "0005", "0006"), ("0006",), True)
+    return MigrationInventory(
+        ("0001", "0002", "0003", "0004", "0005", "0006", "0007"), ("0007",), True
+    )
 
 
 def test_database_revision_at_head_passes() -> None:
-    report = assess_alembic_state("0006", inventory(), True, 0)
+    report = assess_alembic_state("0007", inventory(), True, 0)
 
     assert report.status == "PASS"
     assert report.database_revision_known_to_code is True
@@ -105,8 +107,8 @@ def test_repository_inventory_is_linear_and_contains_0003() -> None:
     report = load_migration_inventory(project_root)
 
     assert report.chain_intact is True
-    assert report.revisions == ("0001", "0002", "0003", "0004", "0005", "0006")
-    assert report.code_heads == ("0006",)
+    assert report.revisions == ("0001", "0002", "0003", "0004", "0005", "0006", "0007")
+    assert report.code_heads == ("0007",)
 
 
 @pytest.mark.asyncio
@@ -161,7 +163,7 @@ async def test_dry_run_does_not_modify_compatible_database(
         version = await connection.scalar(text("SELECT version_num FROM alembic_version"))
     assert report.status == "DRY_RUN"
     assert report.database_updated is False
-    assert report.target_head == "0006"
+    assert report.target_head == "0007"
     assert version == "legacy-0003"
 
 
@@ -176,8 +178,8 @@ async def test_execute_repairs_only_compatible_database_to_code_head(
     assert report.status == "REPAIRED"
     assert report.database_updated is True
     assert report.database_revision_before == "legacy-0003"
-    assert report.database_revision_after == "0006"
-    assert version == "0006"
+    assert report.database_revision_after == "0007"
+    assert version == "0007"
 
 
 @pytest.mark.asyncio
@@ -185,6 +187,7 @@ async def test_incompatible_schema_blocks_execute_without_update(
     compatible_database: AsyncEngine,
 ) -> None:
     async with compatible_database.begin() as connection:
+        await connection.execute(text("DROP TABLE event_fact_snapshots"))
         await connection.execute(text("DROP TABLE impact_analyses"))
         await connection.execute(text("DROP TABLE event_candidate_evidence"))
         await connection.execute(text("DROP TABLE event_candidates"))

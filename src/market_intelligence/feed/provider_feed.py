@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -59,6 +60,7 @@ class ProviderFeedService:
                 title = display.get("display_title")
                 item_id = display.get("provider_item_id")
                 published_at = display.get("published_at")
+                structured_facts = display.get("structured_facts")
                 if not all(
                     isinstance(value, str) and value for value in (title, item_id, published_at)
                 ):
@@ -104,7 +106,15 @@ class ProviderFeedService:
                         quote_external_id=None,
                         repost_external_id=None,
                         deleted_status=DeletedStatus.UNKNOWN,
-                        metadata_={"provider": provider, "retention": "metadata_only"},
+                        metadata_={
+                            "provider": provider,
+                            "retention": "metadata_only",
+                            "structured_facts": (
+                                dict(structured_facts)
+                                if isinstance(structured_facts, Mapping)
+                                else {}
+                            ),
+                        },
                     )
                 )
                 count += 1

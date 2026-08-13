@@ -89,7 +89,7 @@ class MarketauxFeedService:
                         content_kind=ContentKind.ARTICLE,
                         external_id=display.provider_item_id,
                         title=display.title,
-                        source_summary=None,
+                        source_summary=display.summary,
                         body=None,
                         body_availability=BodyAvailability.UNAVAILABLE,
                         author=None,
@@ -104,7 +104,11 @@ class MarketauxFeedService:
                         quote_external_id=None,
                         repost_external_id=None,
                         deleted_status=DeletedStatus.UNKNOWN,
-                        metadata_={"provider": "marketaux", "retention": "metadata_only"},
+                        metadata_={
+                            "provider": "marketaux",
+                            "retention": "metadata_only",
+                            "public_url": display.canonical_url,
+                        },
                     )
                 )
                 available += 1
@@ -233,6 +237,7 @@ class _DisplayProjection:
     canonical_url: str
     provider_item_id: str
     published_at: datetime
+    summary: str | None
 
 
 def _validate_display(metadata: Mapping[str, object]) -> _DisplayProjection | None:
@@ -240,6 +245,7 @@ def _validate_display(metadata: Mapping[str, object]) -> _DisplayProjection | No
     url = metadata.get("display_url")
     item_id = metadata.get("provider_item_id")
     published = metadata.get("published_at")
+    summary = metadata.get("display_summary")
     if not all(isinstance(value, str) and value for value in (title, url, item_id, published)):
         return None
     assert isinstance(title, str) and isinstance(url, str)
@@ -253,4 +259,6 @@ def _validate_display(metadata: Mapping[str, object]) -> _DisplayProjection | No
         return None
     if published_at.tzinfo is None:
         return None
-    return _DisplayProjection(title, url, item_id, published_at)
+    if summary is not None and (not isinstance(summary, str) or not summary or len(summary) > 1000):
+        return None
+    return _DisplayProjection(title, url, item_id, published_at, summary)

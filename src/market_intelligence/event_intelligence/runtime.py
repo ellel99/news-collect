@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from uuid import UUID
 
@@ -129,6 +129,8 @@ class EventProcessingRuntime:
             affected_asset_refs=fact.assets,
             affected_sector_refs=fact.sectors,
             uncertainty=fact.uncertainty + fact.contradictions,
+            evidence_digests=fact.evidence_digests,
+            analysis_input_quality=fact.analysis_input_quality.value,
         )
         try:
             analysis = await analyzer.analyze(request)
@@ -139,6 +141,15 @@ class EventProcessingRuntime:
                 identity,
                 retryable=error.retryable,
                 safe_error=error.code,
+            )
+        if fact.analysis_input_quality.value == "LOW":
+            analysis = replace(
+                analysis,
+                confidence=min(analysis.confidence, 0.35),
+                required_market_validation=True,
+                uncertainty=tuple(
+                    dict.fromkeys((*analysis.uncertainty, "insufficient_evidence_context"))
+                ),
             )
         errors = validate_impact_analysis(analysis)
         if errors:

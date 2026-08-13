@@ -12,6 +12,16 @@ from market_intelligence.event_intelligence.runtime import EventProcessingRuntim
 from market_intelligence.tasks.celery_app import celery_app
 
 
+class CeleryEvidenceEventEnqueuer:
+    """Post-commit enqueue with deterministic task identity."""
+
+    def enqueue(self, evidence_item_id: UUID) -> None:
+        process_evidence_task.apply_async(
+            args=(str(evidence_item_id),),
+            task_id=f"event-evidence-{evidence_item_id}",
+        )
+
+
 @celery_app.task(name="event_intelligence.process_evidence")  # type: ignore[untyped-decorator]
 def process_evidence_task(evidence_item_id: str) -> dict[str, Any]:
     return asyncio.run(_process(UUID(evidence_item_id)))

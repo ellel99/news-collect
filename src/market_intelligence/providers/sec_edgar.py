@@ -116,6 +116,14 @@ class SecEdgarAdapter:
                 "provider_item_id": accession,
                 "published_at": published_at,
                 "display_title": f"SEC {form} filing — {ticker.upper()}",
+                "structured_facts": {
+                    "ticker": ticker.upper(),
+                    "form": form,
+                    "filing_date": published_at,
+                    "accession": accession,
+                    "primary_document_present": projection["has_primary_document"],
+                    "official_source": True,
+                },
             }
             raws.append(
                 raw_envelope(self.provider_key, accession, projection, response, "link_only")
