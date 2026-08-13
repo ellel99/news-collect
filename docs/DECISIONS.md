@@ -185,7 +185,7 @@
 - 影响分析：见 `docs/FOUNDATION_V2_2_DRAFT.md`；v2.1-FROZEN 在 Freeze Review PASS 前继续生效。
 - 状态：Approved；Foundation v2.2 Freeze Review PASS（2026-08-13）。实现严格限于 SPEC-0039。
 
-## D-026 Target-driven unified production collection control plane（Proposed）
+## D-026 Target-driven unified production collection control plane（Approved Foundation ceiling）
 
 - 建议决定：生产调度以稳定 `CollectionTarget` 为最小 owner；每个 target 独立 cadence、typed/versioned
   config、cursor、lock、retry、run、health 和 dispatch idempotency。Source 保留 provider/授权/retention，
@@ -194,12 +194,12 @@
   编排且要求单一 target，无法安全扩展多个 query/symbol/series/CIK。
 - 边界：credential 仅在 worker runtime 注入；显式 factory/transport allowlist；unknown operation fail
   closed；notification/Event 与 collection 解耦；NewsAPI.ai/GDELT/X 不因本决定激活。
-- Foundation conflict：v2.2 明确禁止 scheduler rewrite 并只授权 SPEC-0039；因此必须先通过
-  Foundation v2.3 Freeze Review，不得在 v2.2 下直接实现。
-- 状态：Proposed — R0 Foundation v2.3 Freeze Review PENDING；不授权 migration 或 Python
-  implementation，Foundation v2.2-FROZEN 继续生效。
+- Foundation resolution：Foundation v2.3 Freeze Review PASS 仅允许该方向进入独立 R1 SPEC/Review。
+- 状态：Approved as Foundation ceiling（2026-08-13；reviewed baseline
+  `4df76e1f0ed9812d962369b9766bf372b102d952`）；不授权 migration、Python implementation、runtime
+  或 bounded live request。R1 尚未启动。
 
-## D-027 Pre-AI Collection Readiness before real model routing（Proposed）
+## D-027 Pre-AI Collection Readiness before real model routing（Approved Foundation ceiling）
 
 - 建议决定：真实 AI 前先完成 unified control plane、durable safe projection、四 Provider operation
   completeness、官方来源 coverage 及 Event/Evidence/Fact completeness；之后才重新审计 deterministic+
@@ -207,10 +207,19 @@
 - 原因：bounded smoke/default target 和 ephemeral projection 不能代表广度、恢复、许可或事实输入完整。
 - PR #39：R0–R8 完成前保持 Draft；完成后基于最新 main 重新审计/rebase，不保证现有 AI contract、
   Fact digest、snapshot 或 routing 全部保留；migration 必须按串行顺序处理。
-- 状态：Proposed — R0 Foundation v2.3 Freeze Review PENDING；路线与门禁见
+- 状态：Approved as Foundation ceiling（2026-08-13）；路线与门禁见
   `docs/PRE_AI_COLLECTION_READINESS.md`，不授权代码或外部请求。R0 PASS 不自动启动 R1。
 - R7 clarification：R0/R7 不创建、激活或请求 Provider/Source/feed/endpoint；只允许为现有 Collection
   Scope 内的 Company IR、official RSS、政府/宏观/监管官方 endpoint family 准备独立 SPEC。每项仍须
   identity、access/license/robots/retention/attribution、typed contract、budget/cursor/revision/recovery、
   mock/integration、明确授权 bounded live 与 production activation Review。其他新来源或越界范围仍需
   新 Foundation Revision。
+
+## D-028 Foundation v2.3 Freeze Review PASS
+
+- 决定：Foundation v2.3-FROZEN 成为当前 effective Foundation；v2.2-FROZEN 保留为历史版本。
+- 范围：仅批准 `docs/FOUNDATION_V2_3.md` 的八项有限 authorization 及全部既有 guardrail。
+- 门禁：R1–R8 每步仍需独立 SPEC、Docs/Implementation Review 和明确授权；Active SPEC=None。
+- PR #39：R0–R8 完成前保持 Draft，之后基于最新 `main` 重新审计/rebase。
+- 状态：Approved（2026-08-13；reviewed baseline
+  `4df76e1f0ed9812d962369b9766bf372b102d952`）。

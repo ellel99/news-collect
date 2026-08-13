@@ -1,8 +1,8 @@
 # Pre-AI Collection Readiness Program
 
-Status：PROPOSED — Docs Review only
+Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：Foundation v2.3 Draft Freeze Review PENDING
+Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 not started / not authorized
 
 ## 1. Purpose and release gate
 
@@ -40,14 +40,15 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 
 ### R0 — Foundation Revision / Freeze Review
 
-- **Current limitation:** v2.2 prohibits scheduler rewrite and limits implementation to SPEC-0039.
+- **Current limitation:** v2.2 prohibited scheduler rewrite and limited implementation to SPEC-0039.
 - **Target:** explicit authority for pre-AI reliability, target schema/control plane and delivery decoupling.
 - **Safety/license:** all existing single-user, Broad Scan, secret, licensed-content and no-trading boundaries stay.
 - **Non-goals:** code, migration, provider request, AI request or automatic PR #39 approval.
-- **Dependencies:** current v2.2-FROZEN and SPEC-0039 PASS.
+- **Dependencies:** historical v2.2-FROZEN and SPEC-0039 PASS.
 - **Impact:** documents only; no runtime/config/schema change.
 - **Verification gate:** Foundation diff, decision impact and downstream-document review.
-- **Acceptance:** explicit user/Reviewer Freeze Review PASS; otherwise all R1+ implementation is BLOCKED.
+- **Acceptance:** PASS（2026-08-13；baseline `4df76e1f0ed9812d962369b9766bf372b102d952`）。
+  R0 is completed; R1 remains not started/not authorized until an independent SPEC/Review.
 
 ### R1 — Unified Production Collection Control Plane
 

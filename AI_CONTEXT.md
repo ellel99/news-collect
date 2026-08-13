@@ -4,7 +4,7 @@
 
 ## 当前冻结状态
 
-- Foundation：v2.2-FROZEN
+- Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
@@ -13,11 +13,10 @@
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
   SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
-  当前只进行 R0 Foundation v2.3 Freeze Review，结果 PENDING。PR #39/SPEC-0040 保持独立 Draft，
+  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 not started/not authorized。PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
-- Foundation governance：v2.2-FROZEN 禁止 scheduler rewrite 且只授权 SPEC-0039。SPEC-0041 的
-  implementation 必须先取得 `docs/FOUNDATION_V2_3_DRAFT.md` Freeze Review PASS；当前结果 PENDING，
-  不得把 Docs Review 当作 schema/scheduler 实现授权。
+- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。SPEC-0041 Docs Review
+  PASS 不等于 implementation authorization；当前无 Active SPEC，不得开始 schema/scheduler 实现。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。
@@ -63,7 +62,7 @@
 
 ## 架构修订状态
 
-- 当前生效：Foundation v2.2-FROZEN；v2.1 的安全、单用户、市场和交易动作边界继续生效。
+- 当前生效：Foundation v2.3-FROZEN；v2.2 的安全、单用户、市场、许可、provenance 和交易动作边界继续生效。
 - 用户已确认长期产品目标是面向个人投资研究的实时信息采集与 AI 分析系统；这项产品目标不是当前实现状态或实现授权。
 - 支撑该目标的架构与工程变更记录为 `docs/DECISIONS.md` 中 D-020–D-024 的 Proposed Decisions。
 - 供应商无关混合采集、统一逻辑新闻记录、事件驱动处理和恢复能力可作为未来接口合同；不得据此声称已经实现。
@@ -72,8 +71,8 @@
   适用的独立 SPEC 和 Review。
 - SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
   由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
-- Foundation v2.2-FROZEN 生效；v2.3 仅为 R0 Draft/PENDING。D-020–D-024、D-026/D-027 Proposed
-  Decisions 均不等于实现授权；R0 PASS 也不会自动启动 R1。
+- Foundation v2.3-FROZEN 生效；R0 PASS/Completed。D-026/D-027 仅在 v2.3 的有限 Foundation ceiling
+  内获准，均不等于实现授权；R1 尚未启动且未获授权。
 
 ## Phase 1 允许
 

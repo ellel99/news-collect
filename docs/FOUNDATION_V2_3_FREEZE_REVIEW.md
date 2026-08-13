@@ -1,12 +1,14 @@
 # Foundation v2.3 Freeze Review Package — R0
 
-Status：DRAFT — Review decision required
+Status：COMPLETED — Freeze Review PASS
 
-Current effective Foundation：v2.2-FROZEN
+Current effective Foundation：v2.3-FROZEN
 
 Candidate Foundation：v2.3 Draft — Pre-AI Collection Readiness
 
-Review result：PENDING（Reviewer must explicitly choose PASS or REJECT）
+Review result：PASS（2026-08-13）
+
+Reviewed baseline：`4df76e1f0ed9812d962369b9766bf372b102d952`
 
 ## 1. Review scope
 
@@ -99,11 +101,11 @@ an R1 SPEC.
 
 | Document | Required R0 state |
 |---|---|
-| `docs/FOUNDATION.md`, `FOUNDATION_FROZEN.md`, `docs/FOUNDATION_V2_2.md` | v2.2-FROZEN remains effective; unchanged |
-| `docs/FOUNDATION_V2_3_DRAFT.md` | Draft/PENDING; candidate authorization only |
-| `docs/DECISIONS.md` | D-026/D-027 Proposed/under review; not Approved |
-| `docs/ROADMAP.md` | R0 current governance review; R1–R8 not started |
-| `AI_CONTEXT.md`, `README.md` | Active SPEC=None; v2.3 pending; no implementation authority |
+| `docs/FOUNDATION.md`, `FOUNDATION_FROZEN.md`, `docs/FOUNDATION_V2_3.md` | v2.3-FROZEN effective; v2.2 retained as history |
+| `docs/FOUNDATION_V2_3_DRAFT.md` | historical Draft; final result PASS; not effective text |
+| `docs/DECISIONS.md` | D-026/D-027 limited ceiling and D-028 Freeze PASS recorded |
+| `docs/ROADMAP.md` | R0 Completed/PASS; R1–R8 not started |
+| `AI_CONTEXT.md`, `README.md` | Active SPEC=None; v2.3 effective; no implementation authority |
 | `spec/SPEC_INDEX.md` | SPEC-0041 Docs Review completed; R0 is not an implementation SPEC |
 | PR #39/SPEC-0040 | Draft/frozen; no modification, merge or rebase |
 
@@ -115,7 +117,8 @@ Reviewer must record exactly one result in a later review-fix/closeout commit:
   a reviewed closeout. Do not auto-start R1.
 - `REJECT`：v2.2-FROZEN remains effective; SPEC-0041 implementation and R1–R9 remain blocked.
 
-Current decision：**PENDING**.
+Current decision：**PASS** — only the §3 domains and all §4–§6 guardrails are approved. R1 remains not started
+and not authorized. The effective text is `docs/FOUNDATION_V2_3.md`.
 
 ## 9. Evidence and non-actions
 

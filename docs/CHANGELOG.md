@@ -2,6 +2,12 @@
 
 ## Unreleased — Foundation v2.3 R0 Freeze Review
 
+- R0 Freeze Review PASS（2026-08-13；reviewed baseline
+  `4df76e1f0ed9812d962369b9766bf372b102d952`）；Foundation v2.3-FROZEN 成为当前 effective Foundation，
+  v2.2-FROZEN 保留为历史版本。
+- 新增正式 `docs/FOUNDATION_V2_3.md`，并把 Draft/Freeze Review package 标记为已完成的审计历史。
+- Active SPEC=None；R1 not started/not authorized。SPEC-0041 仅 Docs Review PASS，R0 不授权代码、
+  migration、schema、runtime、Provider/Telegram/AI 或 bounded live request。
 - 澄清 R7：R0/R7 不创建、激活或请求任何 Provider/Source/feed/endpoint；仅允许为现有 Collection
   Scope 内官方 endpoint family 准备独立 SPEC，并逐项完成 identity、许可、typed contract、恢复、
   mock/integration、授权 live 和 production activation gates。商业 Provider、X、streaming/webhook/
@@ -10,7 +16,7 @@
   监管、债券、FX 与商品仍为解释性输入，不授权 Portfolio/Holding/Investment Plan implementation。
 - 新增独立 R0 Freeze Review package，逐条对比 v2.2→v2.3 candidate diff，并列出 proposed
   authorization、继续冻结边界、R1–R8 独立 Review gate 与 Reviewer PASS/REJECT form。
-- 当前结果保持 PENDING；v2.2-FROZEN 仍生效，Active SPEC=None。R0 PASS 不自动启动 R1。
+- R0 PASS 不自动启动 R1；R1–R8 每步仍需独立 SPEC、Docs/Implementation Review 和明确授权。
 - PR #39/SPEC-0040 保持 Draft，未修改、merge 或 rebase；真实 AI、Market Validation、Recommendation、
   Portfolio 仍未授权。
 - 本轮仅文档；无 Python、migration、ORM/schema、runtime config/test logic、外部请求、credential/
@@ -18,10 +24,10 @@
 
 ## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
 
-- Docs Review PASS（2026-08-13）；只批准设计，Foundation v2.3 Freeze Review 仍 PENDING，未授权
-  CollectionTarget migration、scheduler rewrite、durable projection 或任何 runtime implementation。
+- Docs Review PASS（2026-08-13）；只批准设计。Foundation v2.3 R0 后续已 PASS，但仍未授权
+  CollectionTarget migration、scheduler rewrite、durable projection 或任何 runtime implementation；需独立 R1 SPEC。
 - 增加 Foundation v2.3 Pre-AI Collection Readiness Draft：明确 v2.2 scheduler rewrite 禁令冲突，
-  Freeze Review 仍 PENDING；PR #39/SPEC-0040 在 readiness 完成前冻结，之后必须重新审计/rebase。
+  Freeze Review gate；PR #39/SPEC-0040 在 readiness 完成前冻结，之后必须重新审计/rebase。
 - 增加 R0–R9 完整 readiness program，覆盖 durable safe projection、Marketaux coverage、EIA catalog、
   SEC history/XBRL、Finnhub multi-symbol observations、官方来源和 Event/Evidence/Fact completeness；
   既有 smoke 默认不自动成为生产 target。

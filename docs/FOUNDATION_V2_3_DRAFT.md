@@ -1,10 +1,10 @@
 # Foundation v2.3 Draft — Pre-AI Collection Readiness
 
-Status：DRAFT — Freeze Review required; not effective
+Status：HISTORICAL DRAFT — Freeze Review PASS；superseded by `docs/FOUNDATION_V2_3.md`
 
 Proposed Date：2026-08-13
 
-Current effective Foundation：v2.2-FROZEN
+Current effective Foundation：v2.3-FROZEN
 
 Review package：`docs/FOUNDATION_V2_3_FREEZE_REVIEW.md`
 
@@ -89,21 +89,22 @@ SPEC, create a branch, authorize a migration, or permit a runtime request.
 
 ## 5. Freeze Review checklist
 
-- [ ] User/Reviewer accepts collection reliability work before real AI.
-- [ ] `CollectionTarget` and target-owned state/schema boundary is approved.
-- [ ] Unified scheduler/control-plane rewrite is explicitly approved despite v2.2 prohibition.
-- [ ] Collection and Telegram/Event delivery decoupling is approved.
-- [ ] Pre-AI Readiness steps, provider expansion gates and stopping conditions are accepted.
-- [ ] Existing single-user/Broad Scan/security/content/trading boundaries are confirmed unchanged.
-- [ ] PR #39 freeze/re-audit/rebase and migration sequencing rules are accepted.
-- [ ] Foundation, Decisions, Roadmap, SPEC_INDEX and Active SPEC are updated only after explicit PASS.
+- [x] User/Reviewer accepts collection reliability work before real AI.
+- [x] `CollectionTarget` and target-owned state/schema boundary is approved.
+- [x] Unified scheduler/control-plane rewrite is explicitly approved despite v2.2 prohibition.
+- [x] Collection and Telegram/Event delivery decoupling is approved.
+- [x] Pre-AI Readiness steps, provider expansion gates and stopping conditions are accepted.
+- [x] Existing single-user/Broad Scan/security/content/trading boundaries are confirmed unchanged.
+- [x] PR #39 freeze/re-audit/rebase and migration sequencing rules are accepted.
+- [x] Foundation, Decisions, Roadmap, SPEC_INDEX and Active SPEC were updated after explicit PASS.
 
 ## 6. Current review state
 
-Result：PENDING — no Freeze Review decision recorded.
+Result：PASS（2026-08-13）；reviewed baseline：
+`4df76e1f0ed9812d962369b9766bf372b102d952`。
 
-Until PASS, Foundation v2.2-FROZEN remains fully effective and SPEC-0041 cannot implement schema, scheduler,
-factory, migration, projection or provider expansion.
+The frozen normative document is now `docs/FOUNDATION_V2_3.md`. This historical draft remains for audit and is
+not the current effective Foundation. R0 PASS does not activate R1 or authorize implementation.
 
 ## 7. Proposed v2.2 → v2.3 normative delta
 

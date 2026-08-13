@@ -1,12 +1,13 @@
 # Foundation
 
-版本：2.2-FROZEN
+版本：2.3-FROZEN
 状态：Frozen  
 适用范围：所有设计、SPEC、代码、测试和审核
 
 ## 0. 冻结声明
 
-本版本保留 Phase 1 开发基线，并批准进入 Event Intelligence foundation。单用户、美股与 Crypto
+本版本完整继承 v2.2 的 Phase 1/Event Intelligence 基线，并有限批准 Pre-AI Collection Readiness
+R1–R8 可分别进入独立 SPEC/Review。单用户、美股与 Crypto
 范围、Broad Scan、Controlled Push、四阶段边界、Phase 1 技术基线、禁止自动交易和禁止隐式
 行为收窄继续冻结。普通功能开发不得顺带修改。
 
@@ -14,7 +15,11 @@ Phase 1 只实现：采集、原始留痕、确定性标准化、确定性去重
 
 Phase 1 历史范围不实现 AI/LLM 或 Event；v2.2 只增加 SPEC-0039 已审核的 EventCandidate、Evidence
 association、deterministic clustering、importance foundation 与 mock-only ImpactAnalyzer contract。
-真实 AI/Analysis、Portfolio、Holding、Investment Plan、Candidate Rule 和交易建议仍不允许。
+真实 AI/Analysis、Market Validation、Recommendation、Portfolio、Holding、Investment Plan、
+Candidate Rule 和交易建议仍不允许。R0 Freeze Review PASS 不自动启动 R1；当前 Active SPEC=None。
+
+v2.3 的八项有限 authorization、R1–R8 门禁及 PR #39 freeze 规则以
+`docs/FOUNDATION_V2_3.md` 为准。v2.2-FROZEN 保留为历史 frozen version。
 
 ## 1. 项目愿景
 
