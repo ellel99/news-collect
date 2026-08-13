@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -40,10 +41,26 @@ _EVIDENCE_METADATA_FIELDS = {
             "has_description",
             "has_snippet",
             "has_source_url",
+            "safe_title",
+            "safe_summary",
+            "public_url",
         }
     ),
     "finnhub": frozenset(
-        {"provider_item_id", "published_at", "field_names", "symbol", "numeric_field_count"}
+        {
+            "provider_item_id",
+            "published_at",
+            "field_names",
+            "symbol",
+            "numeric_field_count",
+            "current",
+            "previous_close",
+            "absolute_change",
+            "change_percent",
+            "high",
+            "low",
+            "open",
+        }
     ),
     "eia": frozenset(
         {
@@ -53,6 +70,11 @@ _EVIDENCE_METADATA_FIELDS = {
             "geography",
             "sector",
             "has_numeric_value",
+            "dataset",
+            "period",
+            "metric",
+            "value",
+            "unit",
         }
     ),
     "sec_edgar": frozenset(
@@ -67,7 +89,14 @@ _EVIDENCE_METADATA_FIELDS = {
     ),
 }
 _DISPLAY_METADATA_FIELDS = frozenset(
-    {"provider_item_id", "published_at", "display_title", "display_url"}
+    {
+        "provider_item_id",
+        "published_at",
+        "display_title",
+        "display_url",
+        "display_summary",
+        "structured_facts",
+    }
 )
 _SECRET_VALUE = re.compile(
     r"(?i)(api[_-]?key|api[_-]?token|authorization|x-finnhub-token|token|secret|password)="
@@ -85,6 +114,10 @@ class EndToEndStatus(StrEnum):
 class EndToEndError:
     code: str
     safe_message: str
+
+
+class EvidenceEventEnqueuer(Protocol):
+    def enqueue(self, evidence_item_id: uuid.UUID) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +205,21 @@ def _valid_display_projection(value: Mapping[str, object]) -> bool:
         not isinstance(title, str) or not title or len(title) > 2000 or _SECRET_VALUE.search(title)
     ):
         return False
+    summary = value.get("display_summary")
+    if summary is not None and (
+        not isinstance(summary, str)
+        or not summary
+        or len(summary) > 1000
+        or _SECRET_VALUE.search(summary)
+    ):
+        return False
+    structured = value.get("structured_facts")
+    if structured is not None and (
+        not isinstance(structured, Mapping)
+        or len(structured) > 16
+        or _SECRET_VALUE.search(str(structured))
+    ):
+        return False
     url = value.get("display_url")
     if url is None:
         return True
@@ -189,10 +237,12 @@ class EndToEndMockEvidencePipeline:
         factory: async_sessionmaker[AsyncSession],
         runner: CollectionRunner,
         sidecar: InMemoryProviderProjectionSidecar,
+        event_enqueuer: EvidenceEventEnqueuer | None = None,
     ) -> None:
         self._factory = factory
         self._runner = runner
         self._sidecar = sidecar
+        self._event_enqueuer = event_enqueuer
 
     async def run(
         self,
@@ -252,6 +302,20 @@ class EndToEndMockEvidencePipeline:
                     continue
                 outcomes.append(await trigger.trigger(raw_id))
             await session.commit()
+        if self._event_enqueuer is not None:
+            for outcome in outcomes:
+                evidence_id = (
+                    outcome.pipeline_outcome.evidence_item_id
+                    if outcome.pipeline_outcome is not None
+                    else None
+                )
+                if evidence_id is None:
+                    continue
+                try:
+                    self._event_enqueuer.enqueue(evidence_id)
+                except Exception:
+                    # The Evidence transaction is complete; dispatch cannot roll it back.
+                    continue
         return EndToEndOutcome(
             status=EndToEndStatus.PROCESSED if not safe_errors else EndToEndStatus.INVALID,
             collection_run_id=collection_run_id,

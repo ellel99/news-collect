@@ -9,6 +9,7 @@ from market_intelligence.providers.adapter_support import (
     response_error,
     safe_field_names,
     safe_identifier,
+    safe_number,
 )
 from market_intelligence.providers.contracts import (
     ProviderAdapterErrorCode,
@@ -99,6 +100,13 @@ class FinnhubAdapter:
             "field_names": safe_field_names(response.body),
             "symbol": symbol.upper(),
             "numeric_field_count": numeric_count,
+            "current": safe_number(response.body.get("c")),
+            "previous_close": safe_number(response.body.get("pc")),
+            "absolute_change": safe_number(response.body.get("d")),
+            "change_percent": safe_number(response.body.get("dp")),
+            "high": safe_number(response.body.get("h")),
+            "low": safe_number(response.body.get("l")),
+            "open": safe_number(response.body.get("o")),
         }
         raw = raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
         return ProviderFetchResult(
@@ -109,6 +117,17 @@ class FinnhubAdapter:
                     "provider_item_id": item_id,
                     "published_at": published_at,
                     "display_title": f"Finnhub quote update — {symbol.upper()}",
+                    "structured_facts": {
+                        "symbol": symbol.upper(),
+                        "timestamp": published_at,
+                        "current": safe_number(response.body.get("c")),
+                        "previous_close": safe_number(response.body.get("pc")),
+                        "absolute_change": safe_number(response.body.get("d")),
+                        "change_percent": safe_number(response.body.get("dp")),
+                        "high": safe_number(response.body.get("h")),
+                        "low": safe_number(response.body.get("l")),
+                        "open": safe_number(response.body.get("o")),
+                    },
                 },
             ),
             next_cursor=_cursor(published_at, item_id),

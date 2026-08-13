@@ -168,6 +168,9 @@ class MarketauxAdapter:
                 "has_description": sanitized["has_description"],
                 "has_snippet": sanitized["has_snippet"],
                 "has_source_url": sanitized["has_source_url"],
+                "safe_title": sanitized["display_title"],
+                "safe_summary": sanitized["safe_summary"],
+                "public_url": sanitized["display_url"],
             }
             display: dict[str, Any] = {
                 "provider_item_id": item_id,
@@ -177,6 +180,8 @@ class MarketauxAdapter:
                 display["display_title"] = sanitized["display_title"]
             if sanitized["display_url"] is not None:
                 display["display_url"] = sanitized["display_url"]
+            if sanitized["safe_summary"] is not None:
+                display["display_summary"] = sanitized["safe_summary"]
             payload_hash = _stable_hash(projection)
             raw_items.append(
                 RawItemEnvelope(
@@ -292,6 +297,8 @@ def _sanitize_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     title = _safe_title(item.get("title"))
     source_url = _safe_public_url(item.get("url"))
+    description = _safe_summary(item.get("description"))
+    snippet = _safe_summary(item.get("snippet"))
     return {
         "provider_item_id": item_id,
         "published_at": published_at,
@@ -305,6 +312,7 @@ def _sanitize_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
         "has_source_url": source_url is not None,
         "display_title": title,
         "display_url": source_url,
+        "safe_summary": description or snippet,
     }
 
 
@@ -315,6 +323,15 @@ def _safe_title(value: object) -> str | None:
     if not normalized or len(normalized) > 2000 or _SECRET_VALUE.search(normalized):
         return None
     return normalized
+
+
+def _safe_summary(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split())
+    if not normalized or _SECRET_VALUE.search(normalized):
+        return None
+    return normalized[:1000]
 
 
 def _safe_public_url(value: object) -> str | None:

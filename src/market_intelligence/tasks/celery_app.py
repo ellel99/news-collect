@@ -12,6 +12,7 @@ celery_app = Celery(
         "market_intelligence.tasks.collection",
         "market_intelligence.tasks.marketaux_telegram",
         "market_intelligence.tasks.multi_provider_scheduler",
+        "market_intelligence.tasks.event_intelligence",
     ],
 )
 celery_app.conf.update(

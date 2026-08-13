@@ -120,6 +120,12 @@ class EventCandidateStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class ImpactAnalysisStatus(enum.StrEnum):
+    VALID = "valid"
+    RETRY = "retry"
+    FAILED = "failed"
+
+
 def enum_values(enum_class: type[enum.StrEnum]) -> list[str]:
     return [member.value for member in enum_class]
 
@@ -764,6 +770,124 @@ class EventCandidateEvidence(Base):
 
     event_candidate: Mapped[EventCandidate] = relationship(back_populates="evidence_links")
     evidence_item: Mapped[EvidenceItem] = relationship(back_populates="event_candidate_links")
+
+
+class ImpactAnalysisRecord(Base):
+    __tablename__ = "impact_analyses"
+    __table_args__ = (
+        CheckConstraint("analysis_version > 0", name="ck_impact_analyses_version_positive"),
+        CheckConstraint("fact_version > 0", name="ck_impact_analyses_fact_version_positive"),
+        CheckConstraint(
+            "fact_snapshot_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_impact_analyses_fact_hash",
+        ),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_impact_analyses_confidence"),
+        CheckConstraint(
+            "impact_direction IN ('positive','negative','mixed','uncertain')",
+            name="ck_impact_analyses_direction",
+        ),
+        CheckConstraint(
+            "impact_horizon IN ('immediate','short_term','medium_term','long_term')",
+            name="ck_impact_analyses_horizon",
+        ),
+        Index(
+            "uq_impact_analyses_idempotency",
+            "event_candidate_id",
+            "fact_snapshot_hash",
+            "analyzer_provider",
+            "analyzer_model",
+            "analyzer_contract_version",
+            unique=True,
+        ),
+        Index(
+            "uq_impact_analyses_event_version",
+            "event_candidate_id",
+            "analysis_version",
+            unique=True,
+        ),
+        Index("ix_impact_analyses_event_created", "event_candidate_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT")
+    )
+    analysis_version: Mapped[int] = mapped_column(Integer)
+    fact_version: Mapped[int] = mapped_column(Integer)
+    fact_snapshot_hash: Mapped[str] = mapped_column(CHAR(64))
+    analyzer_provider: Mapped[str] = mapped_column(String(100))
+    analyzer_model: Mapped[str] = mapped_column(String(150))
+    analyzer_contract_version: Mapped[int] = mapped_column(Integer)
+    affected_companies: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    affected_assets: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    affected_sectors: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    impact_direction: Mapped[str] = mapped_column(String(32))
+    impact_horizon: Mapped[str] = mapped_column(String(32))
+    impact_channels: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    confidence: Mapped[float] = mapped_column(Float)
+    rationale_summary: Mapped[str] = mapped_column(Text)
+    uncertainty: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    required_market_validation: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[ImpactAnalysisStatus] = mapped_column(
+        Enum(
+            ImpactAnalysisStatus,
+            name="impact_analysis_status",
+            values_callable=enum_values,
+        )
+    )
+    supersedes_analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("impact_analyses.id", ondelete="RESTRICT")
+    )
+    safe_errors: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class EventFactSnapshotRecord(Base):
+    __tablename__ = "event_fact_snapshots"
+    __table_args__ = (
+        CheckConstraint("fact_version > 0", name="ck_event_fact_snapshots_version"),
+        CheckConstraint("snapshot_hash ~ '^[0-9a-f]{64}$'", name="ck_event_fact_snapshots_hash"),
+        CheckConstraint(
+            "evidence_total_count >= evidence_included_count AND evidence_included_count > 0",
+            name="ck_event_fact_snapshots_counts",
+        ),
+        CheckConstraint(
+            "input_quality IN ('LOW','MEDIUM','HIGH')",
+            name="ck_event_fact_snapshots_quality",
+        ),
+        Index(
+            "uq_event_fact_snapshots_hash",
+            "event_candidate_id",
+            "snapshot_hash",
+            unique=True,
+        ),
+        Index(
+            "uq_event_fact_snapshots_version",
+            "event_candidate_id",
+            "fact_version",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT")
+    )
+    fact_version: Mapped[int] = mapped_column(Integer)
+    snapshot_hash: Mapped[str] = mapped_column(CHAR(64))
+    evidence_total_count: Mapped[int] = mapped_column(Integer)
+    evidence_included_count: Mapped[int] = mapped_column(Integer)
+    evidence_truncated: Mapped[bool] = mapped_column(Boolean)
+    input_quality: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
 
 
 class Notification(Base):
