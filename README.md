@@ -69,7 +69,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.2-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：None
+- Active SPEC：[`spec/SPEC-0040-event-runtime-ai-impact.md`](spec/SPEC-0040-event-runtime-ai-impact.md) — Implementation Review
 
 统一 runtime verification：
 

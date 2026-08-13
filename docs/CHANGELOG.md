@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — SPEC-0040 Event Processing Runtime + Real AI Impact Analysis
+
+- 激活 SPEC-0040 bounded implementation：Event runtime、Fact Layer、revision 0006 versioned
+  ImpactAnalysis、provider-neutral analyzer boundary 与默认 inert smoke。
+- 新增显式 bounded OpenAI Responses structured-output adapter；不将 Foundation 锁定到单一 AI provider。
+- 未执行真实 AI/Provider/Telegram 请求；未读取 `.env` 或 credential；不包含 recommendation、Market
+  Validation runtime、portfolio/trading、semantic clustering 或 Telegram AI push。
+
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
 - SPEC-0039 final Implementation Review PASS；状态更新为 Completed — Implementation Review approved。

@@ -65,6 +65,7 @@ async def test_postgres_schema_allowlist(postgres_connection: AsyncConnection) -
         "evidence_items",
         "event_candidates",
         "event_candidate_evidence",
+        "impact_analyses",
     }
 
 
@@ -97,6 +98,7 @@ async def test_migrated_public_schema_allowlist() -> None:
             "evidence_items",
             "event_candidates",
             "event_candidate_evidence",
+            "impact_analyses",
         }
     finally:
         await engine.dispose()

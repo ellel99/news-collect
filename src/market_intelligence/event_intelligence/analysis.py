@@ -80,7 +80,26 @@ def validate_impact_analysis(value: ImpactAnalysis) -> tuple[str, ...]:
         errors.append("analysis_version_invalid")
     if not value.rationale_summary.strip():
         errors.append("rationale_summary_required")
-    forbidden = ("buy", "sell", "hold", "target price", "position sizing", "rebalance")
-    if any(marker in value.rationale_summary.casefold() for marker in forbidden):
+    forbidden = (
+        "buy",
+        "sell",
+        "hold",
+        "target price",
+        "position sizing",
+        "rebalance",
+        "allocate %",
+        "trade now",
+    )
+    rendered = " ".join(
+        (
+            *value.affected_companies,
+            *value.affected_assets,
+            *value.affected_sectors,
+            *value.impact_channels,
+            value.rationale_summary,
+            *value.uncertainty,
+        )
+    ).casefold()
+    if any(marker in rendered for marker in forbidden):
         errors.append("trading_action_language_forbidden")
     return tuple(errors)

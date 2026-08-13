@@ -8,11 +8,11 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None
+- 当前 Active SPEC：`spec/SPEC-0040-event-runtime-ai-impact.md`
 - 最近完成：SPEC-0003，tag `spec-0003-completed`
-- 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
-  deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
-  Active SPEC，禁止继续实现真实 AI/Recommendation。
+- 当前工作状态：SPEC-0039 已 Completed；SPEC-0040 正在 Implementation Review，仅实现 bounded Event
+  runtime、Fact Layer、versioned ImpactAnalysis 与 provider-neutral/structured analyzer boundary。真实
+  AI 请求必须等待用户手动 credential + 单次 execute 授权；Recommendation 仍禁止。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC

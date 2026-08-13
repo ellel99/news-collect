@@ -16,6 +16,7 @@ PHASE1_TABLES = {
 EVENT_INTELLIGENCE_FOUNDATION_TABLES = {
     "event_candidates",
     "event_candidate_evidence",
+    "impact_analyses",
 }
 
 FUTURE_TABLE_NAMES = {
