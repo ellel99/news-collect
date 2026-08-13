@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
+
+- 新增 target-driven、provider-neutral production collection control plane 完整设计：typed/versioned
+  target config、统一 adapter factory、target-specific cadence/cursor/lock/retry/run/health、request
+  budgets、pagination/backfill/revision、credential boundary、迁移/rollback 与测试矩阵。
+- 修正文档能力分级：四 Provider smoke、minimal adapter/runtime 与 scheduler evidence 已通过，但当前
+  provider-level special scheduler 尚不是 multi-target unified production control plane。
+- SPEC-0041 仅为 Docs Review；未修改 Python、migration、ORM/schema，未请求 Provider/AI/Telegram，
+  未读取 credential/`.env`。PR #39/SPEC-0040 保持独立 Draft。
+
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
 - SPEC-0039 final Implementation Review PASS；状态更新为 Completed — Implementation Review approved。

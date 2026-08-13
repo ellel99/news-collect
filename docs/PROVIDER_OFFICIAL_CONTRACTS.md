@@ -1,5 +1,10 @@
 # Provider Official Contracts
 
+> Status note (2026-08-13)：Marketaux、Finnhub、EIA 与 SEC EDGAR 已完成当前批准的 bounded
+> adapter/runtime/scheduler scope。本文中的 smoke/preflight 条目是合同证据，不应解读为实现仍未开始，
+> 也不证明 multi-target production capability。新 target/operation 必须使用 SPEC-0041 提议的
+> typed/versioned contract 并重新审核 quota、retention、cursor 与 request budget。
+
 状态：preflight scaffold contract；未执行真实 smoke；不授权 Adapter implementation。
 
 本文件只记录官方资料可支持的最小请求合同。套餐、额度、留存、内部 AI 使用与再分发规则以

@@ -8,11 +8,12 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None
-- 最近完成：SPEC-0003，tag `spec-0003-completed`
+- 当前 Active SPEC：SPEC-0041 — Unified Production Collection Control Plane（Docs Review only）
+- 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
-  Active SPEC，禁止继续实现真实 AI/Recommendation。
+  SPEC-0041 只设计 target-driven 统一生产采集控制面；禁止实现代码、migration、真实 AI 或
+  Recommendation。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge 或扩展。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -37,9 +38,11 @@
 - SPEC-0018 Normalized Evidence Contract Docs Review 已通过并 Completed；仅表示合同设计通过
 - SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review/schema
   implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、SPEC-0025、
-  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0037
-  也已完成当前批准范围。当前只实现四 Provider 最小 scheduler/Telegram routing，不得修改
-  migration/ORM/schema、请求 Provider、读取 `.env`/local capture，或实现 formal dedup/Event/AI
+  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0039
+  也已完成当前批准范围。四 Provider adapter、bounded runtime、最小 scheduler/Telegram routing
+  已实现并有审核 evidence；但当前 scheduler 仍是 provider-level special orchestration，不等同于
+  multi-target unified production control plane。SPEC-0041 只做该控制面的文档设计，不得修改
+  migration/ORM/schema、请求 Provider、读取 `.env`/local capture 或实现运行代码。
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash

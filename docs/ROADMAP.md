@@ -14,7 +14,9 @@ Phase 1 信息采集与及时推送
 
 每个阶段通过多个小型 SPEC 交付。当前 SPEC 未通过验收前，不进入下一 SPEC；当前阶段的基础可靠性未达到完成标准前，不提前开发后一阶段的复杂能力。
 
-当前 SPEC-0003 已完成，暂无 Active SPEC。下一步只能在用户确认后准备 SPEC-0004 文档。
+SPEC-0030–0039 已完成当前批准范围。当前 Active SPEC 为 SPEC-0041 Unified Production Collection
+Control Plane（Docs Review only）；目标是把已验证四 Provider 的特殊 runtime 收敛为 target-driven、
+provider-neutral 控制面。本轮不实现代码或 migration。
 
 ## 产品覆盖说明
 

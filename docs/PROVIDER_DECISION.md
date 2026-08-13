@@ -6,13 +6,14 @@
 - Codex 职责：按已确认结论维护文档和执行用户明确授权的验证；不负责重新评估、选择或替换
   provider。
 - 生效范围：产品来源分层方向与 SPEC-0004 provider realignment。
-- 实现状态：未开始。
+- 实现状态：Marketaux、Finnhub、EIA、SEC EDGAR 已实现到当前审核批准的 bounded adapter/runtime/
+  scheduler 范围；multi-target unified production control plane 尚未实现。
 
 ## Confirmed Provider Roles
 
 | Role | Confirmed Provider / Layer | Current Engineering Status |
 |---|---|---|
-| Bounded smoke evidence | Marketaux / Finnhub / EIA / SEC EDGAR | 用户逐次授权的 redacted structural smoke 均 PASS；不等于合同或实现授权 |
+| Current approved providers | Marketaux / Finnhub / EIA / SEC EDGAR | bounded smoke、adapter/runtime 与最小 scheduler evidence PASS；不等于任意 operation 或统一生产控制面 PASS |
 | Future news provider | NewsAPI.ai / Event Registry | future / blocked；不在当前 smoke 序列 |
 | Market Validation Provider | Finnhub | market validation candidate；Market Validation 实现仍需适用的 Foundation revision、Freeze Review 和独立 SPEC |
 | Official Evidence Layer | SEC EDGAR / EIA / Company IR / Official RSS | confirmed evidence-source layer；逐来源授权、合同与独立 SPEC 仍待完成 |
@@ -27,9 +28,9 @@ NewsAPI.ai / Event Registry 当前为 `future / blocked`，无论是否存在本
 当前四个平台的认证信息和 optional metadata 只允许保存在未跟踪的本地 `.env`；metadata 缺失
 不阻塞最小 smoke 请求，但任何合同、retention 或 quota 未确认都会阻塞后续实现。
 
-## Next Authorized Sequence
+## Historical Preflight Sequence and Current Gate
 
-统一流程：
+新 provider/operation 仍适用统一流程：
 
 ```text
 用户完成平台注册并保存凭证
@@ -52,12 +53,9 @@ NewsAPI.ai / Event Registry 当前为 `future / blocked`，无论是否存在本
 边界。尤其 Finnhub 的 Market Validation implementation 仍须适用的 Foundation revision、
 Freeze Review 和独立 SPEC。
 
-四个平台的一次性 bounded smoke 已完成，现在必须停止并等待用户/ChatGPT Review；
-不得重试、扩大范围或自动继续。NewsAPI.ai / Event Registry 和 GDELT 均不得请求。
-
-下一阶段仅准备 SPEC-0006 local raw capture/audit/replay scaffold。Raw captures 必须保存在
-gitignored `local_evaluation/`，不得进入 Git/PR/chat；本轮不授权任何真实 capture。未来每次
-capture 仍须用户明确指定 Provider、selector 与 limit。
+四个平台已完成当前批准范围，不得把历史 preflight 文案解释成“implementation 未开始”，也不得
+把当前 PASS 扩大到新 route/series/history。当前 SPEC-0041 只审核统一生产采集控制面；不请求任何
+Provider。NewsAPI.ai / Event Registry 和 GDELT 均保持 blocked。
 
 ## Bounded Smoke Contract
 

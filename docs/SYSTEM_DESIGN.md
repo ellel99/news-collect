@@ -84,6 +84,19 @@ Research Recommendation (future Foundation/SPEC approval)
 
 ## 2. 模块职责
 
+### 2.0 当前采集控制面状态与目标（SPEC-0041 Docs Review）
+
+当前已实现四 Provider 的 adapter、bounded runtime 和 provider-level scheduler，但 generic Celery
+dispatcher 仍只面向 fake adapter，真实来源由特殊 multi-provider orchestration 组装；cadence、target
+resolution 与 limit 尚未统一为多 target production contract。因此“runtime PASS”不得等同于“统一
+生产控制面 PASS”。
+
+SPEC-0041 提议以 `CollectionTarget` 作为 cadence、cursor、lock、retry、run、health 与 dispatch
+idempotency 的共同 owner，并以 typed/versioned config 和显式 adapter factory 替代无版本
+`SourceAccount.collection_options` 与 provider `if/elif`。Telegram/事件处理消费持久结果，不能决定
+collection 是否运行。完整设计见 `spec/SPEC-0041-unified-production-collection-control-plane.md`；
+当前只审核设计，不代表 schema 或 runtime 已实现。
+
 ### 2.1 Source Registry
 
 保存来源类型、接入方式、授权状态、轮询策略、健康状态和内容保留等级。精确来源信息见 `SOURCE_CATALOG.md`。
