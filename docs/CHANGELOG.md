@@ -2,6 +2,12 @@
 
 ## Unreleased — Foundation v2.3 R0 Freeze Review
 
+- 澄清 R7：R0/R7 不创建、激活或请求任何 Provider/Source/feed/endpoint；仅允许为现有 Collection
+  Scope 内官方 endpoint family 准备独立 SPEC，并逐项完成 identity、许可、typed contract、恢复、
+  mock/integration、授权 live 和 production activation gates。商业 Provider、X、streaming/webhook/
+  event-bus、arbitrary crawler/endpoint 不获授权，越界来源仍需新 Foundation Revision。
+- 完整继承 v2.2 直接范围：U.S. equities、U.S. ETFs、Crypto 和 related cash positions；宏观、能源、
+  监管、债券、FX 与商品仍为解释性输入，不授权 Portfolio/Holding/Investment Plan implementation。
 - 新增独立 R0 Freeze Review package，逐条对比 v2.2→v2.3 candidate diff，并列出 proposed
   authorization、继续冻结边界、R1–R8 独立 Review gate 与 Reviewer PASS/REJECT form。
 - 当前结果保持 PENDING；v2.2-FROZEN 仍生效，Active SPEC=None。R0 PASS 不自动启动 R1。

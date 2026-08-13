@@ -50,7 +50,9 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 ## 核心边界
 
-- 覆盖市场：美股、ETF、Crypto，以及解释二者所需的宏观、政策、AI 产业链和能源信息。
+- 直接 market/portfolio scope：U.S. equities、U.S. ETFs、Crypto 和 related cash positions；宏观、
+  能源、监管、债券、FX 与商品仅作为解释性输入，除非未来 Foundation Revision 改变边界。该范围
+  不授权 Portfolio/Holding/Investment Plan implementation。
 - 第一阶段交互入口：Telegram 管理 Bot 与情报推送 Bot。
 - 系统不自动交易，不自动下单，也不输出替用户作出买卖决定的指令。
 - AI 不得擅自修改投资计划、风险规则或持仓逻辑。

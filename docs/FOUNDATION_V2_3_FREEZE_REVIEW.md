@@ -24,7 +24,7 @@ normative text is `docs/FOUNDATION_V2_3_DRAFT.md`.
 | no new collection state entity under v2.2 transition | permit CollectionTarget and target-owned state design/migration | cadence/cursor/lock/retry/run/health require stable target ownership | no credentials/raw payload; schema requires R1 Review |
 | existing Scheduler/Telegram behavior remains compatible | permit collection/delivery decoupling while preserving outcomes | Telegram/Event failure must not stop collection | notification remains persistent/idempotent; content unchanged |
 | ContentItem is content-safe projection | permit a durable, versioned safe projection layer | downstream facts cannot depend on ephemeral sidecars/raw payload | provenance, retention, license and redaction remain mandatory |
-| no new Provider | unchanged; permit only independently reviewed operation expansion | current provider coverage needs depth, not implicit provider activation | Source Catalog/contract/SPEC/live gates remain |
+| no new Provider activation from Foundation | R0 creates/activates/requests nothing; R7 may prepare independent SPECs for in-scope official endpoint families | official-source readiness needs review without implicit activation | full identity/access/license/contract/runtime/live/production gates remain |
 | deterministic Event foundation only | permit R8 Event/Evidence/Fact completeness work | AI must consume complete, bounded factual inputs | no real AI/model call or semantic clustering |
 
 ## 3. Proposed authorized domains
@@ -37,7 +37,8 @@ An explicit PASS would permit preparation and independent review of bounded work
 4. Scheduler/control-plane rewrite.
 5. Collection and Telegram/Event delivery decoupling.
 6. Durable safe projection.
-7. Provider operation expansion only through an independent SPEC and contract/license review.
+7. Provider/source operation readiness only through an independent SPEC and the complete §5/R7 gate; R0 itself
+   creates, activates and requests nothing.
 8. R8 Event/Evidence/Fact completeness.
 
 It would not authorize implementation by itself.
@@ -46,7 +47,9 @@ It would not authorize implementation by itself.
 
 - Single user/private system; no tenant, workspace, team, billing or public redistribution product.
 - Broad Scan and Controlled Push remain distinct; implicit behavior cannot narrow coverage.
-- Direct market scope remains U.S. equities/ETF and Crypto; macro/energy/regulation remain explanatory inputs.
+- U.S. equities, U.S. ETFs, Crypto, and related cash positions remain the direct market/portfolio scope; macro,
+  energy, regulation, bonds, FX and commodities remain explanatory inputs unless a later Foundation Revision
+  changes that boundary. This does not authorize Portfolio/Holding/Investment Plan implementation.
 - Credentials remain worker-runtime-only and absent from DB, config payloads, tasks, logs and review artifacts.
 - Content access, license, retention, attribution and redistribution constraints remain source/operation specific.
 - RawItem/Evidence provenance remains traceable and cannot be deleted or weakened by projection/Event layers.
@@ -59,7 +62,16 @@ It would not authorize implementation by itself.
 - Market Validation runtime.
 - Research Recommendation.
 - Portfolio/Holding/Investment Plan implementation.
-- New Provider, X, streaming/webhook/event-bus infrastructure.
+- R0 itself does not create, activate or request any new Provider, Source, feed or endpoint.
+- R7 may prepare an independent SPEC only for Company IR, official RSS, government, macro or regulatory official
+  sources that fit existing Collection Scope and explain the frozen direct markets. Before production activation,
+  each source/endpoint family must independently pass: official identity verification; access/license/robots/
+  retention/attribution review; typed operation/adapter contract; request budget/cursor/revision/recovery contract;
+  mock/integration verification; user-authorized bounded live verification; and production activation review.
+- An independent SPEC is permission to review, not automatic Foundation approval to implement or activate.
+- Commercial news Providers, X, streaming, webhook, event-bus, arbitrary web crawlers and arbitrary endpoints remain
+  prohibited by R0/R7. Any source outside current Collection Scope, market scope or safety boundaries requires a
+  later Foundation Revision.
 - R1–R8 implementation without its own SPEC, Review PASS and explicit authorization.
 - Any credential read, Provider/Telegram/AI request or live migration based only on this review.
 
@@ -77,7 +89,7 @@ without double heads, copied revisions or rewriting published history.
 | R4 | EIA route/series catalog | dataset/facet/revision SPEC |
 | R5 | SEC multi-company/history/XBRL | official-data/fact/revision SPEC |
 | R6 | Finnhub multi-symbol observations | typed observation SPEC; Market Validation excluded |
-| R7 | Company IR/official RSS/macro/regulatory | one reviewed endpoint family at a time |
+| R7 | In-scope Company IR/official RSS/government/macro/regulatory official sources | independent SPEC plus identity, access/license/robots/retention/attribution, typed contract, budget/cursor/revision/recovery, mock/integration, bounded-live and production-activation reviews |
 | R8 | Event/Evidence/Fact completeness | factual-input contract/schema SPEC |
 
 R0 PASS would not start R1. The repository may remain with Active SPEC=None until the user separately activates

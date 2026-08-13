@@ -28,6 +28,9 @@
 - NewsAPI.ai / Event Registry：future / blocked；不得请求或执行 smoke
 - Market Validation Provider：Finnhub（candidate；当前阶段禁止实现 Market Validation）
 - Official Evidence Layer：SEC EDGAR / EIA / Company IR / Official RSS
+- R7 boundary：R0/R7 不创建、激活或请求任何 Provider/Source/feed/endpoint；只可为现有 Collection
+  Scope 内的 Company IR、official RSS、政府/宏观/监管官方 endpoint family 准备独立 SPEC，并完成
+  全部 identity、license/access、typed contract、runtime/live 与 production activation gates。
 - GDELT Project DOC 2.0：runtime blocked / future evaluation only；不再是 primary pilot
 - GDELT 历史证据：两次 bounded smoke attempt 分别得到 HTTP 429 和 SSL connection timeout；未获得
   或保存文章数据
@@ -100,7 +103,9 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 ## 不可违反的规则
 
 1. 项目是单用户、自用系统，不引入多租户、Workspace、团队协作或 SaaS 设计。
-2. 市场范围是美股与 Crypto；宏观、能源、政治等是解释这两个市场的情报域，不是新增交易市场。
+2. U.S. equities、U.S. ETFs、Crypto 和 related cash positions 是直接 market/portfolio scope；宏观、
+   能源、监管、债券、FX 与商品是解释性输入，除非未来 Foundation Revision 改变边界。该继承不授权
+   Portfolio/Holding/Investment Plan implementation。
 3. 执行 Broad Scan，采集与分析范围不得因点击、忽略、阅读频率或历史关注行为而收窄。
 4. 执行 Controlled Push，通知可按明确规则、优先级、静默时间和事件增量进行控制。
 5. AI 不得自动下单，也不得给出替用户决定的买入、卖出、加仓、减仓或清仓指令。

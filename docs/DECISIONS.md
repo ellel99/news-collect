@@ -9,11 +9,13 @@
 - 原因：项目服务唯一用户，避免无价值复杂度。
 - 后果：仍保留最小权限、审计和敏感数据保护。
 
-## D-002 只覆盖美股与 Crypto
+## D-002 直接市场/组合范围
 
-- 决定：持仓和跨市场核心仅为美股、ETF、Crypto。
+- 决定：U.S. equities、U.S. ETFs、Crypto 和 related cash positions 是直接 market/portfolio scope；
+  宏观、能源、监管、债券、FX 与商品仍是解释性输入，除非未来 Foundation Revision 改变边界。
 - 原因：符合用户实际需求。
-- 后果：利率、美元、债券、能源等作为影响变量，不扩展为独立交易市场。
+- 后果：该范围继承不授权 Portfolio/Holding/Investment Plan implementation；利率、美元、债券、
+  能源等作为影响变量，不扩展为独立交易市场。
 
 ## D-003 Broad Scan 与 Controlled Push 分离
 
@@ -207,3 +209,8 @@
   Fact digest、snapshot 或 routing 全部保留；migration 必须按串行顺序处理。
 - 状态：Proposed — R0 Foundation v2.3 Freeze Review PENDING；路线与门禁见
   `docs/PRE_AI_COLLECTION_READINESS.md`，不授权代码或外部请求。R0 PASS 不自动启动 R1。
+- R7 clarification：R0/R7 不创建、激活或请求 Provider/Source/feed/endpoint；只允许为现有 Collection
+  Scope 内的 Company IR、official RSS、政府/宏观/监管官方 endpoint family 准备独立 SPEC。每项仍须
+  identity、access/license/robots/retention/attribution、typed contract、budget/cursor/revision/recovery、
+  mock/integration、明确授权 bounded live 与 production activation Review。其他新来源或越界范围仍需
+  新 Foundation Revision。

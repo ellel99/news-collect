@@ -49,7 +49,7 @@ The proposed authorization is limited to the following readiness domains:
 | Scheduler rewrite | bounded migration to target-driven production scheduling | implementation without an Active SPEC |
 | Delivery decoupling | collection independent from Telegram/Event delivery | Telegram content/routing expansion |
 | Durable safe projection | versioned, provider-neutral, provenance-preserving projection | raw payload propagation or unlicensed content |
-| Provider operation expansion | only operations approved by independent SPEC/contract/license review | automatic activation from smoke/bootstrap defaults |
+| Provider/source operation readiness | R7 may prepare independent SPECs for in-scope Company IR, official RSS and government/macro/regulatory official endpoint families; other operation expansion requires its own review | creating, activating or requesting any source/endpoint from R0 itself; commercial Provider/X/arbitrary crawling |
 | R8 completeness | Event/Evidence/Fact completeness after collection readiness | real AI, Market Validation or recommendation |
 
 R1–R8 remain separately reviewed work. An R0 PASS changes the governance ceiling only; it does not activate a
@@ -58,15 +58,23 @@ SPEC, create a branch, authorize a migration, or permit a runtime request.
 ## 3. Boundaries that remain frozen
 
 - Single-user/private deployment; no tenant, workspace, team or billing model.
-- U.S. equities/ETF and Crypto remain the direct market scope; energy/macro/regulation remain explanatory inputs.
+- U.S. equities, U.S. ETFs, Crypto, and related cash positions remain the direct market/portfolio scope; macro,
+  energy, regulation, bonds, FX and commodities remain explanatory inputs unless a later Foundation Revision
+  changes that boundary. This inheritance does not authorize Portfolio/Holding/Investment Plan implementation.
 - Broad Scan and Controlled Push remain separate; implicit behavior cannot narrow collection.
 - RawItem/Evidence provenance and content-safe boundaries remain authoritative and additive.
 - No secret, credential, authorization header, secret-bearing URL or unlicensed full content in persistent
   config, task payload, logs, review artifacts or downstream Event/AI inputs.
 - No access-control bypass, paywall bypass, unauthorized scraping or automatic provider fallback.
 - No BUY/SELL/HOLD, position sizing, target price, portfolio advice, automated trading or broker integration.
-- No new provider, X, streaming/webhook/event-bus infrastructure, semantic clustering or market-validation
-  runtime without a separate SPEC and applicable review.
+- R0 itself cannot create, activate or request any new Provider, Source, feed or endpoint. R7 may only prepare an
+  independent SPEC for an in-scope Company IR, official RSS or government/macro/regulatory official endpoint
+  family. Each requires official identity, access/license/robots/retention/attribution, typed operation/adapter,
+  budget/cursor/revision/recovery, mock/integration, explicitly authorized bounded live, and production-activation
+  reviews before use.
+- Commercial news Providers, X, streaming/webhook/event-bus infrastructure, arbitrary web crawlers/endpoints,
+  semantic clustering and Market Validation remain prohibited. A source outside existing Collection Scope,
+  direct-market scope or safety boundaries requires another Foundation Revision.
 - Existing Phase 1 and SPEC-0039 behavior remains compatible; migration and cutover must be reversible.
 
 ## 4. PR #39 freeze gate
@@ -109,11 +117,13 @@ If Freeze Review later returns PASS, only the following Foundation-level delta m
    implementation before R1 review.
 4. Add durable safe projection as a permitted pre-AI foundation layer, subject to provenance, content/license/
    retention and secret boundaries.
-5. Permit independently reviewed operation expansion for already approved or future separately approved sources;
-   do not activate any provider, route or target in Foundation.
+5. Permit R7 to prepare independent SPECs for in-scope official-source endpoint families and permit operation
+   expansion only after all source/contract/runtime/production gates. Do not create, activate or request any
+   Provider, Source, feed, route, endpoint or target in Foundation. Commercial news Provider, X, arbitrary crawler
+   and out-of-scope source work remain prohibited or require a later Foundation Revision as applicable.
 6. Require collection to remain operational independently from Telegram/Event delivery.
 7. Require R8 Event/Evidence/Fact completeness before any real AI routing review.
-8. Continue every v2.2 single-user, market-scope, Broad Scan, Controlled Push, credential, provenance,
+8. Continue every v2.2 single-user, market-scope (including related cash positions), Broad Scan, Controlled Push, credential, provenance,
    content/license, no-unauthorized-access and no-trading boundary unchanged.
 9. Continue to prohibit real AI, Market Validation, Recommendation and Portfolio implementation. PR #39 remains
    Draft until R0–R8 complete and must then be re-audited/rebased.

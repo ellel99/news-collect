@@ -150,19 +150,25 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 ### R7 — Company IR, Official RSS, Macro and Regulatory Sources
 
 - **Current limitation:** these are catalog/planned evidence layers, not implemented production sources.
-- **Target:** prioritized official-source inventory and provider-neutral polling operations for explicitly reviewed
-  Company IR/official RSS and macro/regulatory feeds relevant to U.S. equities/Crypto.
+- **Target:** prepare independent SPECs for prioritized, provider-neutral official-source operations covering
+  Company IR, official RSS and government/macro/regulatory feeds that fit existing Collection Scope and explain
+  U.S. equities, U.S. ETFs, Crypto and related cash positions. R0/R7 itself creates, activates and requests nothing.
 - **Safety/license:** source-by-source terms/robots/retention/attribution, official identity verification, metadata/
   link-only default and no arbitrary web fallback.
 - **Non-goals:** new commercial provider selection, X, unrestricted crawling, full-text assumption, streaming or
   webhook infrastructure.
 - **Dependencies:** R1/R2; Source Catalog review; one independent provider/operation SPEC per endpoint family.
+  Every family must independently complete official identity verification; access/license/robots/retention/
+  attribution review; typed operation/adapter contract; request budget/cursor/revision/recovery contract; mock/
+  integration verification; user-authorized bounded live verification; and production activation review.
 - **Impact:** new Source/Account/Target records and adapter/config only after authorization; migration only for
   genuinely new generic contracts.
 - **Verification gate:** official documentation, mock/fixture contracts and package safety first; each endpoint gets
   explicit bounded live authorization and license review.
-- **Acceptance:** every active official target has verified identity, operation allowlist, retention/access policy,
-  stable ID/time/cursor/revision contract, budget and recovery evidence.
+- **Acceptance:** independent Docs/Implementation/production-activation reviews explicitly PASS every gate before
+  a target becomes active. A reviewable independent SPEC is not automatic approval to implement or activate.
+  Commercial news Providers, X, streaming/webhook/event-bus, arbitrary web crawlers/endpoints remain prohibited;
+  sources beyond current Collection Scope, market scope or safety boundaries require a new Foundation Revision.
 
 ### R8 — Event / Evidence / Fact Completeness
 
