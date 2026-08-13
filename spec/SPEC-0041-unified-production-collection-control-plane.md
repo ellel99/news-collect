@@ -1,6 +1,6 @@
 # SPEC-0041 — Unified Production Collection Control Plane
 
-状态：Active — Docs Review（implementation not authorized）
+状态：Completed — Docs Review approved；implementation blocked pending Foundation v2.3 Freeze Review
 
 阶段：Cross-phase collection reliability
 
@@ -399,4 +399,5 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 
 | 轮次 | 结果 | 主要问题 | 处理 |
 |---|---|---|---|
-| Docs Review 0 | Pending | 等待用户与架构 Reviewer | 本 PR 完成后停止 |
+| Docs Review 0 | REQUEST CHANGES | Foundation conflict、readiness 路线、PR #39 freeze、Provider 状态 | 新增 v2.3 Draft、R0–R9 program 并统一状态 |
+| Docs Review 1 | PASS（2026-08-13） | 文档范围与治理门禁通过 | 仅批准 Docs Review；v2.3 Freeze Review 仍 PENDING，禁止 implementation |

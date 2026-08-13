@@ -8,12 +8,13 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：SPEC-0041 — Unified Production Collection Control Plane（Docs Review only）
+- 当前 Active SPEC：None
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
-  SPEC-0041 只设计 target-driven 统一生产采集控制面；禁止实现代码、migration、真实 AI 或
-  Recommendation。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge 或扩展。
+  SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
+  Foundation v2.3 Freeze Review 仍 PENDING。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge、
+  rebase 或扩展。
 - Foundation governance：v2.2-FROZEN 禁止 scheduler rewrite 且只授权 SPEC-0039。SPEC-0041 的
   implementation 必须先取得 `docs/FOUNDATION_V2_3_DRAFT.md` Freeze Review PASS；当前结果 PENDING，
   不得把 Docs Review 当作 schema/scheduler 实现授权。

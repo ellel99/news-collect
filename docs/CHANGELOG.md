@@ -2,6 +2,8 @@
 
 ## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
 
+- Docs Review PASS（2026-08-13）；只批准设计，Foundation v2.3 Freeze Review 仍 PENDING，未授权
+  CollectionTarget migration、scheduler rewrite、durable projection 或任何 runtime implementation。
 - 增加 Foundation v2.3 Pre-AI Collection Readiness Draft：明确 v2.2 scheduler rewrite 禁令冲突，
   Freeze Review 仍 PENDING；PR #39/SPEC-0040 在 readiness 完成前冻结，之后必须重新审计/rebase。
 - 增加 R0–R9 完整 readiness program，覆盖 durable safe projection、Marketaux coverage、EIA catalog、
