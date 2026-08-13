@@ -23,6 +23,9 @@ Foundation v2.1-FROZEN 的既有安全约束由 v2.2 完整继承，不再作为
 - 当前 Active SPEC：SPEC-0041 Unified Production Collection Control Plane（Docs Review only；
   implementation not authorized）。四 Provider 的 bounded adapter/runtime/scheduler evidence 已通过，
   但当前 provider-level special scheduler 不是 multi-target 通用生产控制面。
+- Foundation v2.2-FROZEN 仍生效并禁止 scheduler rewrite。v2.3 Pre-AI Collection Readiness 仅为
+  [Draft Freeze Review proposal](docs/FOUNDATION_V2_3_DRAFT.md)；在明确 PASS 前不得实现。完整路线见
+  [Pre-AI Collection Readiness Program](docs/PRE_AI_COLLECTION_READINESS.md)。PR #39 保持 Draft。
 - 最近完成：[`spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md`](spec/SPEC-0039-phase1-acceptance-event-candidate-foundation.md) — Completed, Implementation Review approved
 
 Phase 1 固定主链路：

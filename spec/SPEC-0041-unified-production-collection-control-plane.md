@@ -51,7 +51,13 @@ flowchart TD
 
 ## 3. Foundation 与治理边界
 
-- Active Foundation：v2.2-FROZEN；本设计不修改 Foundation 或阶段边界。
+- Active Foundation：v2.2-FROZEN。该版本明确禁止 scheduler rewrite，并把 implementation authority
+  限于 SPEC-0039，因此 **SPEC-0041 当前无权实施** CollectionTarget/schema、target state migration、
+  unified scheduler rewrite 或 delivery decoupling。
+- 本 PR 新增 `docs/FOUNDATION_V2_3_DRAFT.md`，只准备 Foundation Revision / Freeze Review。v2.3
+  必须获得用户/Reviewer 明确 PASS 后，才能更新有效 Foundation 并另行授权实现。
+- Proposed v2.3 只请求在真实 AI 前回补 collection reliability：CollectionTarget/state schema、统一
+  production control plane、collection 与 Telegram/Event delivery 解耦，以及后续 Pre-AI Readiness。
 - Provider-neutral、failure-visible、credential isolation、Broad Scan 与 Controlled Push 决策继续生效。
 - SPEC-0041 是唯一 Docs Review；不与 PR #39 的未合并 SPEC-0040 并行实施。
 - NewsAPI.ai / Event Registry 保持 future/blocked；GDELT 保持 runtime blocked/future evaluation。
@@ -234,10 +240,13 @@ Retry 是 target state，不能复用 provider cadence key。non-retryable failu
 
 ### 11.1 Dependency/branch rule
 
+- Foundation v2.3 Freeze Review PASS 是任何 implementation/migration 的前置条件。
+- PR #39/SPEC-0040 在完整 Pre-AI Collection Readiness Program 完成前保持 Draft、不得合并。
 - 实现必须从届时最新 `main` 新分支开始，不从本 Docs PR 或 PR #39 分支直接堆叠。
-- 若 PR #39 已合并，new revisions 的 `down_revision` 接其实际 head（预计包含 `0006/0007`），并在
-  migration tests 验证；若未合并，本控制面 migration 先接当前 main head，PR #39 之后必须 rebase/
-  重新编号并解决双 head。禁止猜测 revision、复制 0006/0007 或 rewrite 已发布历史。
+- PR #39 只能在 readiness 完成后基于届时最新 main 重新审计/rebase；不预先保证其现有 AI contract、
+  Fact digest、snapshot 或 routing 设计全部保留。
+- PR #39 当前 proposed `0006/0007` 不构成已发布 migration authority。最终 revision/down_revision 必须
+  按串行合并顺序重算并验证；禁止双 head、复制 revision、invented bridge 或 rewrite 已发布历史。
 - 合并顺序必须串行；任何双 head 在 merge 前解决并跑 upgrade/downgrade/re-upgrade。
 
 ### 11.2 Phased data migration
@@ -268,9 +277,10 @@ new-only state 或完成可验证导出时允许，否则 BLOCKED。不得 down 
 当前 Marketaux/Finnhub/EIA/SEC 达到第 2 级及已审核 scheduler runtime；尚未达到第 3 级。Phase 1 core
 technical path PASS 仍成立，但完整 operations/backup/restore、X 与统一生产控制面是后置能力。
 
-本 Docs PR 同步修正 AI_CONTEXT、README、SYSTEM_DESIGN、DATA_MODEL、SOURCE_CATALOG、
+本 Docs PR 新增 Foundation v2.3 Draft 与完整 Pre-AI Collection Readiness Program，并同步修正
+AI_CONTEXT、README、SYSTEM_DESIGN、DATA_MODEL、SOURCE_CATALOG、
 PROVIDER_DECISION、PROVIDER_OFFICIAL_CONTRACTS、PHASE1_ACCEPTANCE、ROADMAP、DECISIONS、
-SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 本身不修改。
+SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本；不得自行标记 v2.3 PASS/FROZEN。
 
 ## 13. Future implementation exact file scope
 
@@ -327,6 +337,8 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 本身不修改。
 - [ ] notification/Event 与 collection 解耦且不重写既有 Phase 1/Event pipeline。
 - [ ] legacy/default/cursor migration 不扩大授权、不丢失审计。
 - [ ] PR #39 merge ordering 与 Alembic 双 head 处理明确。
+- [ ] Foundation v2.3 Draft 明确覆盖 v2.2 scheduler prohibition，且 Freeze Review 仍为 PENDING。
+- [ ] Pre-AI Collection Readiness R0–R9 的限制、目标、边界、依赖、影响、验证与验收均可审核。
 - [ ] 测试矩阵、实现文件范围、风险与 rollback 可审核。
 - [ ] NewsAPI.ai/GDELT/X/new Provider 未激活。
 - [ ] 仅文档变更；无代码、migration、外部请求或 credential 读取。
@@ -341,21 +353,25 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 本身不修改。
 - **PR #39 divergence**：串行 merge/rebase，禁止双 head 和 migration history rewrite。
 - **Rollback data loss**：保留 additive target/state 记录；先切 worker，再回退代码；不可删除 volume。
 
-## 17. Step 2–Step 9 dependencies
+## 17. Pre-AI Collection Readiness dependencies
+
+完整 program contract 见 `docs/PRE_AI_COLLECTION_READINESS.md`。以下是总依赖，不表示自动授权：
 
 | Step | 后续主题 | 依赖/门禁 |
 |---|---|---|
-| 2 | target schema + typed config migration | 本 Docs Review PASS；最新 main/Alembic head；legacy inventory |
-| 3 | unified factory + worker credential resolver | Step 2；operation allowlist 与 contract versions |
-| 4 | target scheduler/lock/run/health | Step 2–3；Redis/Celery integration |
-| 5 | cursor/pagination/backfill/revision codecs | Step 2–4；逐 operation contract review |
-| 6 | legacy shadow migration and cutover | Step 2–5；no-double-collection runbook |
-| 7 | independent notification/outbox delivery | Step 4/6；复用既有 Notification，不升级内容 |
-| 8 | production operations acceptance | backup/restore、stale recovery、quota/health、rollback drills |
-| 9 | future provider/operation expansion | Step 8；每个新 provider/operation 独立授权；不含本 SPEC |
+| R0 | Foundation v2.3 Freeze Review | 本 Docs Review；必须显式 PASS |
+| R1 | Unified Production Collection Control Plane | R0；最新 main/migration inventory |
+| R2 | Durable Safe Projection | R1 target/provenance contract |
+| R3 | Marketaux query/topic/entity/page/window | R1/R2；plan/license/operation review |
+| R4 | EIA dataset/route/frequency/facet catalog | R1/R2；series catalog review |
+| R5 | SEC multi-company/history/companyfacts/XBRL | R1/R2；CIK/taxonomy/official contract review |
+| R6 | Finnhub multi-symbol typed observations | R1/R2；symbol/plan review；Market Validation excluded |
+| R7 | Company IR/official RSS/macro/regulatory | R1/R2；逐 endpoint identity/license review |
+| R8 | Event/Evidence/Fact completeness | R2 plus accepted R3–R7 inputs |
+| R9 | deterministic+model AI routing re-audit | all R0–R8 PASS；PR #39 re-audit/rebase on latest main |
 
-实现可在一个经批准的 bounded implementation SPEC 中合并相邻 Step，但不得在 Docs Review PASS 前
-开始，也不得由本编号自动启动 SPEC-0042 或覆盖 PR #39。
+不得把 R3–R7 合并成模糊 provider expansion；每个 operation 仍有独立 mock/integration/live gate。实现
+不得在 R0 PASS 前开始，也不得由本编号自动启动 SPEC-0042 或覆盖 PR #39。
 
 ## 18. Verification Evidence
 
@@ -369,7 +385,17 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 本身不修改。
 | External runtime | Provider/AI/Telegram requests | NOT RUN（禁止） |
 | Implementation | Python/migration/schema | NOT STARTED |
 
-## 19. Review History
+## 19. Docs Review findings → resolution mapping
+
+| Finding | 文档修正 | Gate / result |
+|---|---|---|
+| v2.2 禁止 scheduler rewrite | 新增 `FOUNDATION_V2_3_DRAFT.md`，SPEC §3/§11 明确冲突 | Freeze Review PENDING；implementation BLOCKED |
+| readiness 路线过于模糊 | 新增 `PRE_AI_COLLECTION_READINESS.md` R0–R9，SPEC §17 改为完整依赖 | R0–R8 PASS 前禁止 AI re-review |
+| PR #39 未被充分冻结 | Foundation Draft §4、Program R9、SPEC §11 固定 Draft/re-audit/rebase/migration rule | 不合并、不保证现设计保留 |
+| Provider 状态矛盾 | 重写 Official Contracts 状态及四 Provider current/not-implemented/Pending sections | smoke/runtime/production capability 分级 |
+| 正确 control-plane 设计需保留 | SPEC §5–§16 保留 target ownership、typed config、factory、budget、cursor、migration、isolation 和 tests | 仅 Docs Review，不实施 |
+
+## 20. Review History
 
 | 轮次 | 结果 | 主要问题 | 处理 |
 |---|---|---|---|

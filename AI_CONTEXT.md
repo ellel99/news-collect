@@ -14,6 +14,12 @@
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
   SPEC-0041 只设计 target-driven 统一生产采集控制面；禁止实现代码、migration、真实 AI 或
   Recommendation。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge 或扩展。
+- Foundation governance：v2.2-FROZEN 禁止 scheduler rewrite 且只授权 SPEC-0039。SPEC-0041 的
+  implementation 必须先取得 `docs/FOUNDATION_V2_3_DRAFT.md` Freeze Review PASS；当前结果 PENDING，
+  不得把 Docs Review 当作 schema/scheduler 实现授权。
+- Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
+  Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
+  不保证原样保留。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -60,8 +66,8 @@
 - Deterministic EventCandidate foundation 已由 SPEC-0039 完成并通过 Implementation Review；真实 AI、
   Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义仍须
   适用的独立 SPEC 和 Review。
-- SPEC-0004 的 Active 状态不是 Adapter 实现授权；独立 preflight scaffold 仅因用户明确授权而
-  存在，不得扩展为业务代码、迁移、依赖、真实来源请求或 adapter registration。
+- SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
+  由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
 - Foundation v2.2-FROZEN 生效；D-020–D-024 Proposed Decisions 仍不等于实现授权。
 
 ## Phase 1 允许
@@ -83,7 +89,9 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 5. `docs/AI_RULES.md`
 6. `docs/GLOSSARY.md`
 7. 当前 Active SPEC；若为“无”，读取最近完成 SPEC 与 `spec/SPEC_INDEX.md`
-8. 真实代码、迁移、测试和最近交付报告
+8. 若处于 SPEC-0041，读取 `docs/FOUNDATION_V2_3_DRAFT.md` 与
+   `docs/PRE_AI_COLLECTION_READINESS.md`
+9. 真实代码、迁移、测试和最近交付报告
 
 不得只根据聊天记录、旧 ZIP 名称或未验证的文档描述判断当前实现状态。
 

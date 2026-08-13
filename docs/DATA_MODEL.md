@@ -146,7 +146,8 @@ Phase 1 的 `summary` 只表示来源直接提供的摘要，字段实现时应�
 
 `collection_options` 是既有兼容字段，不再作为长期 production target contract。SPEC-0041 Docs
 Review 提议新增 `CollectionTarget` 与 typed/versioned config，并把 cursor/run/health 绑定到 target；
-当前尚无 migration 或 schema change，既有字段仍是运行事实。
+当前尚无 migration 或 schema change，既有字段仍是运行事实。该 proposal 与 v2.2 的 scheduler/schema
+实施边界冲突，只有 Foundation v2.3 Freeze Review PASS 后才能形成 migration implementation SPEC。
 
 ### 3.2.1 CollectionTarget（Proposed；未实现）
 
@@ -154,6 +155,12 @@ Review 提议新增 `CollectionTarget` 与 typed/versioned config，并把 curso
 cadence、budget、cursor strategy/version、lock、retry、run、health 与 dispatch identity；不含 secret
 或任意 endpoint。Source 继续拥有 provider/授权/retention，SourceAccount 只表达可选外部身份。
 字段、迁移和 rollback 见 SPEC-0041；Docs Review 不创建表。
+
+### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
+
+现有 bounded pipeline 的安全 projection 不能被描述为已完成的通用 durable contract。R2 将独立审核
+versioned/provider-neutral projection persistence、field provenance、retention/redaction 与 restart-safe
+replay；不得传播 raw provider payload。是否新增表/字段必须在 R1 后单独设计和迁移审核。
 
 ### 3.3 CollectionCursor
 

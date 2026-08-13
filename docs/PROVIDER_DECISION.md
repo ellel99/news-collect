@@ -57,6 +57,11 @@ Freeze Review 和独立 SPEC。
 把当前 PASS 扩大到新 route/series/history。当前 SPEC-0041 只审核统一生产采集控制面；不请求任何
 Provider。NewsAPI.ai / Event Registry 和 GDELT 均保持 blocked。
 
+Pre-AI expansion 顺序和门禁见 `docs/PRE_AI_COLLECTION_READINESS.md`。其中 Marketaux query/page/
+window、EIA series catalog、SEC history/XBRL、Finnhub multi-symbol typed observations 与新增官方来源
+都是尚未实现的独立 operation scope；已有 smoke/bootstrap 值不是生产默认。PR #39 在 readiness
+R0–R8 完成前保持 Draft。
+
 ## Bounded Smoke Contract
 
 每个平台必须独立执行；一次授权只覆盖一个明确 endpoint family、有限请求数量和最小结果数。

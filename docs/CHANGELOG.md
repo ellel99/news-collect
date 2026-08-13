@@ -2,6 +2,13 @@
 
 ## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
 
+- 增加 Foundation v2.3 Pre-AI Collection Readiness Draft：明确 v2.2 scheduler rewrite 禁令冲突，
+  Freeze Review 仍 PENDING；PR #39/SPEC-0040 在 readiness 完成前冻结，之后必须重新审计/rebase。
+- 增加 R0–R9 完整 readiness program，覆盖 durable safe projection、Marketaux coverage、EIA catalog、
+  SEC history/XBRL、Finnhub multi-symbol observations、官方来源和 Event/Evidence/Fact completeness；
+  既有 smoke 默认不自动成为生产 target。
+- 修正 Provider Official Contracts 的历史 preflight/已实现 bounded operation/live evidence/未实现
+  operation/Pending 商务条款分级，删除“实现已完成”与“adapter 未授权”的同时冲突。
 - 新增 target-driven、provider-neutral production collection control plane 完整设计：typed/versioned
   target config、统一 adapter factory、target-specific cadence/cursor/lock/retry/run/health、request
   budgets、pagination/backfill/revision、credential boundary、迁移/rollback 与测试矩阵。

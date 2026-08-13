@@ -192,5 +192,17 @@
   编排且要求单一 target，无法安全扩展多个 query/symbol/series/CIK。
 - 边界：credential 仅在 worker runtime 注入；显式 factory/transport allowlist；unknown operation fail
   closed；notification/Event 与 collection 解耦；NewsAPI.ai/GDELT/X 不因本决定激活。
-- 状态：Proposed — SPEC-0041 Docs Review；不授权 migration 或 Python implementation，不修改
-  Foundation v2.2-FROZEN。
+- Foundation conflict：v2.2 明确禁止 scheduler rewrite 并只授权 SPEC-0039；因此必须先通过
+  Foundation v2.3 Freeze Review，不得在 v2.2 下直接实现。
+- 状态：Proposed — SPEC-0041 Docs Review；不授权 migration 或 Python implementation，Foundation
+  v2.2-FROZEN 继续生效。
+
+## D-027 Pre-AI Collection Readiness before real model routing（Proposed）
+
+- 建议决定：真实 AI 前先完成 unified control plane、durable safe projection、四 Provider operation
+  completeness、官方来源 coverage 及 Event/Evidence/Fact completeness；之后才重新审计 deterministic+
+  model routing。
+- 原因：bounded smoke/default target 和 ephemeral projection 不能代表广度、恢复、许可或事实输入完整。
+- PR #39：R0–R8 完成前保持 Draft；完成后基于最新 main 重新审计/rebase，不保证现有 AI contract、
+  Fact digest、snapshot 或 routing 全部保留；migration 必须按串行顺序处理。
+- 状态：Proposed；路线与门禁见 `docs/PRE_AI_COLLECTION_READINESS.md`，不授权代码或外部请求。

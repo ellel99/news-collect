@@ -101,6 +101,9 @@
 - 历史 preflight 顺序为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR，现已完成当前批准范围；
   新 operation/target 仍须独立合同与授权，不得用既有 PASS 扩大范围。
 - 通用 smoke 验证字段和 PASS 标准见 `docs/PROVIDER_DECISION.md`。
+- 新 target/operation 的生产 readiness 依照 `docs/PRE_AI_COLLECTION_READINESS.md`：Marketaux
+  query/topic/entity/page/window、EIA route/frequency/facet、SEC multi-company/history/XBRL、Finnhub
+  multi-symbol observation 与 Company IR/official RSS/macro/regulatory 均尚未因 bounded PASS 自动完成。
 
 ### GDELT Historical SPEC-0004 Evidence
 
