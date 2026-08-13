@@ -45,6 +45,16 @@ X source/account、完整 backup/restore operational exercise、management Bot �
 仍为独立后置能力，不在本记录中虚构为完成。该 core PASS 只支持发起 Foundation v2.2 Freeze Review，
 本身不授权 Event/AI implementation。
 
+四 Provider smoke、minimal adapter/runtime 与 scheduler evidence 不等同于 multi-target unified
+production control-plane acceptance。当前真实 scheduler 是已审核的 provider-level bounded path；
+target-specific typed config、cadence/cursor/lock/retry/health、统一 factory 和迁移恢复仍由 SPEC-0041
+Docs Review 设计。该后置项不撤销 core technical PASS，也不得把未勾选的完整 operations/
+backup/restore gate 写成已完成。
+
+v2.2 当前禁止 scheduler rewrite，因此上述后置实现还需 Foundation v2.3 Freeze Review PASS。真实 AI
+必须继续等待 Pre-AI Collection Readiness R0–R8；PR #39 的 Draft 不构成 acceptance evidence 或
+implementation authority。
+
 ## 4. 后续架构提案与本验收标准的关系
 
 当前关于供应商中立混合采集、统一接入网关、可替换事件总线、Unified News Record、

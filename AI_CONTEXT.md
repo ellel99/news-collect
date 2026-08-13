@@ -9,10 +9,18 @@
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
 - 当前 Active SPEC：None
-- 最近完成：SPEC-0003，tag `spec-0003-completed`
+- 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。当前无
-  Active SPEC，禁止继续实现真实 AI/Recommendation。
+  SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
+  Foundation v2.3 Freeze Review 仍 PENDING。PR #39/SPEC-0040 保持独立 Draft，不由本分支 merge、
+  rebase 或扩展。
+- Foundation governance：v2.2-FROZEN 禁止 scheduler rewrite 且只授权 SPEC-0039。SPEC-0041 的
+  implementation 必须先取得 `docs/FOUNDATION_V2_3_DRAFT.md` Freeze Review PASS；当前结果 PENDING，
+  不得把 Docs Review 当作 schema/scheduler 实现授权。
+- Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
+  Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
+  不保证原样保留。
 - Provider selection authority：ChatGPT / 用户；Codex 不负责重新评估、选择或替换 provider
 - Provider implementation：Marketaux、Finnhub、EIA Open Data、SEC EDGAR adapter 均已实现到当前
   SPEC 批准范围。Marketaux、Finnhub、EIA 已获得用户本地 live integrated ingestion PASS；SEC
@@ -37,9 +45,11 @@
 - SPEC-0018 Normalized Evidence Contract Docs Review 已通过并 Completed；仅表示合同设计通过
 - SPEC-0019 pure contract、SPEC-0020 pure mapping scaffold、SPEC-0021 Docs Review/schema
   implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、SPEC-0025、
-  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0037
-  也已完成当前批准范围。当前只实现四 Provider 最小 scheduler/Telegram routing，不得修改
-  migration/ORM/schema、请求 Provider、读取 `.env`/local capture，或实现 formal dedup/Event/AI
+  SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0039
+  也已完成当前批准范围。四 Provider adapter、bounded runtime、最小 scheduler/Telegram routing
+  已实现并有审核 evidence；但当前 scheduler 仍是 provider-level special orchestration，不等同于
+  multi-target unified production control plane。SPEC-0041 只做该控制面的文档设计，不得修改
+  migration/ORM/schema、请求 Provider、读取 `.env`/local capture 或实现运行代码。
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
@@ -57,8 +67,8 @@
 - Deterministic EventCandidate foundation 已由 SPEC-0039 完成并通过 Implementation Review；真实 AI、
   Market Validation、Research Recommendation、多用户、商品成为直接投资域及交易动作语义仍须
   适用的独立 SPEC 和 Review。
-- SPEC-0004 的 Active 状态不是 Adapter 实现授权；独立 preflight scaffold 仅因用户明确授权而
-  存在，不得扩展为业务代码、迁移、依赖、真实来源请求或 adapter registration。
+- SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
+  由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
 - Foundation v2.2-FROZEN 生效；D-020–D-024 Proposed Decisions 仍不等于实现授权。
 
 ## Phase 1 允许
@@ -80,7 +90,9 @@ LLM、Embedding、向量数据库、AI 翻译/摘要/分类、Event、Evidence�
 5. `docs/AI_RULES.md`
 6. `docs/GLOSSARY.md`
 7. 当前 Active SPEC；若为“无”，读取最近完成 SPEC 与 `spec/SPEC_INDEX.md`
-8. 真实代码、迁移、测试和最近交付报告
+8. 若处于 SPEC-0041，读取 `docs/FOUNDATION_V2_3_DRAFT.md` 与
+   `docs/PRE_AI_COLLECTION_READINESS.md`
+9. 真实代码、迁移、测试和最近交付报告
 
 不得只根据聊天记录、旧 ZIP 名称或未验证的文档描述判断当前实现状态。
 

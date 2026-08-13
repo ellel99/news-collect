@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — SPEC-0041 Unified Production Collection Control Plane Docs Review
+
+- Docs Review PASS（2026-08-13）；只批准设计，Foundation v2.3 Freeze Review 仍 PENDING，未授权
+  CollectionTarget migration、scheduler rewrite、durable projection 或任何 runtime implementation。
+- 增加 Foundation v2.3 Pre-AI Collection Readiness Draft：明确 v2.2 scheduler rewrite 禁令冲突，
+  Freeze Review 仍 PENDING；PR #39/SPEC-0040 在 readiness 完成前冻结，之后必须重新审计/rebase。
+- 增加 R0–R9 完整 readiness program，覆盖 durable safe projection、Marketaux coverage、EIA catalog、
+  SEC history/XBRL、Finnhub multi-symbol observations、官方来源和 Event/Evidence/Fact completeness；
+  既有 smoke 默认不自动成为生产 target。
+- 修正 Provider Official Contracts 的历史 preflight/已实现 bounded operation/live evidence/未实现
+  operation/Pending 商务条款分级，删除“实现已完成”与“adapter 未授权”的同时冲突。
+- 新增 target-driven、provider-neutral production collection control plane 完整设计：typed/versioned
+  target config、统一 adapter factory、target-specific cadence/cursor/lock/retry/run/health、request
+  budgets、pagination/backfill/revision、credential boundary、迁移/rollback 与测试矩阵。
+- 修正文档能力分级：四 Provider smoke、minimal adapter/runtime 与 scheduler evidence 已通过，但当前
+  provider-level special scheduler 尚不是 multi-target unified production control plane。
+- SPEC-0041 仅为 Docs Review；未修改 Python、migration、ORM/schema，未请求 Provider/AI/Telegram，
+  未读取 credential/`.env`。PR #39/SPEC-0040 保持独立 Draft。
+
 ## Unreleased — SPEC-0039 Phase 1 Acceptance + Event Candidate Foundation
 
 - SPEC-0039 final Implementation Review PASS；状态更新为 Completed — Implementation Review approved。

@@ -39,6 +39,7 @@ Active SPEC：None
 | SPEC-0037 | Multi Provider Runtime Verification | Completed — Implementation Review approved | SPEC-0036 |
 | SPEC-0038 | Multi-provider Scheduler + Telegram Routing | Completed — Implementation Review approved | SPEC-0035/0037 |
 | SPEC-0039 | Phase 1 Acceptance + Event Candidate Foundation | Completed — Implementation Review approved | SPEC-0018–0021/0023–0038 |
+| SPEC-0041 | Unified Production Collection Control Plane | Completed — Docs Review approved；implementation blocked pending v2.3 Freeze Review | SPEC-0003/0030–0038；Pre-AI R0 gate；PR #39 frozen |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -47,13 +48,14 @@ Active SPEC：None
 
 ## Phase 1 Planned SPEC 接入约束
 
-### SPEC-0004 — First Approved Polling Source Pilot
+### SPEC-0004 — First Approved Polling Source Pilot（historical planning record）
 
-- 当前只进行 `spec/SPEC-0004.md` 文档审核，implementation not started。
+- SPEC-0004 的早期 preflight 文档已被后续 SPEC-0030–0038 的四 Provider implementation/runtime
+  evidence 超越；不得再把“implementation not started”解释为当前四 Provider 的状态。
 - NewsAPI.ai / Event Registry 当前为 future / blocked，不得 smoke。
-- 当前 preflight 顺序为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR；一次只允许用户
-  明确授权的一个 smoke，完成后必须停止 Review。
-- bounded smoke PASS 前不得实现；四个平台均不得由 preflight scaffold 顺带实现。
+- 历史 preflight 顺序为 Marketaux → Finnhub → EIA Open Data → SEC EDGAR；四 Provider 已在
+  SPEC-0030–0038 完成当前批准的 adapter/runtime/scheduler 范围。
+- 既有 PASS 不授权新 operation、任意 historical backfill 或 multi-target production capability。
 - GDELT Project DOC 2.0 为 `runtime blocked / future evaluation only`；历史 evidence 保留，
   但不再是 primary pilot、不得继续 smoke 或驱动实现。
 - 只能选择第一个合法、低成本或公开的 Polling Source 作为试点。
@@ -102,6 +104,8 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 候选编号和顺序可在创建 Draft SPEC 时调整；不得把任何候选设为 Active，直到用户明确批准。
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
-SPEC-0030–0039 已完成。当前 Active SPEC 为 None；Foundation v2.2-FROZEN 生效。Active 为 None 时
-不得开始实现，只能进行用户明确授权的文档准备、审查或历史收尾。SPEC-0005 及其他 Planned/
-candidate 不代表批准；SPEC-0022 已被 SPEC-0039 absorb/supersede。
+SPEC-0030–0039 已完成；SPEC-0041 Docs Review 已 PASS。当前 Active SPEC 为 None；Foundation
+v2.2-FROZEN 生效。v2.3 Draft Freeze Review 仍 PENDING；SPEC-0041 不授权代码或 migration。
+PR #39 的 SPEC-0040 是未合并 Draft，在 Pre-AI R0–R8 完成前不得合并；之后须基于最新 main
+重新审计/rebase。SPEC-0005 及其他 Planned/candidate 不代表批准；SPEC-0022 已被 SPEC-0039
+absorb/supersede。
