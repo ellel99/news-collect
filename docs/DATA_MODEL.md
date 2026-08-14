@@ -169,12 +169,13 @@ v1 operation 均为 `none`、每 run 一次请求/一页；若 adapter 仍报告
 PARTIAL/`coverage_incomplete`，完整窗口 watermark 不推进。状态字段、迁移 A/B 和唯一规范状态矩阵以
 SPEC-0041 implementation contract 为准，本文件不另行定义竞争语义。
 
-rollback window 内 legacy cursor identity 为 `(source_account_id,legacy_cursor_type)`，每个 identity 最多
-一个 active target；同一账户的多个 `provider_cursor_v1` target 必须等 Migration B 完成、dual-write 停止且
+rollback window 内 legacy cursor identity 为 `(source_account_id,legacy_cursor_type)`，每个 identity 只能
+由一个 target 持有，pause/blocked/retired 不释放；同一账户的多个 `provider_cursor_v1` target 必须等 Migration B 完成、dual-write 停止且
 进入 forward-recovery-only 后才能激活。`legacy_cursor_type varchar(100) NULL` 只由 static operation registry
-确定，不是 cursor strategy/version 或 target-owned cursor type；Migration A 以临时 DB active non-null
-constraint/trigger 加 partial unique index 强制 rollback eligibility。Migration B 同时移除两项临时限制，
-字段仍作为 immutable audit，且不恢复 old runtime rollback。Notification recovery 不增加 ContentItem 字段：候选仅来自 cutover
+确定，不是 cursor strategy/version 或 target-owned cursor type。Migration A 创建三个对象：永久 identity/
+provenance immutability trigger（含 migration Phase 2 唯一一次 NULL→registry 初始化）、临时 active non-null constraint/
+trigger、临时 rollback ownership partial unique index。Migration B 只移除后两项，字段和永久 trigger 保留，
+且不恢复 old runtime rollback。Notification recovery 不增加 ContentItem 字段：候选仅来自 cutover
 watermark 后的精确 policy；失败用 append-only AuditLog recovery/resolved pair 恢复和关闭。
 
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）

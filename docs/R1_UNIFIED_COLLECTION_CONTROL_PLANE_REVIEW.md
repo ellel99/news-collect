@@ -45,17 +45,20 @@ document only; a separate explicit implementation authorization is still require
   dual-write, and Migration B is applied only after the reviewed rollback window closes.
 - phases 0–3 continuously stop every legacy collection/stale-recovery writer; legacy authority resumes only through
   compatible runtime after zero RUNNING/null-unmapped rows and exact backfill-count verification.
-- rollback activation permits at most one active target per `(source_account_id,legacy_cursor_type)`; same-account
-  multi-target begins only after Migration B and rollback-window closure.
-- `legacy_cursor_type varchar(100) NULL` is immutable registry-derived compatibility metadata. Migration A adds the
-  temporary active non-null constraint and partial unique index; Migration B removes both while retaining the field
-  as read-only audit and permanently ending old-runtime rollback.
+- rollback ownership permits only one target of any status per `(source_account_id,legacy_cursor_type)`; pause,
+  block, retire or config revision never releases it. Same-account multi-target begins only after Migration B.
+- `legacy_cursor_type varchar(100) NULL` is registry-derived compatibility metadata with one locked migration-Phase-2
+  NULL→registry initialization, then permanent immutability.
+- three DB objects have distinct lifecycles: Migration A creates and Migration B retains the permanent identity/
+  provenance immutability trigger; Migration A creates and Migration B removes the temporary active non-null
+  constraint; Migration A creates and Migration B removes the temporary rollback-ownership partial unique index.
 - PR #39 Draft migrations are excluded; implementation revision derives from the then-current real main head.
 
 ## 3. Review checklist
 
 - [ ] Final fields, nullability, enums, checks, indexes, FKs and lifecycle are implementable.
-- [ ] Identity, config and secret constraints are unambiguous.
+- [ ] Permanent target/source/account/operation identity, one-time legacy initialization, config and secret constraints
+  are unambiguous and PostgreSQL-enforced.
 - [ ] `config_revision` race, stale task, pause/resume and rollback semantics are accepted.
 - [ ] Four Provider operation v1 schemas do not expand operation scope.
 - [ ] cadence/cursor/lock/retry/run/health/dispatch ownership is target-specific.
@@ -71,8 +74,9 @@ document only; a separate explicit implementation authorization is still require
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
 - [ ] Migration A compatibility, shadow/cutover, cursor dual-write rollback and Migration B finalization guarantee one
   authoritative scheduler and a deployable rolling sequence.
-- [ ] DB-enforced rollback activation requires non-null account/type and unique active legacy identity; Migration B
-  removes both temporary restrictions only after forward-recovery-only cutover.
+- [ ] DB-enforced rollback activation requires non-null account/type; rollback ownership is unique across every target
+  status and is not released by pause/block/retire. Migration B removes only the two temporary restrictions after
+  forward-recovery-only cutover and retains permanent immutability.
 - [ ] the normative state matrix and config-revision in-flight state machine cover all terminal/retry/manual states.
 - [ ] exact implementation files, five acceptance batches (four functional + Migration B) and test matrix are accepted.
 - [ ] R2–R8, Provider expansion, Event/Evidence/Fact/AI and Market Validation remain out of scope.

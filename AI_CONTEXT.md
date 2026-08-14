@@ -2,6 +2,10 @@
 
 本文件是 AI 编码工具进入项目时的首要入口。
 
+所有架构、SPEC、PR、migration、Provider、数据完整性和 AI readiness 审核，开始前必须完整读取并遵守
+`docs/REVIEW_PROTOCOL.md`。禁止在发现第一个普通问题后提前结束整轮审核；必须完成三遍审核、维护问题
+台账，并在完整覆盖后一次性输出集中修正清单。
+
 ## 当前冻结状态
 
 - Foundation：v2.3-FROZEN
@@ -23,9 +27,9 @@
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
   dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
-  合同。最终修正还限制 rollback window 每个 legacy cursor identity 仅一个 active target、phase 0–3 持续
-  drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 临时 DB constraint/index 强制
-  active rollback identity，Migration B 关闭 rollback 后移除两项限制但保留审计字段。Notification 使用
+  合同。最终修正还限制 rollback window 每个 legacy cursor identity 由一个 target 跨 lifecycle 独占、
+  phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
+  trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger。Notification 使用
   AuditLog recovery/resolved pair。以上仍只是
   Docs Review 内容，不是实现事实。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持

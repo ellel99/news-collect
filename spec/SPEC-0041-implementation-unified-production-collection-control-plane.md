@@ -44,7 +44,7 @@ PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrat
 | `Source` | provider/source identity、`access_method`、authorization、license/retention 上限、全局 kill switch | target cadence、cursor、retry、run/health |
 | `SourceAccount` | 可选外部账号/feed/组织 identity 与 verification；一个 account 可关联多个 target | production operation config、schedule、cursor |
 | `CollectionTarget` | 一个稳定、独立授权和运行的 typed provider operation；拥有 cadence/state/budget identity | credential、任意 URL、raw payload、delivery state |
-| operation config registry | `(provider_key, operation_key, config_version)` 的静态 typed decoder/validator | dynamic class、fallback、secret resolution |
+| operation config registry | `(Source.access_method, operation_key, operation_config_version)` static decoder/validator | dynamic class、fallback、secret resolution |
 | worker credential resolver | execute worker 内按 provider 的固定 env name 解析 credential | DB/task/config/dispatcher credential access |
 | `CollectionRun` | target-bound attempt/run audit | delivery outcome |
 | `RawItem` | 通过 immutable `collection_run_id → target_id` 保留 target provenance | 冗余、可漂移的 target copy |
@@ -74,7 +74,7 @@ PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrat
 | `source_id` | UUID FK→sources RESTRICT | no | provider/auth/license authority |
 | `source_account_id` | UUID | yes | composite FK with source；null only for source-level operation |
 | `operation_key` | varchar(100) | no | static registry key；not URL/class path |
-| `legacy_cursor_type` | varchar(100) | yes | registry-derived rollback identity only；immutable audit after Migration A |
+| `legacy_cursor_type` | varchar(100) | yes | registry-derived rollback ownership；one migration-Phase-2 NULL→value initialization, then immutable audit |
 | `operation_config_version` | smallint | no | `>0` |
 | `provider_contract_version` | smallint | no | `>0`；must match adapter |
 | `config_revision` | bigint | no / `1` | target execution generation；monotonic、`>0` |
@@ -116,25 +116,39 @@ Additional constraints/indexes:
   `(source_account_id,source_id) → source_accounts(id,source_id) ON DELETE RESTRICT`;
 - partial due index `(next_due_at,priority,id) WHERE status='active'`;
 - partial retry index `(next_retry_at,priority,id) WHERE status='active' AND next_retry_at IS NOT NULL`;
-- Migration A temporary partial unique index
-  `UNIQUE(source_account_id,legacy_cursor_type) WHERE status='active' AND legacy_cursor_type IS NOT NULL`;
+- Migration A temporary rollback-ownership partial unique index
+  `UNIQUE(source_account_id,legacy_cursor_type) WHERE legacy_cursor_type IS NOT NULL`;
 - Migration A temporary DB check/constraint trigger rejects every transition to `active` unless
   `source_account_id IS NOT NULL AND legacy_cursor_type IS NOT NULL`; service validation is not sufficient;
 - indexes `(source_id,status)`, `(source_account_id,status)`, `(rate_limit_group,status)`;
 - config must be JSON object; recursive service validation rejects secret keys/values, URLs, class/module/import
   fields, nested credentials and secret-bearing strings. DB text checks provide defense-in-depth for
   `api_key`, `api_token`, `token`, `authorization`, `password`, `secret`, `http://`, `https://`;
+- permanent PostgreSQL identity/provenance immutability trigger protects `target_key`, `source_id`,
+  `source_account_id`, `operation_key`, and initialized `legacy_cursor_type`; service validation is only preflight;
 - only `status=active` is dispatchable. `retired` is terminal; rows are not physically deleted. `blocked→active`
   requires explicit reviewed repair. Config change creates an audit entry, increments config version as required,
   resets health to unknown and cannot mutate `target_key`.
 
 `legacy_cursor_type` is not `cursor_strategy`, `cursor_version`, or target-owned
-`CollectionCursor.cursor_type`. It exists only to name the one legacy `(source_account_id,cursor_type)` row used for
+`CollectionCursor.cursor_type`. It exists only to name the one legacy `(source_account_id,legacy_cursor_type)` identity used for
 dual-write/runtime rollback compatibility between Migration A and rollback-window closure. Its value is a static
 typed operation-registry property keyed by `operation_key`; operation config, environment and request payload cannot
-supply or override it. Migration A installs an immutability trigger after deterministic backfill. Any operation
-change that would change this mapping requires a new target. The field remains immutable/read-only audit data after
-Migration B; physical removal requires a later cleanup SPEC.
+supply or override it.
+
+Migration A creates the permanent identity trigger with one initialization exception: INSERT may set the registry
+value directly; a Migration-A-created non-active target awaiting migration Phase 2 backfill may make exactly one
+`NULL → registry-derived non-NULL` transition. That transition is allowed only during migration Phase 2 maintenance hold, only
+for `draft/paused/blocked`, under row lock/CAS, and only when the service proves exact
+`(Source.access_method,operation_key)` registry equality. Active initialization, non-registry values, concurrent
+different values, non-NULL mutation, or reset to NULL fail closed. Phase 3 verifies every rollback candidate is
+initialized. Any Source, Account, operation, or legacy mapping change requires a new target. The field remains
+immutable/read-only audit data after Migration B; physical removal requires a later cleanup SPEC.
+
+`target_key`, `source_id`, `source_account_id`, and `operation_key` are immutable immediately after INSERT, without
+an initialization exception. Config, cadence, budgets and allowed execution semantics change only through a new
+`config_revision`; they cannot change identity. This permanently stabilizes
+`RawItem → CollectionRun → CollectionTarget → Source/SourceAccount` provenance. Migration B retains this trigger.
 
 `operation_config_version` means only the typed decoder/schema version. `provider_contract_version` means only the
 adapter contract version. `config_revision` is the target's monotonic execution generation. Every change to
@@ -417,7 +431,7 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 | phase | action | authoritative path | rollback condition |
 |---|---|---|---|
 | 0 | stop and continuously hold all legacy collection/stale-recovery tasks that may create or modify CollectionRun, CollectionCursor or RawItem; drain to zero RUNNING. Delivery-only Telegram work may continue only if it cannot invoke collection or mutate those tables | none — maintenance hold | resume unchanged legacy tasks only before Migration A/backfill starts |
-| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, temporary active-identity CHECK/trigger and partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; dropping A removes its temporary constraints/index with the table |
+| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, permanent identity trigger, temporary active-identity CHECK/trigger and rollback-ownership partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; downgrade removes all A-created objects |
 | 2 | with legacy collection still stopped, perform deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | none — maintenance hold | abort on mismatch; keep tasks stopped and targets paused/blocked |
 | 3 | deploy compatible runtime while collection remains stopped; verify zero RUNNING legacy runs, zero unmapped/new NULL target_id runs/cursors, and exact backfill reconciliation counts | none — maintenance hold | keep maintenance hold; deploy previous compatible worker only if Migration A downgrade remains safe |
 | 3A | only after phase-3 verification, resume legacy authority through the compatible runtime that writes target_id and transactionally dual-writes eligible target+legacy cursor | legacy compatible runtime | stop/drain compatible runtime; nullable expand schema remains |
@@ -426,7 +440,7 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 | 6 | stop/drain legacy combined collection task and all in-flight runs; write Notification cutover watermark | none (maintenance boundary) | restart legacy before unified enable |
 | 7 | enable unified scheduler/worker as sole collection authority and delivery-only Beat as sole Telegram claimer | unified | stop/drain unified, reconcile cursors, restore legacy |
 | 8 | reconcile target/run/cursor/notification counts and operate through rollback window | unified + cursor dual-write | rollback only after verified target→legacy reconciliation |
-| 9 / Migration B | after formal rollback-window exit and dual-write stop, scan zero null/mismatch; add final constraints and drop both the temporary active legacy-identity partial unique index and active-identity CHECK/trigger; retain immutable legacy_cursor_type as audit | unified, forward-recovery-only | forward recovery only; no runtime rollback |
+| 9 / Migration B | after formal rollback-window exit and dual-write stop, scan zero null/mismatch; add final constraints and drop only the temporary rollback-ownership partial unique index and active-identity CHECK/trigger; retain the permanent identity trigger and immutable legacy_cursor_type audit | unified, forward-recovery-only | forward recovery only; no runtime rollback |
 
 Migration B is never deployed while an old worker can run. Compatibility tests must prove old worker+Migration A and
 new worker+Migration A. There is no supported old worker+Migration B combination.
@@ -451,15 +465,17 @@ target with both values non-null and a one-to-one representable legacy identity 
 service resolves the mapping from the static registry and performs eligibility validation plus the status transition
 in one DB transaction. Migration A's temporary active CHECK/constraint trigger and partial unique index are the final
 concurrent defenses. A uniqueness conflict fails safely; it never overwrites, shares, or claims the legacy row. At
-most one active target may own any such pair. Draft/paused/blocked targets do not consume the partial unique identity;
-after an active target is reviewed and paused, another reviewed target may acquire it transactionally. Two targets must
-never share, overwrite or compete for one legacy cursor. Rollback-window multi-target acceptance therefore covers
+most one CollectionTarget may own any such pair, regardless of status. Pause, block, retire, repair, resume or config
+revision does not release or transfer ownership. Default ownership transfer is unsupported. A replacement requires
+all collection writers stopped, an independently reviewed cursor compatibility/reconciliation procedure, and renewed
+rollback review. Two targets must never share, overwrite or compete for one legacy cursor. Rollback-window
+multi-target acceptance therefore covers
 different accounts or other distinct legacy-representable identities—not two targets under the same account using
 `provider_cursor_v1`.
 
 True same-SourceAccount multi-target activation is deferred until the rollback window is explicitly closed,
 Migration B is complete, legacy dual-write is disabled and operation is forward-recovery-only. Migration B removes
-both temporary activation constraints, so a new target may have null `legacy_cursor_type` and source-level targets
+both temporary rollback restrictions, so a new target may have null `legacy_cursor_type` and source-level targets
 may activate under the permanent eligibility contract. It does not restore old-runtime rollback. Migration B
 acceptance then tests independent target-owned cursors for same-account targets. If the business requires that topology during
 the rollback window, R1 must abandon old-runtime rollback and return for a new review; it is not the default contract.
@@ -494,10 +510,12 @@ Registry rollback mapping is exact: `fake/fake_sequence → fake_sequence`; the 
 above each map to `provider_cursor_v1`. A source-level fake target has no rollback identity and cannot activate during
 the rollback window. These values are registry metadata, not operation config or target cursor codecs.
 
-Migration A deterministic backfill derives `legacy_cursor_type` only from this registry mapping. Unknown provider,
-multiple operation interpretations, missing mapping/config, source-level real-provider row, duplicate rollback
-identity, or account/source inconsistency aborts backfill acceptance and maps the affected target to `blocked`, not a
-guessed or silently repaired operation. Every created target starts
+Migration A deterministic backfill derives `legacy_cursor_type` only from this registry mapping. A mapping is accepted
+only when exactly one target candidate owns the legacy identity. If multiple target candidates map to the same pair,
+all competing targets keep `legacy_cursor_type=NULL` and remain draft/paused/blocked until a separately reviewed
+ownership/reconciliation procedure; backfill never selects a winner. Unknown provider, multiple operation
+interpretations, missing mapping/config, source-level real-provider row, duplicate ownership, or account/source
+inconsistency aborts backfill acceptance. No target guesses, copies or steals ownership. Every created target starts
 `config_revision=1`, `health_status=unknown`, `consecutive_failures=0`, `next_retry_at=NULL`, `last_attempt_at=NULL`,
 `last_success_at=NULL`. `next_due_at` is the migration timestamp but paused/blocked status prevents dispatch; explicit
 activation sets a reviewed next_due_at and increments revision. Cadence is the positive legacy Source schedule when
@@ -577,7 +595,7 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 
 | batch | scope | merge/acceptance gate |
 |---|---|---|
-| I-A | Migration A nullable expand + ORM compatibility + typed config registry | legacy_cursor_type mapping; temporary active CHECK/index; real-head linearity; old/new worker+A; deterministic backfill audits; no activation |
+| I-A | Migration A nullable expand + ORM compatibility + typed config registry | permanent identity trigger; one-time Phase 2 initialization; temporary active CHECK and ownership index; old/new worker+A; deterministic audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
 | III | scheduler/claim/lock/retry/run/cursor/health | rollback-eligible multi-target isolation, state matrix, budgets, pagination-capability-none, restart/stale recovery |
 | IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
@@ -591,9 +609,15 @@ No batch may activate production targets or perform bounded live verification wi
 
 - PostgreSQL: every column/enum/check/FK/unique/partial index/immutability trigger; source/account consistency;
   target/run provenance; null-safe RawItem/Run equality; Content/Evidence zero-mismatch prerequisite audit;
-  deterministic legacy target mapping; active requires non-null account+legacy type during rollback; two concurrent
-  activations for one legacy identity yield one commit; draft/paused do not consume identity; pause releases it;
-  registry unknown/ambiguous mapping and null identity fail closed; legacy_cursor_type is immutable.
+  permanent immutability of target/source/account/operation identity; active requires non-null account+legacy type
+  during rollback; two targets of any status cannot hold one non-null rollback identity; paused/blocked/retired owner
+  retains it; ordinary pause/resume cannot transfer it; registry unknown/ambiguous/null mapping fails closed.
+- identity initialization: INSERT may set the registry value; migration Phase 2 allows exactly one locked/CAS
+  `NULL→registry value` on non-active target; wrong value, active initialization, reset/mutation and concurrent
+  different initialization fail. Phase 3 proves every rollback candidate initialized.
+- repository/ORM: identity edits are rejected before flush and the PostgreSQL trigger remains final authority;
+  config/cadence/budget revision cannot mutate target/source/account/operation/legacy ownership. Source/Account or
+  operation change creates a new target.
 - Redis: concurrent dispatch SET NX EX, owner-token acquire/renew/release/loss, rate-group cooldown, retry vs cadence,
   stale recovery, restart markers and TTL coverage; stale revision can remove only its own marker and cannot consume
   a newer revision retry/dispatch key.
@@ -602,8 +626,9 @@ No batch may activate production targets or perform bounded live verification wi
 - concurrency: two same-provider targets both run; same target single owner; one failure does not block another;
   checkpoint compare-and-swap prevents stale overwrite; concurrent config edit, duplicate dispatch, pause/resume and
   rollback generation make stale tasks fail before credential/network. During rollback, multi-target cases use
-  distinct legacy cursor identities and activation rejects duplicate `(source_account_id,legacy_cursor_type)`;
-  the partial unique index is the concurrent activation authority. After Migration B drops that index and temporary
+  distinct legacy cursor identities and creation/initialization rejects duplicate
+  `(source_account_id,legacy_cursor_type)` ownership; the partial unique index is the concurrent ownership authority.
+  After Migration B drops that index and temporary
   active CHECK/trigger, same-account targets prove independent target-owned cursors and old-runtime rollback stays disabled.
 - budgets/pagination: operation units and request/runtime/byte ceilings; all initial operations require one page;
   `has_more=true` records truncated/incomplete/unsupported and never repeats page 1 or claims complete. Generic
@@ -625,8 +650,11 @@ No batch may activate production targets or perform bounded live verification wi
   normal-cadence recovery, retry exhaustion, authorization changes and complete-success timestamps.
 - migration: real-head linearity, A upgrade/downgrade/re-upgrade, old worker+A, new worker+A, shadow comparison,
   phase-0 continuous collection-task drain, zero-run/null/count phase-3 verification, transactional cursor rollback
-  drill, A creates/verifies/rolls back the temporary active CHECK/index, B removes both only after rollback closure,
-  retains the audit field, and supports no old-runtime rollback; no double head and no PR #39 migration.
+  drill; A upgrade/downgrade/re-upgrade creates all three objects (permanent identity trigger, temporary active CHECK,
+  temporary ownership index); B removes only the two temporary objects after rollback closure and proves the
+  permanent trigger/audit field remain; no old-runtime rollback, double head or PR #39 migration.
+- docs consistency: high-level SPEC and normative contract have identical field names, operation keys/configs,
+  lifecycle, task payload, authority phases and Migration A/B object lifecycles; no competing proposed schema remains.
 - regression: all current Provider/CollectionRunner/RawItem/Evidence/Content/Event/Scheduler/Telegram tests PASS;
   network tests mock-only and package review contains no secret/local data.
 

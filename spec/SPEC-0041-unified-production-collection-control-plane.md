@@ -93,51 +93,34 @@ flowchart TD
 | `CollectionTarget`（新表） | 一个可独立运行且稳定寻址的 provider operation | secret、任意 endpoint、provider response |
 | typed config | provider+operation 的版本化参数；严格 allowlist 与 schema validation | credential、cadence/cursor/health 等通用控制字段 |
 
-### 5.2 Proposed `collection_targets`
+### 5.2 Final `collection_targets` authority
 
-| 字段 | 类型/约束 | 语义 |
-|---|---|---|
-| `id` | UUID PK | 内部稳定 identity |
-| `target_key` | string UNIQUE, immutable | 人类可审计稳定键；不由可变 config hash 生成 |
-| `source_id` | FK RESTRICT, required | provider/授权/retention authority |
-| `source_account_id` | FK RESTRICT, nullable | 仅在 operation 需要账号身份时绑定；必须同 source |
-| `provider_key` | string, required | 必须等于经审核的 `Source.access_method` |
-| `target_type` | string, required | 如 `news_query`, `quote_symbol`, `eia_series`, `sec_submissions` |
-| `operation_key` | string, required | factory allowlist operation；不得是 URL |
-| `legacy_cursor_type` | nullable string | 仅 Migration A→rollback close 的 registry-derived dual-write identity；不是 target cursor strategy/version |
-| `config_schema_version` | positive int | typed config decoder version |
-| `provider_contract_version` | string | adapter contract/field mapping version |
-| `config` | JSONB | 仅 schema allowlist 的非秘密 operation 参数 |
-| `enabled`, `status` | bool + enum | `draft/active/paused/blocked/retired`；只有 active+enabled 可调度 |
-| `cadence_seconds` | positive int | target-specific normal cadence |
-| `batch_size` | positive int | operation-specific unit，受 plan 和 hard ceiling 限制 |
-| `timeout_seconds` | positive int | 单 request 上限，不超过 run deadline |
-| `max_pages_per_run` | positive int | 本 run 有界分页；不能伪装 complete |
-| `max_runtime_seconds` | positive int | target run deadline |
-| `cursor_strategy` | enum | strict/snapshot/page/date_window/compound/revision |
-| `cursor_version` | positive int | cursor codec/version |
-| `collection_mode` | enum | incremental/snapshot；backfill 由独立 run mode 表达 |
-| `backfill_policy` | enum/ref | disabled/manual/bounded；不是 normal cursor |
-| `revision_policy` | enum | ignore/replace-safe/reconcile；provider contract 明确 |
-| `retention_policy_ref` | string/FK candidate | 不可放宽 Source 的授权/许可上限 |
-| `priority` | bounded int | dispatcher fairness，不是内容重要性 |
-| `rate_limit_group` | nullable string | 共享 provider/account quota bucket |
-| timestamps | timezone-aware | 审计与生命周期 |
+本高层 SPEC 不维护第二份字段表。唯一 normative schema 是
+`spec/SPEC-0041-implementation-unified-production-collection-control-plane.md` §4；字段、类型、nullable、
+enum、index、constraint、trigger 和 lifecycle 必须逐项以该表为准。
 
-建议约束：`UNIQUE(source_id, target_key)` 或全局 `UNIQUE(target_key)` 二选一，implementation
-Docs Review 固定后不可改变；推荐全局唯一、不可变 `target_key`，格式为内部 slug 而非原始 query。
-`config` 通过 `(provider_key, operation_key, config_schema_version)` 查找显式 validator；未知版本
-fail closed。数据库禁止常见 secret marker，service 还必须递归检查 key/value 与 URL。
+已固定选择：Provider 来自 `Source.access_method`，不落 `provider_key`；operation 只用 `operation_key`，
+不落 `target_type`；唯一 lifecycle gate 是 `status`，不落冗余 `enabled`。版本/配置/预算字段分别为
+`operation_config_version`、positive-smallint `provider_contract_version`、`operation_config`、`batch_limit`、
+`request_timeout_seconds`、`max_requests_per_run`、`max_pages_per_run`、`max_response_bytes`、
+`max_runtime_seconds`。`rate_limit_group` 是 non-null static opaque group；`next_due_at`、`next_retry_at` 和
+target health 字段落在 target。Retention authority 仍属于 Source，不增加 `retention_policy_ref`。
+
+`legacy_cursor_type varchar(100) NULL` 由 Migration A 引入并由 static operation registry 决定。它是旧
+runtime rollback ownership identity，不是 cursor strategy/version；Migration B 后保留为 immutable audit。
+`target_key/source_id/source_account_id/operation_key` 永久不可变，initialized `legacy_cursor_type` 同样由
+永久 PostgreSQL trigger 保护。完整一次性初始化与临时 rollback constraint/index 生命周期见 normative
+contract §4/§11。
 
 ### 5.3 target-specific state
 
-后续 migration 应把 target identity 加入或迁移到：
+R1 migration 按 normative contract 把 target identity 加入或迁移到：
 
 - `collection_cursors.target_id`：`UNIQUE(target_id, cursor_type, cursor_version, run_mode)`；
 - `collection_runs.target_id`：每次 run 可追溯目标；
-- `raw_items.target_id`（推荐）：直接 provenance；若第一实现暂不加，必须由 immutable run 关系可逆追溯；
-- `collection_target_health`（推荐新表）或 target 上受控 health 字段：last attempt/success、连续失败、
-  last safe error、next eligible time。不得继续用 Source 汇总状态驱动单 target 调度。
+- RawItem 不增加 `target_id`；通过 immutable
+  `RawItem.collection_run_id → CollectionRun.target_id → CollectionTarget` 可逆追溯；
+- health 字段直接位于 CollectionTarget，不新增 competing health table。Source 汇总状态仅供展示。
 
 Target 删除默认禁止；retire 代替删除。Source/Account 关闭会使所有子 target fail closed。
 
@@ -145,21 +128,22 @@ Target 删除默认禁止；retire 代替删除。Source/Account 关闭会使所
 
 首批 operation schema 只覆盖当前已实现范围：
 
-| Provider | target type / operation | typed config 示例（非授权默认） | batch unit |
+| Provider / operation | typed v1 config（其他字段禁止） | hard batch ceiling |
 |---|---|---|---|
-| Marketaux | `news_query/news_all` | query、language/filter allowlist | result items |
-| Finnhub | `quote_symbol/quote` | symbol | one quote snapshot |
-| EIA | `eia_series/electricity_series` | route、facets、sort | data rows |
-| SEC EDGAR | `sec_submissions/submissions_recent` | CIK/ticker reference | recent filing metadata |
+| `marketaux/news_all` | required query；optional language、symbols，按 normative bounds | 3 items |
+| `finnhub/quote` | exactly one symbol | 1 quote |
+| `eia/electricity_retail_sales` | only `dataset='electricity'`; monthly frequency/price field registry-fixed | 5 rows |
+| `sec_edgar/submissions_recent` | exactly ticker + CIK | 10 filings |
 
 Effective request budget is the minimum of: operation hard safety ceiling、verified plan/quota bound、
 target override、worker global emergency ceiling。每 run 还限制 max requests/pages、wall-clock deadline 和
 response bytes。quota exhaustion 进入 rate-limit group cooldown；不得用一个全局 `limit` 给不同 operation
-相同语义。达到 max pages/runtime 后保存 continuation 并返回 partial/continuation，不得标 complete。
+相同语义。首批四 operation 的 `pagination_capability=none` 且 requests/pages=1；`has_more=true` 必须持久化
+PARTIAL/coverage_incomplete，不重复第一页、不标 complete。真实 pagination 属于 R3–R5。
 
 ## 7. Registry / factory 与 credential boundary
 
-统一 `ProviderAdapterFactory` 以 `(provider_key, operation_key, provider_contract_version)` 为显式
+统一 `ProviderAdapterFactory` 以 `(Source.access_method, operation_key, provider_contract_version)` 为显式
 allowlist key。注册表由启动代码静态组装，不允许 dynamic import、数据库 class path 或任意 endpoint。
 
 ```text
@@ -172,7 +156,7 @@ validated target descriptor
 ```
 
 - DB、typed config、Celery payload、Redis marker、repr、日志和错误不得包含 secret；
-- task payload 只携带 `target_id`、dispatch/run identity 和 config version；worker 必须重新从 DB 加载并
+- task payload 只携带 `target_id`、exact `config_revision`、scheduled slot、run mode 和 dispatch identity；worker 必须重新从 DB 加载并
   复核 target/source/account authorization，禁止信任序列化 config；
 - credential 只在 worker runtime 按 provider/credential reference 解析，不可由 CLI task argument 注入；
 - factory 必须验证 adapter.provider 与 target provider、operation、contract version 匹配；
@@ -186,9 +170,9 @@ validated target descriptor
 ## 8. Scheduler / worker 生命周期
 
 1. Scheduler 分页查询 active target，而非按 Source 限 1000 条。
-2. 校验 Source/Account authorization、target config/version 与 `next_eligible_at`。
+2. 校验 Source/Account authorization、target config/version 与 `next_retry_at`/`next_due_at`。
 3. 以 target+scheduled slot 原子 claim dispatch marker；并发 Beat/restart 只能 enqueue 一次。
-4. task payload 只发送 `target_id`、slot、dispatch id。
+4. task payload 只发送 `target_id`、exact `config_revision`、scheduled slot、run mode、dispatch id。
 5. Worker 重新加载 target，获取 target owner-token lock，并创建 target-bound `CollectionRun`。
 6. Factory 注入 adapter/credential/transport；runner 执行受 budget 限制的 operation。首批四个 v1
    operation 均不具备 pagination capability，最多一次请求；通用分页接口不等于当前 operation 可分页。
@@ -217,7 +201,8 @@ run_mode 和 contract version；codec 由 operation 显式注册。
 - normal polling cursor 与 backfill cursor 必须用 `run_mode`/独立记录隔离；backfill 仅 manual/bounded；
 - target 是 cursor owner，不能共享 provider/account cursor；
 - batch persistence 与 checkpoint 同一事务边界或经证明等价；失败不推进；
-- reaching page/runtime cap 保存 continuation，下一 run 从 continuation 恢复；最终完成后再推进 watermark；
+- generic future pageable operation 才可在 cap 保存 continuation；首批 v1 不具备 continuation，
+  `has_more=true` 记录 PARTIAL/coverage_incomplete，complete watermark 不推进；
 - restart 从 committed checkpoint 恢复；在途无 checkpoint batch 可安全重放且由 RawItem idempotency 吸收；
 - cursor codec/version 升级必须有显式 migration/compat reader，不得静默 reinterpret JSON。
 
@@ -226,7 +211,8 @@ run_mode 和 contract version；codec 由 operation 显式注册。
 | 类别 | 行为 |
 |---|---|
 | unknown provider/operation/config version | target BLOCKED；不 retry storm；其他 target 继续 |
-| credential/authorization/config invalid | target BLOCKED；不消耗 provider 全局 cadence；人工修复后恢复 |
+| credential missing | target active/degraded；no run、no fast retry；`next_retry_at=NULL`，next normal cadence recheck |
+| authorization/config invalid | 按 normative state matrix blocked/fail closed；其他 target 继续 |
 | timeout/429/5xx | target RETRY；尊重 Retry-After 与安全上限；target-specific full jitter |
 | quota exhausted | rate-limit group cooldown；其他不共享 quota 的 target 可运行 |
 | persistence/checkpoint failure | run failed/retryable；cursor 不推进 |
@@ -253,17 +239,21 @@ Retry 是 target state，不能复用 provider cadence key。non-retryable failu
 
 ### 11.2 Phased data migration
 
-1. 新建 target/state schema，旧列保持可读；此时 production dispatcher 仍旧路径。
+1. Phase 0–3 全部为 `none — maintenance hold`；Migration A、backfill/audit、compatible runtime 部署/验证期间
+   所有 legacy collection/stale-recovery writer 持续停止。
 2. 只把可确定识别的 legacy rows 转为 `status=draft` 或 `paused` target，记录
    `origin=legacy_bootstrap`、config schema/version、source/account ids 和 migration timestamp。
 3. AAPL、technology、electricity、SEC ticker/CIK 只作为历史 bootstrap 值迁移，**不自动 active，
    不代表生产授权**；Reviewer 必须逐 target 确认 operation、quota、cadence、retention。
-4. 现有 account cursor 仅在能证明 account 对应唯一 target 且 cursor codec 匹配时绑定；rollback window
-   内同一 `(source_account_id,legacy_cursor_type)` 最多一个 active target，否则 target
-   保持 blocked，生成不含值的 migration audit，不复制/猜测 cursor。
-5. dual-read shadow validation 对比旧/新 due 与 cursor，不双写外部 request；Reviewer 批准后切换 dispatcher。
-6. 停止特殊 multi-provider Beat，再启用统一 task；保留 rollback window。
-7. 稳定后才 deprecate `collection_options` 与 Source schedule 作为生产 authority；删除旧列需另行 SPEC。
+4. Migration A registry-backfills legacy identity；rollback window 内同一
+   `(source_account_id,legacy_cursor_type)` 由一个 target 独占，任何状态都不释放。冲突 target 保持 NULL 和
+   draft/paused/blocked；不复制、猜测或抢占。
+5. Phase 3 完成 zero RUNNING、zero unmapped/null target identity、backfill count reconciliation 后，Phase 3A
+   才恢复 legacy compatible runtime 临时 authority；Phase 4–5 shadow/approval 仍由该 runtime authoritative。
+6. Phase 6 再次进入 none/cutover maintenance；Phase 7 起 unified authority。Migration B 仅在 rollback
+   正式关闭、dual-write 停止、forward-recovery-only 后执行。
+7. Migration B 只删除临时 active non-null constraint 和 rollback ownership index，保留永久 identity
+   immutability trigger 与 legacy_cursor_type audit。删除其他 legacy 列需后续 SPEC。
 
 Rollback：切回旧 scheduler 前停止新 worker；不删除 target/run/cursor audit。schema downgrade 仅在没有
 new-only state 或完成可验证导出时允许，否则 BLOCKED。不得 down -v、清库或伪造 alembic stamp。
@@ -280,57 +270,21 @@ new-only state 或完成可验证导出时允许，否则 BLOCKED。不得 down 
 当前 Marketaux/Finnhub/EIA/SEC 达到第 2 级及已审核 scheduler runtime；尚未达到第 3 级。Phase 1 core
 technical path PASS 仍成立，但完整 operations/backup/restore、X 与统一生产控制面是后置能力。
 
-本 Docs PR 新增 Foundation v2.3 Draft 与完整 Pre-AI Collection Readiness Program，并同步修正
-AI_CONTEXT、README、SYSTEM_DESIGN、DATA_MODEL、SOURCE_CATALOG、
-PROVIDER_DECISION、PROVIDER_OFFICIAL_CONTRACTS、PHASE1_ACCEPTANCE、ROADMAP、DECISIONS、
-SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本；不得自行标记 v2.3 PASS/FROZEN。
+Foundation v2.3-FROZEN 当前生效；R0 Completed/PASS，R1 仅 Active — Docs Review，implementation 未授权。
+本 PR 只维护控制面 architecture + normative implementation contract，不执行 migration/runtime。
 
 ## 13. Future implementation exact file scope
 
-预计新增：
-
-- `alembic/versions/<next>_create_collection_targets.py`
-- `src/market_intelligence/collection/targets.py`
-- `src/market_intelligence/collection/configs.py`
-- `src/market_intelligence/collection/factory.py`
-- `src/market_intelligence/collection/control_plane.py`
-- `tests/test_collection_targets_postgres.py`
-- `tests/test_collection_control_plane_postgres.py`
-- `tests/test_collection_control_plane_redis.py`
-
-预计修改：
-
-- `src/market_intelligence/db/models.py`
-- `src/market_intelligence/collection/{contracts,scheduler,runner,locking}.py`
-- `src/market_intelligence/tasks/{collection,celery_app}.py`
-- `src/market_intelligence/providers/{registry,runtime}.py`
-- `src/market_intelligence/pipeline/{provider_runtime,multi_provider_ingestion}.py`
-- `src/market_intelligence/scheduler/multi_provider_runtime.py`（迁移/删除特殊 collection orchestration）
-- config templates、上述架构文档、migration/package tests。
-
-明确不修改 Event/Fact/AI、Telegram message 内容、provider field/routes 或 Safe Projection schema。
+唯一 exact file scope 见 normative implementation contract §12，包括两个串行 Migration A/B、target
+repository/config/factory/control-plane、credential resolver、Notification intent/delivery task 以及完整 tests。
+本高层 SPEC 不维护可能漂移的第二份文件清单。明确不修改 Event/Fact/AI、Telegram message 内容、Provider
+operation 范围或 Safe Projection schema。
 
 ## 14. Future implementation test matrix
 
-| 场景 | 必须证明 |
-|---|---|
-| same provider, multiple targets | 全部独立 due/run；不存在 `provider_target_not_unique` |
-| isolation | 一个 target lock/fail/retry 不阻止另一个 |
-| cadence/cursor/retry/health | 全部 target-specific |
-| dispatch concurrency | concurrent Beat/replay/restart 同 slot 至多 enqueue 一次 |
-| config | known version accepted；unknown/malformed/secret fail closed |
-| factory | real authorized operation resolved；unknown provider/operation 无 fallback |
-| credential | 不进入 DB/task/repr/log/error/package；worker-only injection |
-| request budget | operation unit、target override、plan ceiling、hard ceiling、quota group 生效 |
-| pagination | 首批 v1 operation `has_more` 记录 PARTIAL/coverage_incomplete 并停止；不得重复第一页或伪装 complete；future pageable operation 另行审核 |
-| cursor | strict/snapshot/compound/page/date/backfill/revision cases；same timestamp tie-breaker |
-| persistence | checkpoint only after successful RawItem persistence |
-| restart/stale | committed continuation recovery；stale run 不推进 cursor |
-| delivery | Telegram missing/failed 不停止 collection；pending 不丢失、不重采补发 |
-| migration | legacy typed conversion、ambiguous blocked、upgrade/downgrade/upgrade、PR #39 head variants |
-| integration | PostgreSQL + Redis + Celery；现有 Phase 1/Event regressions PASS |
-
-所有 provider/network tests mock-only；任何 live verification 需未来独立、逐项、用户明确授权。
+唯一 test matrix 见 normative implementation contract §14，包含 identity trigger 初始化时序、rollback
+ownership、Migration A/B 三对象生命周期、PostgreSQL/Redis/Celery/concurrency/restart/regression。所有
+Provider/network tests mock-only；任何 live verification 需未来独立、逐项、用户明确授权。
 
 ## 15. 验收标准（Docs Review）
 
@@ -392,9 +346,9 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 
 | Finding | 文档修正 | Gate / result |
 |---|---|---|
-| v2.2 禁止 scheduler rewrite | 新增 `FOUNDATION_V2_3_DRAFT.md`，SPEC §3/§11 明确冲突 | Freeze Review PENDING；implementation BLOCKED |
+| historical v2.2 scheduler rewrite conflict | Foundation v2.3 Freeze Review completed; normative R1 contract retains independent authorization gate | R0 PASS；R1 implementation still unauthorized |
 | readiness 路线过于模糊 | 新增 `PRE_AI_COLLECTION_READINESS.md` R0–R9，SPEC §17 改为完整依赖 | R0–R8 PASS 前禁止 AI re-review |
-| PR #39 未被充分冻结 | Foundation Draft §4、Program R9、SPEC §11 固定 Draft/re-audit/rebase/migration rule | 不合并、不保证现设计保留 |
+| PR #39 未被充分冻结 | Foundation v2.3、Program R9、SPEC §11 固定 Draft/re-audit/rebase/migration rule | 不合并、不保证现设计保留 |
 | Provider 状态矛盾 | 重写 Official Contracts 状态及四 Provider current/not-implemented/Pending sections | smoke/runtime/production capability 分级 |
 | 正确 control-plane 设计需保留 | SPEC §5–§16 保留 target ownership、typed config、factory、budget、cursor、migration、isolation 和 tests | 仅 Docs Review，不实施 |
 
