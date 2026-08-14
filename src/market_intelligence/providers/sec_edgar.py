@@ -17,6 +17,7 @@ from market_intelligence.providers.contracts import (
     ProviderAdapterErrorCode,
     ProviderFetchRequest,
     ProviderFetchResult,
+    ProviderResponseTooLarge,
     ProviderTransport,
     ProviderTransportRequest,
     ProviderTransportTimeout,
@@ -56,7 +57,8 @@ class SecEdgarAdapter:
                     provider=self.provider_key,
                     operation="submissions",
                     params={"cik": cik.zfill(10)},
-                    timeout_seconds=15.0,
+                    timeout_seconds=request.request_timeout_seconds,
+                    max_response_bytes=request.max_response_bytes,
                     runtime_credential=self._credential,
                 )
             )
@@ -66,6 +68,13 @@ class SecEdgarAdapter:
                 ProviderAdapterErrorCode.TIMEOUT,
                 "provider_request_timed_out",
                 True,
+            )
+        except ProviderResponseTooLarge:
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_response_too_large",
+                False,
             )
         except Exception:
             return failed(

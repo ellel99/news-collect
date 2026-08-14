@@ -18,20 +18,22 @@
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
   SPEC-0041 architecture 与 implementation contract Docs Review 均已 PASS；用户于 2026-08-14 明确授权
   docs closeout 合并后开始 I-A、II、III、IV bounded implementation。
-  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 implementation 已获授权但在本 docs PR 中尚未开始。
+  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 I-A/II/III/IV implementation 已在 Draft PR #43
+  实现并处于 Implementation Review，尚未获得 production activation/cutover 授权。
   PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
-- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 只审核
-  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；不得开始 schema/scheduler 实现。
+- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 为
+  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；仅 I-A/II/III/IV 已授权，
+  Migration B、production activation、cutover 与 historical replay 仍禁止。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
   dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
-  合同。最终修正还限制 rollback window 每个 legacy cursor identity 由一个 target 跨 lifecycle 独占、
+  合同。最终修正还限制 rollback window 每个 legacy cursor identity 最多由一个 active target 占用、
   phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
   trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger；legacy identity
   仅在 target INSERT 写入，Source 被 target 引用后 access_method 永久不可变。Notification 使用
-  AuditLog recovery/resolved pair。以上是已批准实施合同；实现事实须由独立 Draft Implementation PR 证明。
+  AuditLog recovery/resolved pair。Draft PR #43 是当前实现证据，尚待整体 Implementation Review。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。
@@ -65,8 +67,8 @@
   SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed；SPEC-0030–0039
   也已完成当前批准范围。四 Provider adapter、bounded runtime、最小 scheduler/Telegram routing
   已实现并有审核 evidence；但当前 scheduler 仍是 provider-level special orchestration，不等同于
-  multi-target unified production control plane。SPEC-0041 只做该控制面的文档设计，不得修改
-  migration/ORM/schema、请求 Provider、读取 `.env`/local capture 或实现运行代码。
+  multi-target unified production control plane。SPEC-0041 Draft implementation 已增加 expand-only Migration A、
+  explicit Phase 2、target runtime 与解耦 delivery，但 production authority 仍保持 legacy。
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Final
@@ -9,6 +10,7 @@ from typing import Final
 import httpx
 
 from market_intelligence.providers.contracts import (
+    ProviderResponseTooLarge,
     ProviderTransportRequest,
     ProviderTransportResponse,
     ProviderTransportTimeout,
@@ -77,19 +79,13 @@ class HttpxProviderTransport:
             raise RuntimeError("provider_http_operation_unsupported")
         try:
             if self._client is not None:
-                response = await self._client.get(
-                    endpoint,
-                    params=wire_params,
-                    headers=headers,
-                    timeout=request.timeout_seconds,
+                status_code, response_headers, content = await _bounded_get(
+                    self._client, endpoint, wire_params, headers, request
                 )
             else:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        endpoint,
-                        params=wire_params,
-                        headers=headers,
-                        timeout=request.timeout_seconds,
+                    status_code, response_headers, content = await _bounded_get(
+                        client, endpoint, wire_params, headers, request
                     )
         except httpx.TimeoutException:
             raise ProviderTransportTimeout("provider_request_timed_out") from None
@@ -97,15 +93,40 @@ class HttpxProviderTransport:
             raise RuntimeError("provider_http_transport_failed") from None
 
         try:
-            body: object = response.json()
-        except ValueError:
+            body: object = json.loads(content)
+        except (ValueError, UnicodeDecodeError):
             body = None
         return ProviderTransportResponse(
-            status_code=response.status_code,
+            status_code=status_code,
             received_at=datetime.now(UTC),
             body=body,
-            headers=_safe_headers(response.headers),
+            headers=_safe_headers(response_headers),
         )
+
+
+async def _bounded_get(
+    client: httpx.AsyncClient,
+    endpoint: str,
+    params: Mapping[str, str | int],
+    headers: Mapping[str, str],
+    request: ProviderTransportRequest,
+) -> tuple[int, httpx.Headers, bytes]:
+    async with client.stream(
+        "GET", endpoint, params=params, headers=headers, timeout=request.timeout_seconds
+    ) as response:
+        declared = response.headers.get("content-length")
+        if declared is not None:
+            try:
+                if int(declared) > request.max_response_bytes:
+                    raise ProviderResponseTooLarge("provider_response_too_large")
+            except ValueError:
+                pass
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            body.extend(chunk)
+            if len(body) > request.max_response_bytes:
+                raise ProviderResponseTooLarge("provider_response_too_large")
+        return response.status_code, response.headers, bytes(body)
 
 
 def _safe_headers(headers: Mapping[str, str]) -> dict[str, str]:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -8,12 +10,22 @@ from celery import Task
 from redis.asyncio import Redis
 
 from market_intelligence.collection.contracts import CollectionTarget
+from market_intelligence.collection.control_plane import (
+    CollectionControlPlaneWorker,
+    TargetDispatch,
+    TargetScheduler,
+    dispatch_task_id,
+    recover_stale_target_runs,
+)
 from market_intelligence.collection.locking import retry_marker_key
 from market_intelligence.collection.registry import build_fake_registry
 from market_intelligence.collection.runner import CollectionRunner, recover_stale_runs
 from market_intelligence.collection.scheduler import DispatchRequest, dispatch_due_targets
+from market_intelligence.collection.target_configs import build_operation_registry
+from market_intelligence.collection.target_repository import TargetRepository
 from market_intelligence.core.config import get_settings
 from market_intelligence.db.session import create_engine, create_session_factory
+from market_intelligence.providers.http_transport import HttpxProviderTransport
 from market_intelligence.tasks.celery_app import celery_app
 
 
@@ -157,3 +169,98 @@ async def _recover() -> int:
 @celery_app.task(name="collection.recover_stale_runs")  # type: ignore[untyped-decorator]
 def recover_stale_runs_task() -> dict[str, int]:
     return {"recovered": asyncio.run(_recover())}
+
+
+async def _dispatch_control_plane() -> int:
+    settings = get_settings()
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        repository = TargetRepository(factory, build_operation_registry())
+        scheduler = TargetScheduler(repository, redis)
+        requests = await scheduler.claim_due(datetime.now(UTC))
+        for request in requests:
+            try:
+                run_collection_target.apply_async(
+                    kwargs=request.payload(),
+                    task_id=dispatch_task_id(request.dispatch_id),
+                )
+            except Exception:
+                await scheduler.release(request)
+                raise
+        return len(requests)
+    finally:
+        await redis.aclose()
+        await engine.dispose()
+
+
+@celery_app.task(name="collection.control_plane.dispatch")  # type: ignore[untyped-decorator]
+def dispatch_collection_targets() -> dict[str, int]:
+    """Inactive until an explicit production cutover changes Beat authority."""
+    return {"dispatched": asyncio.run(_dispatch_control_plane())}
+
+
+@celery_app.task(name="collection.control_plane.run_target")  # type: ignore[untyped-decorator]
+def run_collection_target(
+    target_id: str,
+    config_revision: int,
+    scheduled_slot: int,
+    run_mode: str,
+    dispatch_id: str,
+) -> dict[str, Any]:
+    async def run() -> dict[str, Any]:
+        settings = get_settings()
+        engine = create_engine(settings)
+        factory = create_session_factory(engine)
+        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            worker = CollectionControlPlaneWorker(
+                factory,
+                TargetRepository(factory, build_operation_registry()),
+                redis,
+                HttpxProviderTransport(),
+                environ=os.environ,
+            )
+            outcome = await worker.execute(
+                TargetDispatch(
+                    UUID(target_id),
+                    config_revision,
+                    scheduled_slot,
+                    run_mode,
+                    dispatch_id,
+                )
+            )
+            return {
+                "target_id": str(outcome.target_id),
+                "run_id": str(outcome.run_id) if outcome.run_id else None,
+                "status": outcome.status,
+                "safe_error": outcome.safe_error,
+            }
+        finally:
+            await redis.aclose()
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+@celery_app.task(name="collection.control_plane.recover_stale")  # type: ignore[untyped-decorator]
+def recover_stale_collection_targets() -> dict[str, int]:
+    async def run() -> int:
+        settings = get_settings()
+        engine = create_engine(settings)
+        factory = create_session_factory(engine)
+        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            return await recover_stale_target_runs(
+                factory,
+                redis,
+                stale_before=datetime.now(UTC)
+                - timedelta(seconds=settings.COLLECTION_STALE_RUN_AFTER_SECONDS),
+                retry_delay_seconds=settings.COLLECTION_RETRY_BASE_SECONDS,
+            )
+        finally:
+            await redis.aclose()
+            await engine.dispose()
+
+    return {"recovered": asyncio.run(run())}

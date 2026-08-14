@@ -14,6 +14,7 @@ from market_intelligence.providers.contracts import (
     ProviderAdapterErrorCode,
     ProviderFetchRequest,
     ProviderFetchResult,
+    ProviderResponseTooLarge,
     ProviderTransport,
     ProviderTransportRequest,
     ProviderTransportTimeout,
@@ -54,7 +55,8 @@ class FinnhubAdapter:
                     provider=self.provider_key,
                     operation="quote",
                     params={"symbol": symbol.upper()},
-                    timeout_seconds=10.0,
+                    timeout_seconds=request.request_timeout_seconds,
+                    max_response_bytes=request.max_response_bytes,
                     runtime_credential=self._credential,
                 )
             )
@@ -64,6 +66,13 @@ class FinnhubAdapter:
                 ProviderAdapterErrorCode.TIMEOUT,
                 "provider_request_timed_out",
                 True,
+            )
+        except ProviderResponseTooLarge:
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_response_too_large",
+                False,
             )
         except Exception:
             return failed(

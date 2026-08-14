@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     CHAR,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -120,6 +122,51 @@ class EventCandidateStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class CollectionTargetStatus(enum.StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    BLOCKED = "blocked"
+    RETIRED = "retired"
+
+
+class CollectionTargetHealthStatus(enum.StrEnum):
+    UNKNOWN = "unknown"
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    BLOCKED = "blocked"
+
+
+class CollectionCursorStrategy(enum.StrEnum):
+    STRICT_INCREMENTAL = "strict_incremental"
+    SNAPSHOT_WATERMARK = "snapshot_watermark"
+    PAGE_TOKEN = "page_token"
+    DATE_WINDOW = "date_window"
+    COMPOUND = "compound"
+    REVISION = "revision"
+
+
+class CollectionMode(enum.StrEnum):
+    INCREMENTAL = "incremental"
+    SNAPSHOT = "snapshot"
+
+
+class CollectionBackfillPolicy(enum.StrEnum):
+    DISABLED = "disabled"
+    MANUAL_BOUNDED = "manual_bounded"
+
+
+class CollectionRevisionPolicy(enum.StrEnum):
+    IGNORE = "ignore"
+    SAFE_REPLACE = "safe_replace"
+    RECONCILE = "reconcile"
+
+
+class CollectionRunMode(enum.StrEnum):
+    NORMAL = "normal"
+    BACKFILL = "backfill"
+
+
 def enum_values(enum_class: type[enum.StrEnum]) -> list[str]:
     return [member.value for member in enum_class]
 
@@ -179,11 +226,15 @@ class Source(Base):
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="source")
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source")
     evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source")
+    collection_targets: Mapped[list[CollectionTarget]] = relationship(
+        back_populates="source", overlaps="collection_targets"
+    )
 
 
 class SourceAccount(Base):
     __tablename__ = "source_accounts"
     __table_args__ = (
+        UniqueConstraint("id", "source_id", name="uq_source_accounts_id_source"),
         Index(
             "uq_source_accounts_source_external_id",
             "source_id",
@@ -232,6 +283,163 @@ class SourceAccount(Base):
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="source_account")
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source_account")
     evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source_account")
+    collection_targets: Mapped[list[CollectionTarget]] = relationship(
+        back_populates="source_account", overlaps="collection_targets,source"
+    )
+
+
+class CollectionTarget(Base):
+    __tablename__ = "collection_targets"
+    __table_args__ = (
+        CheckConstraint(
+            "target_key ~ '^[a-z0-9][a-z0-9._-]{0,159}$'",
+            name="ck_collection_targets_key_format",
+        ),
+        CheckConstraint("config_revision > 0", name="ck_collection_targets_revision_positive"),
+        CheckConstraint(
+            "operation_config_version > 0 AND provider_contract_version > 0 AND cursor_version > 0",
+            name="ck_collection_targets_versions_positive",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(operation_config) = 'object'", name="ck_collection_targets_config_object"
+        ),
+        CheckConstraint(
+            "cadence_seconds BETWEEN 1 AND 86400", name="ck_collection_targets_cadence"
+        ),
+        CheckConstraint("batch_limit > 0", name="ck_collection_targets_batch_limit"),
+        CheckConstraint(
+            "max_requests_per_run BETWEEN 1 AND 20", name="ck_collection_targets_requests"
+        ),
+        CheckConstraint("max_pages_per_run BETWEEN 1 AND 20", name="ck_collection_targets_pages"),
+        CheckConstraint(
+            "max_response_bytes BETWEEN 1024 AND 10000000",
+            name="ck_collection_targets_response_bytes",
+        ),
+        CheckConstraint(
+            "request_timeout_seconds BETWEEN 1 AND 60", name="ck_collection_targets_request_timeout"
+        ),
+        CheckConstraint(
+            "max_runtime_seconds BETWEEN request_timeout_seconds AND 900",
+            name="ck_collection_targets_runtime",
+        ),
+        CheckConstraint("priority BETWEEN 0 AND 1000", name="ck_collection_targets_priority"),
+        CheckConstraint("consecutive_failures >= 0", name="ck_collection_targets_failures"),
+        CheckConstraint(
+            "(status = 'retired' AND retired_at IS NOT NULL) OR "
+            "(status <> 'retired' AND retired_at IS NULL)",
+            name="ck_collection_targets_retired_at",
+        ),
+        ForeignKeyConstraint(
+            ["source_account_id", "source_id"],
+            ["source_accounts.id", "source_accounts.source_id"],
+            name="fk_collection_targets_account_source",
+            ondelete="RESTRICT",
+        ),
+        Index("uq_collection_targets_target_key", "target_key", unique=True),
+        Index("ix_collection_targets_source_status", "source_id", "status"),
+        Index("ix_collection_targets_account_status", "source_account_id", "status"),
+        Index("ix_collection_targets_rate_status", "rate_limit_group", "status"),
+        Index(
+            "uq_collection_targets_legacy_owner",
+            "source_account_id",
+            "legacy_cursor_type",
+            unique=True,
+            postgresql_where=text("status = 'active' AND legacy_cursor_type IS NOT NULL"),
+        ),
+        Index(
+            "ix_collection_targets_due",
+            "next_due_at",
+            "priority",
+            "id",
+            postgresql_where=text("status = 'active'"),
+        ),
+        Index(
+            "ix_collection_targets_retry",
+            "next_retry_at",
+            "priority",
+            "id",
+            postgresql_where=text("status = 'active' AND next_retry_at IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    target_key: Mapped[str] = mapped_column(String(160))
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT")
+    )
+    source_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    operation_key: Mapped[str] = mapped_column(String(100))
+    legacy_cursor_type: Mapped[str | None] = mapped_column(String(100))
+    operation_config_version: Mapped[int] = mapped_column(Integer)
+    provider_contract_version: Mapped[int] = mapped_column(Integer)
+    config_revision: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
+    operation_config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=text("'{}'::jsonb")
+    )
+    status: Mapped[CollectionTargetStatus] = mapped_column(
+        Enum(CollectionTargetStatus, name="collection_target_status", values_callable=enum_values)
+    )
+    cadence_seconds: Mapped[int] = mapped_column(Integer)
+    batch_limit: Mapped[int] = mapped_column(Integer)
+    max_requests_per_run: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    max_pages_per_run: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    max_response_bytes: Mapped[int] = mapped_column(Integer)
+    request_timeout_seconds: Mapped[int] = mapped_column(Integer)
+    max_runtime_seconds: Mapped[int] = mapped_column(Integer)
+    cursor_strategy: Mapped[CollectionCursorStrategy] = mapped_column(
+        Enum(
+            CollectionCursorStrategy, name="collection_cursor_strategy", values_callable=enum_values
+        )
+    )
+    cursor_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    collection_mode: Mapped[CollectionMode] = mapped_column(
+        Enum(CollectionMode, name="collection_mode", values_callable=enum_values)
+    )
+    backfill_policy: Mapped[CollectionBackfillPolicy] = mapped_column(
+        Enum(
+            CollectionBackfillPolicy, name="collection_backfill_policy", values_callable=enum_values
+        )
+    )
+    revision_policy: Mapped[CollectionRevisionPolicy] = mapped_column(
+        Enum(
+            CollectionRevisionPolicy, name="collection_revision_policy", values_callable=enum_values
+        )
+    )
+    rate_limit_group: Mapped[str] = mapped_column(String(160))
+    priority: Mapped[int] = mapped_column(Integer, server_default=text("100"))
+    next_due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    health_status: Mapped[CollectionTargetHealthStatus] = mapped_column(
+        Enum(
+            CollectionTargetHealthStatus,
+            name="collection_target_health_status",
+            values_callable=enum_values,
+        )
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+    source: Mapped[Source] = relationship(
+        back_populates="collection_targets", overlaps="collection_targets"
+    )
+    source_account: Mapped[SourceAccount | None] = relationship(
+        back_populates="collection_targets", overlaps="collection_targets,source"
+    )
+    cursors: Mapped[list[CollectionCursor]] = relationship(back_populates="target")
+    collection_runs: Mapped[list[CollectionRun]] = relationship(back_populates="target")
 
 
 class CollectionCursor(Base):
@@ -243,6 +451,15 @@ class CollectionCursor(Base):
             "cursor_type",
             unique=True,
         ),
+        Index(
+            "uq_collection_cursors_target_type_version_mode",
+            "target_id",
+            "cursor_type",
+            "cursor_version",
+            "run_mode",
+            unique=True,
+            postgresql_where=text("target_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -251,8 +468,18 @@ class CollectionCursor(Base):
     source_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source_accounts.id", ondelete="RESTRICT")
     )
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_targets.id", ondelete="RESTRICT")
+    )
     cursor_type: Mapped[str] = mapped_column(String(100))
+    cursor_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    run_mode: Mapped[CollectionRunMode] = mapped_column(
+        Enum(CollectionRunMode, name="collection_run_mode", values_callable=enum_values),
+        server_default=text("'normal'"),
+    )
     cursor_value: Mapped[str | None] = mapped_column(Text)
+    continuation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    watermark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -261,6 +488,7 @@ class CollectionCursor(Base):
     )
 
     source_account: Mapped[SourceAccount] = relationship(back_populates="cursors")
+    target: Mapped[CollectionTarget | None] = relationship(back_populates="cursors")
 
 
 class CollectionRun(Base):
@@ -281,6 +509,14 @@ class CollectionRun(Base):
         Index("ix_collection_runs_source_started", "source_id", "started_at"),
         Index("ix_collection_runs_status_started", "status", "started_at"),
         Index("ix_collection_runs_source_account_id", "source_account_id"),
+        Index("ix_collection_runs_target_started", "target_id", "started_at"),
+        Index(
+            "uq_collection_runs_running_target_mode",
+            "target_id",
+            "run_mode",
+            unique=True,
+            postgresql_where=text("status = 'running' AND target_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -292,6 +528,14 @@ class CollectionRun(Base):
     source_account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source_accounts.id", ondelete="RESTRICT")
     )
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_targets.id", ondelete="RESTRICT")
+    )
+    run_mode: Mapped[CollectionRunMode] = mapped_column(
+        Enum(CollectionRunMode, name="collection_run_mode", values_callable=enum_values),
+        server_default=text("'normal'"),
+    )
+    dispatch_identity: Mapped[str | None] = mapped_column(String(255))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[CollectionRunStatus] = mapped_column(
@@ -312,6 +556,7 @@ class CollectionRun(Base):
     source: Mapped[Source] = relationship(back_populates="collection_runs")
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="collection_runs")
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="collection_run")
+    target: Mapped[CollectionTarget | None] = relationship(back_populates="collection_runs")
 
 
 class RawItem(Base):
@@ -326,6 +571,20 @@ class RawItem(Base):
         Index("ix_raw_items_source_external_id", "source_id", "external_id"),
         Index("ix_raw_items_source_fetched", "source_id", "fetched_at"),
         Index("ix_raw_items_payload_hash", "payload_hash"),
+        Index(
+            "uq_raw_items_source_external_identity",
+            "source_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_raw_items_source_projection_hash",
+            "source_id",
+            "payload_hash",
+            unique=True,
+            postgresql_where=text("external_id IS NULL AND payload_hash IS NOT NULL"),
+        ),
         Index("ix_raw_items_parse_status", "parse_status"),
         Index("uq_raw_items_id_source_id", "id", "source_id", unique=True),
     )
