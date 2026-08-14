@@ -113,7 +113,10 @@ dual-write rollback window → Migration B final constraints，禁止把 schema 
 Migration A/backfill/scan/compatible runtime 部署期间持续停止所有 legacy collection/stale-recovery writer；
 只有 zero RUNNING、zero unmapped/null target identity 与 backfill count 一致后才恢复 compatible legacy authority。
 rollback window 每个 legacy `(source_account_id,cursor_type)` 只允许一个 active target；同账户多 target 在
-Migration B 后才启用，避免共享或覆盖 legacy cursor。
+Migration B 后才启用，避免共享或覆盖 legacy cursor。CollectionTarget 的 `legacy_cursor_type` 仅由静态
+operation registry 生成；Migration A 用 active non-null DB constraint/trigger 和 partial unique index 强制
+一对一身份。Migration B 在 forward-recovery-only 后删除这两项临时限制、停止 dual-write，但保留字段为
+immutable audit；它不等于 cursor strategy/version，也不恢复旧 runtime rollback。
 Notification intent 只覆盖审核过的四 Provider、安全 Content kind 和 cutover watermark 之后的候选；默认
 不回补历史，也不存在未定义的 per-Content override；恢复先处理 unresolved AuditLog，成功后追加 resolved AuditLog，
 再执行 bounded watermark 后 missing-dedup scan。

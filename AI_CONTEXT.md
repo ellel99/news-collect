@@ -24,7 +24,9 @@
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
   dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
   合同。最终修正还限制 rollback window 每个 legacy cursor identity 仅一个 active target、phase 0–3 持续
-  drain legacy writers，并以 AuditLog recovery/resolved pair 取代未定义的 per-Content override。以上仍只是
+  drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 临时 DB constraint/index 强制
+  active rollback identity，Migration B 关闭 rollback 后移除两项限制但保留审计字段。Notification 使用
+  AuditLog recovery/resolved pair。以上仍只是
   Docs Review 内容，不是实现事实。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计

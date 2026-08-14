@@ -104,6 +104,7 @@ flowchart TD
 | `provider_key` | string, required | 必须等于经审核的 `Source.access_method` |
 | `target_type` | string, required | 如 `news_query`, `quote_symbol`, `eia_series`, `sec_submissions` |
 | `operation_key` | string, required | factory allowlist operation；不得是 URL |
+| `legacy_cursor_type` | nullable string | 仅 Migration A→rollback close 的 registry-derived dual-write identity；不是 target cursor strategy/version |
 | `config_schema_version` | positive int | typed config decoder version |
 | `provider_contract_version` | string | adapter contract/field mapping version |
 | `config` | JSONB | 仅 schema allowlist 的非秘密 operation 参数 |
