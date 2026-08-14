@@ -185,4 +185,3 @@ INTENTIONAL_BOUNDARY
 - Codex implementation agent 按已批准合同实施，不自行选择重大架构替代方案；
 - Docs Review PASS 不自动授权代码、migration、外部请求、credential 读取或 production activation；
 - 只有用户可以授予下一阶段实现或真实外部操作权限。
-

@@ -247,7 +247,7 @@ Retry 是 target state，不能复用 provider cadence key。non-retryable failu
    migration timestamp 字段。版本字段准确使用 `operation_config_version`，其他字段只引用 normative contract。
 3. AAPL、technology、electricity、SEC ticker/CIK 只作为历史 bootstrap 值迁移，**不自动 active，
    不代表生产授权**；Reviewer 必须逐 target 确认 operation、quota、cadence、retention。
-4. Migration A registry-backfills legacy identity；rollback window 内同一
+4. Migration Phase 2 在创建 legacy target 的 INSERT 中写入 registry-derived legacy identity；rollback window 内同一
    `(source_account_id,legacy_cursor_type)` 由一个 target 独占，任何状态都不释放。冲突 target 保持 NULL 和
    draft/paused/blocked；不复制、猜测或抢占。
 5. Phase 3 完成 zero RUNNING、zero unmapped/null target identity、backfill count reconciliation 后，Phase 3A
