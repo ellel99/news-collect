@@ -20,8 +20,8 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：None。SPEC-0041 Unified Production Collection Control Plane Docs Review 已 PASS，
-  但 implementation 尚未由独立 R1 SPEC 授权。四 Provider 的 bounded adapter/
+- 当前 Active SPEC：SPEC-0041 Implementation — Unified Production Collection Control Plane（R1
+  Implementation Review）。R1 Docs Review 已 PASS，I-A、II、III、IV bounded implementation 已明确授权。四 Provider 的 bounded adapter/
   runtime/scheduler evidence 已通过；当前 special scheduler 仍不是 multi-target 通用生产控制面。
 - Foundation v2.3-FROZEN 已通过 [R0 Freeze Review](docs/FOUNDATION_V2_3_FREEZE_REVIEW.md)；R0
   Completed/PASS，但不自动启动 R1，也不授权代码、migration、schema、runtime 或外部请求。完整路线见
@@ -77,7 +77,8 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：None。R0 Foundation v2.3 Freeze Review 已 PASS；R1 not started/not authorized。
+- Active SPEC：SPEC-0041 Implementation（R1 Implementation Review）。R0 与 R1 Docs Review PASS；
+  I-A、II、III、IV bounded implementation 已明确授权，Migration B/production activation 未授权。
 
 统一 runtime verification：
 

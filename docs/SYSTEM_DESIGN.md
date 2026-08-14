@@ -95,10 +95,35 @@ SPEC-0041 提议以 `CollectionTarget` 作为 cadence、cursor、lock、retry、
 idempotency 的共同 owner，并以 typed/versioned config 和显式 adapter factory 替代无版本
 `SourceAccount.collection_options` 与 provider `if/elif`。Telegram/事件处理消费持久结果，不能决定
 collection 是否运行。完整设计见 `spec/SPEC-0041-unified-production-collection-control-plane.md`；
-当前只审核设计，不代表 schema 或 runtime 已实现。由于 v2.2 明确禁止 scheduler rewrite，必须先由
-`docs/FOUNDATION_V2_3_DRAFT.md` 获得 Freeze Review PASS。之后仍须按
+R1 最终实施合同见
+`spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；其 Docs Review 已 PASS，
+且用户已单独明确授权 bounded implementation。
+Docs Review 本身不代表 schema 或 runtime 已实现。Foundation v2.3 R0 Freeze Review 已 PASS，R1
+implementation 已在 Docs Review PASS 后获得单独明确授权。之后仍须按
 `docs/PRE_AI_COLLECTION_READINESS.md` 分步审核 durable projection、provider operations 和 factual
 completeness，真实 AI 才可重新评估。
+
+R1 最终合同规定：初始四 operation 均无真实 pagination capability；target execution 使用单调
+`config_revision` 防止 stale task；scheduler/worker 共用严格 eligibility；collection 只创建 durable
+PENDING Notification intent，独立 delivery-only task 从 DB claim/send，Telegram 不参与 collection 状态。
+配置世代、dispatch/task/Redis marker 必须 exact-match；stale generation 在 credential/network 前停止，
+并且只能清理自身 marker。HTTP transport 对 decoded body 在 JSON parse 前执行 hard byte budget。
+部署采用 Migration A nullable expand → old/new worker compatibility → shadow/cutover → cursor transactional
+dual-write rollback window → Migration B final constraints，禁止把 schema 与 worker 假定为原子部署。
+Migration A/backfill/scan/compatible runtime 部署期间持续停止所有 legacy collection/stale-recovery writer；
+只有 zero RUNNING、zero unmapped/null target identity 与 backfill count 一致后才恢复 compatible legacy authority。
+rollback window 每个 legacy `(source_account_id,legacy_cursor_type)` 只能由一个 target 独占，任何 lifecycle
+状态都不释放；同账户多 target 在 Migration B 后才启用。CollectionTarget 的 `legacy_cursor_type` 仅由静态
+operation registry 生成。Migration A 创建永久 identity/provenance immutability trigger、临时 active non-null
+constraint/trigger 和临时 rollback ownership partial unique index；Migration B 在 forward-recovery-only 后只
+删除两项临时对象、停止 dual-write，字段与永久 trigger 保留。它不等于 cursor strategy/version，也不恢复
+旧 runtime rollback。
+legacy identity 只能在 migration Phase 2 创建 target 的 INSERT 中写入；INSERT 后任何 UPDATE 均被永久
+trigger 拒绝，不存在普通补写/转移 API。Source 被任何 target 引用后，`access_method` 同样永久不可变，
+从而稳定 RawItem→Run→Target→Source Provider provenance；Provider 变化必须创建新 Source/target。
+Notification intent 只覆盖审核过的四 Provider、安全 Content kind 和 cutover watermark 之后的候选；默认
+不回补历史，也不存在未定义的 per-Content override；恢复先处理 unresolved AuditLog，成功后追加 resolved AuditLog，
+再执行 bounded watermark 后 missing-dedup scan。
 
 ### 2.1 Source Registry
 

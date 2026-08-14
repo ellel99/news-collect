@@ -2,21 +2,36 @@
 
 本文件是 AI 编码工具进入项目时的首要入口。
 
+所有架构、SPEC、PR、migration、Provider、数据完整性和 AI readiness 审核，开始前必须完整读取并遵守
+`docs/REVIEW_PROTOCOL.md`。禁止在发现第一个普通问题后提前结束整轮审核；必须完成三遍审核、维护问题
+台账，并在完整覆盖后一次性输出集中修正清单。
+
 ## 当前冻结状态
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：None
+- 当前 Active SPEC：SPEC-0041 Implementation — Unified Production Collection Control Plane（Implementation Review）
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
-  SPEC-0041 target-driven 统一生产采集控制面 Docs Review 已 PASS；这不授权代码或 migration。
-  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 not started/not authorized。PR #39/SPEC-0040 保持独立 Draft，
+  SPEC-0041 architecture 与 implementation contract Docs Review 均已 PASS；用户于 2026-08-14 明确授权
+  docs closeout 合并后开始 I-A、II、III、IV bounded implementation。
+  R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 implementation 已获授权但在本 docs PR 中尚未开始。
+  PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
-- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。SPEC-0041 Docs Review
-  PASS 不等于 implementation authorization；当前无 Active SPEC，不得开始 schema/scheduler 实现。
+- Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 只审核
+  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；不得开始 schema/scheduler 实现。
+- R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
+  pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
+  delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
+  dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
+  合同。最终修正还限制 rollback window 每个 legacy cursor identity 由一个 target 跨 lifecycle 独占、
+  phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
+  trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger；legacy identity
+  仅在 target INSERT 写入，Source 被 target 引用后 access_method 永久不可变。Notification 使用
+  AuditLog recovery/resolved pair。以上是已批准实施合同；实现事实须由独立 Draft Implementation PR 证明。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。
@@ -72,7 +87,7 @@
 - SPEC-0004 是 inactive historical preflight record；四 Provider 后续 bounded implementation evidence
   由 SPEC-0030–0038 提供。历史 preflight 不授权新 operation、生产默认或任意扩展。
 - Foundation v2.3-FROZEN 生效；R0 PASS/Completed。D-026/D-027 仅在 v2.3 的有限 Foundation ceiling
-  内获准，均不等于实现授权；R1 尚未启动且未获授权。
+  内获准，均不等于实现授权；R1 Docs Review 已 PASS，并已由用户单独明确授权进入 bounded implementation。
 
 ## Phase 1 允许
 

@@ -197,7 +197,7 @@
 - Foundation resolution：Foundation v2.3 Freeze Review PASS 仅允许该方向进入独立 R1 SPEC/Review。
 - 状态：Approved as Foundation ceiling（2026-08-13；reviewed baseline
   `4df76e1f0ed9812d962369b9766bf372b102d952`）；不授权 migration、Python implementation、runtime
-  或 bounded live request。R1 尚未启动。
+  或 bounded live request。R1 Docs Review 已激活，implementation 尚未授权或开始。
 
 ## D-027 Pre-AI Collection Readiness before real model routing（Approved Foundation ceiling）
 

@@ -147,7 +147,9 @@ Phase 1 的 `summary` 只表示来源直接提供的摘要，字段实现时应�
 `collection_options` 是既有兼容字段，不再作为长期 production target contract。SPEC-0041 Docs
 Review 提议新增 `CollectionTarget` 与 typed/versioned config，并把 cursor/run/health 绑定到 target；
 当前尚无 migration 或 schema change，既有字段仍是运行事实。Foundation v2.3 Freeze Review 已 PASS，
-但只有用户另行激活并批准 R1 implementation SPEC 后才能形成 migration implementation authority。
+R1 implementation contract Docs Review 已 PASS，且用户已单独明确授权；只有独立 Implementation PR 才能形成 migration
+implementation authority。最终 schema 见
+`spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`。
 
 ### 3.2.1 CollectionTarget（Proposed；未实现）
 
@@ -155,6 +157,31 @@ Review 提议新增 `CollectionTarget` 与 typed/versioned config，并把 curso
 cadence、budget、cursor strategy/version、lock、retry、run、health 与 dispatch identity；不含 secret
 或任意 endpoint。Source 继续拥有 provider/授权/retention，SourceAccount 只表达可选外部身份。
 字段、迁移和 rollback 见 SPEC-0041；Docs Review 不创建表。
+
+R1 最终合同还区分 `operation_config_version`（typed schema）、`provider_contract_version`（adapter）与
+单调 `config_revision`（执行 generation）。RawItem 不重复保存 target_id，而由不可变
+RawItem→CollectionRun→CollectionTarget 追溯；PostgreSQL 必须以 null-safe source/account 一致性约束
+保护该链。ContentItem/EvidenceItem 已复制 provenance 的完整 DB audit/constraint 决策是 R2/R8 强制
+前置项；已完成的 R1 Docs Review 本身不修改 schema。
+
+`pagination_capability` 不是数据库中的第二份配置，而是 typed operation registry 的唯一权威。首批四个
+v1 operation 均为 `none`、每 run 一次请求/一页；若 adapter 仍报告 `has_more=true`，run 必须持久化为
+PARTIAL/`coverage_incomplete`，完整窗口 watermark 不推进。状态字段、迁移 A/B 和唯一规范状态矩阵以
+SPEC-0041 implementation contract 为准，本文件不另行定义竞争语义。
+
+rollback window 内 legacy cursor identity 为 `(source_account_id,legacy_cursor_type)`，每个 identity 只能
+由一个 target 持有，pause/blocked/retired 不释放；同一账户的多个 `provider_cursor_v1` target 必须等 Migration B 完成、dual-write 停止且
+进入 forward-recovery-only 后才能激活。`legacy_cursor_type varchar(100) NULL` 只由 static operation registry
+确定并在 migration Phase 2 target INSERT 时写入，不是 cursor strategy/version 或 target-owned cursor type。
+INSERT 后任何 legacy type UPDATE 都被永久拒绝。Migration A 创建三个对象：永久 identity/
+provenance immutability trigger、临时 active non-null constraint/
+trigger、临时 rollback ownership partial unique index。Migration B 只移除后两项，字段和永久 trigger 保留，
+且不恢复 old runtime rollback。Notification recovery 不增加 ContentItem 字段：候选仅来自 cutover
+watermark 后的精确 policy；失败用 append-only AuditLog recovery/resolved pair 恢复和关闭。
+
+`Source.access_method` 是 Provider identity：当任一 CollectionTarget 引用 Source 后永久不可修改，变更
+Provider 必须创建新 Source 和新 target。enabled、authorization、schedule、health 等非 identity 字段仍按
+既有 Source 合同更新；PostgreSQL trigger 是最终权威。
 
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
 
