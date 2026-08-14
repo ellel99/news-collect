@@ -226,7 +226,9 @@ class Source(Base):
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="source")
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source")
     evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source")
-    collection_targets: Mapped[list[CollectionTarget]] = relationship(back_populates="source")
+    collection_targets: Mapped[list[CollectionTarget]] = relationship(
+        back_populates="source", overlaps="collection_targets"
+    )
 
 
 class SourceAccount(Base):
@@ -282,7 +284,7 @@ class SourceAccount(Base):
     content_items: Mapped[list[ContentItem]] = relationship(back_populates="source_account")
     evidence_items: Mapped[list[EvidenceItem]] = relationship(back_populates="source_account")
     collection_targets: Mapped[list[CollectionTarget]] = relationship(
-        back_populates="source_account"
+        back_populates="source_account", overlaps="collection_targets,source"
     )
 
 
@@ -430,8 +432,12 @@ class CollectionTarget(Base):
         onupdate=text("CURRENT_TIMESTAMP"),
     )
 
-    source: Mapped[Source] = relationship(back_populates="collection_targets")
-    source_account: Mapped[SourceAccount | None] = relationship(back_populates="collection_targets")
+    source: Mapped[Source] = relationship(
+        back_populates="collection_targets", overlaps="collection_targets"
+    )
+    source_account: Mapped[SourceAccount | None] = relationship(
+        back_populates="collection_targets", overlaps="collection_targets,source"
+    )
     cursors: Mapped[list[CollectionCursor]] = relationship(back_populates="target")
     collection_runs: Mapped[list[CollectionRun]] = relationship(back_populates="target")
 

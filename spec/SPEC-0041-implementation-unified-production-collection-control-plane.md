@@ -691,3 +691,20 @@ No batch may activate production targets or perform bounded live verification wi
 No operation expansion, durable safe projection, Event/Evidence/Fact/AI change, Market Validation, Recommendation,
 Portfolio/Holding/Investment Plan, Provider addition, X, GDELT, NewsAPI.ai, streaming/webhook/event bus, live
 migration, bounded live request or PR #39 work.
+
+## 17. Implementation evidence (pending Implementation Review)
+
+The authorized I-A, II, III and IV implementation is present on the dedicated Draft implementation branch:
+
+- I-A: Alembic `0006` (down revision `0005`) adds the nullable expand model, deterministic paused/blocked legacy
+  targets, INSERT-time registry identity, permanent identity/provenance triggers and temporary rollback guards.
+- II: target repository/CAS, exact four-operation registry, allowlisted factory, worker reload, worker-only runtime
+  credentials and decoded response-byte enforcement are implemented without live Provider access.
+- III: target scheduler/dispatch identity, Redis marker and owner lock, target-owned run/cursor, transactional legacy
+  cursor dual-write, retry/cadence/health, stale recovery, PARTIAL coverage and read-only authority tools are present.
+- IV: durable deterministic PENDING Notification intent, AuditLog recovery/resolution, bounded reconciler and an
+  independent delivery-only Telegram task are present. Existing production authority is not switched.
+
+Migration B, production target activation, cutover, historical replay and live Provider/Telegram verification remain
+not implemented and not authorized. This section records implementation evidence only; the SPEC remains
+`Active — Implementation Review` until an explicit reviewer decision.

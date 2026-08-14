@@ -140,8 +140,9 @@ async def test_referenced_source_provider_and_run_raw_provenance_are_immutable()
             with pytest.raises(DBAPIError, match="collection_run_target_provenance_mismatch"):
                 await connection.execute(
                     text(
-                        "INSERT INTO collection_runs(target_id,run_mode,source_id,source_account_id,"
-                        "started_at,status) VALUES "
+                        "INSERT INTO collection_runs("
+                        "target_id,run_mode,source_id,source_account_id,started_at,status"
+                        ") VALUES "
                         "(:target,'normal',:source,:account,:now,'running')"
                     ),
                     {

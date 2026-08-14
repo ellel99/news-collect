@@ -181,6 +181,10 @@ class CollectionControlPlaneWorker:
                     run_id,
                     error.safe_message,
                 )
+            lock_owner = await self._redis.get(lock_key)
+            if lock_owner not in (owner, owner.encode()):
+                await self._finish_error(loaded, run_id, "target_lock_lost", False, None)
+                return TargetRunOutcome(dispatch.target_id, "failed", run_id, "target_lock_lost")
             await self._persist_result(loaded, dispatch, run_id, cursor, result)
             return TargetRunOutcome(
                 dispatch.target_id,
@@ -210,6 +214,27 @@ class CollectionControlPlaneWorker:
             target = await session.get(CollectionTarget, loaded.target.id, with_for_update=True)
             if target is None or target.config_revision != dispatch.config_revision:
                 raise TargetRepositoryError("stale_target_revision")
+            existing = await session.scalar(
+                select(CollectionRun)
+                .where(
+                    CollectionRun.target_id == target.id,
+                    CollectionRun.run_mode == CollectionRunMode.NORMAL,
+                    CollectionRun.status == CollectionRunStatus.RUNNING,
+                )
+                .with_for_update()
+            )
+            if existing is not None:
+                cursor = await session.scalar(
+                    select(CollectionCursor)
+                    .where(
+                        CollectionCursor.target_id == target.id,
+                        CollectionCursor.cursor_type == target.operation_key,
+                        CollectionCursor.cursor_version == target.cursor_version,
+                        CollectionCursor.run_mode == CollectionRunMode.NORMAL,
+                    )
+                    .with_for_update()
+                )
+                return existing.id, cursor
             run = CollectionRun(
                 target_id=target.id,
                 run_mode=CollectionRunMode.NORMAL,
