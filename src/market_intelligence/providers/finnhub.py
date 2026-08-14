@@ -55,6 +55,7 @@ class FinnhubAdapter:
                     operation="quote",
                     params={"symbol": symbol.upper()},
                     timeout_seconds=10.0,
+                    max_response_bytes=request.max_response_bytes,
                     runtime_credential=self._credential,
                 )
             )

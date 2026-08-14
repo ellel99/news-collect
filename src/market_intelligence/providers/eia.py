@@ -60,6 +60,7 @@ class EiaAdapter:
                         "sort[0][direction]": "desc",
                     },
                     timeout_seconds=15.0,
+                    max_response_bytes=request.max_response_bytes,
                     runtime_credential=self._credential,
                 )
             )
