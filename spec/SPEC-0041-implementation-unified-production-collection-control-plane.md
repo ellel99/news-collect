@@ -279,8 +279,9 @@ no-persistence behavior.
    factory, then credential. Paused/changed/unauthorized/stale-revision target fails closed before credential/network.
 7. Worker acquires Redis owner-token target lock; renew/release compare owner token. Lost lock prevents checkpoint.
 8. Each successful batch atomically writes RawItem/run counters/cursor. Cursor never advances on persistence error.
-9. Retryable failure sets target `next_retry_at` using existing bounded RetryPolicy/Retry-After and preserves the
-   same CollectionRun attempt lineage. Success clears retry and advances normal cadence from completion.
+9. An ordinary retryable failure may preserve the same CollectionRun attempt lineage only while that run remains
+   `RUNNING retry-pending`; it sets `next_retry_at` using bounded RetryPolicy/Retry-After. A terminal FAILED run is
+   never reopened. Success clears retry and advances normal cadence from completion.
 10. stale recovery requires expired/missing owner lock and no live retry marker; it marks run failed safely, never
     advances cursor, and makes target eligible according to classified recovery policy.
 
@@ -374,15 +375,20 @@ Cutover watermark is stored in existing `system_metadata` key `notification.inte
 stable tuple `<content_items.created_at UTC ISO8601>|<content_items.id UUID>` (well below 500 chars). It is written
 exactly once in the same maintenance transaction that records legacy combined task drain complete, immediately
 before enabling the new intent producer/reconciler. Candidate ordering is `(created_at,id)` ascending. Only Content
-strictly after this watermark, or Content explicitly marked intent-required by the new producer transaction, is
-eligible. Historical Content is not backfilled by default; policy version changes do not reactivate it. Any bounded
-historical replay requires separate user authorization and its own reviewed command.
+strictly after this watermark and satisfying the exact policy above is eligible. No implicit per-Content override
+exists. Historical Content is not backfilled by default; policy version changes do not reactivate it.
+Any bounded historical replay requires separate user authorization and its own reviewed command.
 
-The reconciler polls bounded batches (default 100, hard max 500), keyset ordered by `(created_at,id)`, and uses
-`FOR UPDATE SKIP LOCKED` or unique-key insert conflict handling for concurrent workers. Restart repeats from DB and
-the dedup key absorbs replay. Audit recovery rows use `AuditLog.action=notification_intent_recovery`,
+The reconciler first polls unresolved `AuditLog.action=notification_intent_recovery` rows, then performs a bounded
+missing-dedup scan strictly after the cutover watermark (default 100, hard max 500), keyset ordered by
+`(created_at,id)`. It uses `FOR UPDATE SKIP LOCKED` or unique-key insert conflict handling for concurrent workers.
+Restart repeats from DB and the dedup key absorbs replay. Audit recovery rows use
+`AuditLog.action=notification_intent_recovery`,
 `target_type=content_item`, `target_id=<ContentItem.id>`, and value-free `after` metadata containing only policy id/
-version, status and safe error code—never title/URL/content.
+version, status and safe error code—never title/URL/content. After the Notification exists (created or duplicate),
+the same transaction appends `AuditLog.action=notification_intent_recovery_resolved`, the same target, and
+`actor_id=<original recovery AuditLog.id>`; an unresolved row is one with no such resolution row. This append-only
+closure avoids a new column/schema and prevents permanent rescanning. A failed attempt remains unresolved.
 
 If projection sidecar/downstream projection fails and no ContentItem exists, record safe code
 `downstream_projection_incomplete` against the run/RawItem audit. The R1 reconciler must not read RawItem payload,
@@ -397,12 +403,13 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 
 | phase | action | authoritative path | rollback condition |
 |---|---|---|---|
-| 0 | stop/drain stale-recovery and combined tasks only for the short expand maintenance window; record zero RUNNING legacy runs | legacy after drain | resume unchanged legacy tasks |
+| 0 | stop and continuously hold all legacy collection/stale-recovery tasks that may create or modify CollectionRun, CollectionCursor or RawItem; drain to zero RUNNING. Delivery-only Telegram work may continue only if it cannot invoke collection or mutate those tables | none (maintenance window) | resume unchanged legacy tasks only before Migration A/backfill starts |
 | 1 / Migration A | create enums/target table; add nullable target/run/cursor compatibility fields, indexes and non-destructive checks | legacy | downgrade A only if no target-owned writes |
-| 2 | deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | legacy | abort on mismatch; keep targets paused/blocked |
-| 3 | deploy compatible runtime: legacy collection remains authoritative but new runtime writes `target_id` and dual-writes target+legacy cursor | legacy | deploy previous worker; nullable expand schema remains |
+| 2 | with legacy collection still stopped, perform deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | none | abort on mismatch; keep tasks stopped and targets paused/blocked |
+| 3 | deploy compatible runtime while collection remains stopped; verify zero RUNNING legacy runs, zero unmapped/new NULL target_id runs/cursors, and exact backfill reconciliation counts | none | keep maintenance hold; deploy previous compatible worker only if Migration A downgrade remains safe |
+| 3A | only after phase-3 verification, resume legacy authority through the compatible runtime that writes target_id and transactionally dual-writes eligible target+legacy cursor | legacy compatible runtime | stop/drain compatible runtime; nullable expand schema remains |
 | 4 | shadow read-only comparison of due/config/cursor; no request, enqueue or write | legacy | disable shadow |
-| 5 | reviewer approves each target; set approved rows paused→active with new config_revision and cutover-ready next_due_at | legacy | return target to paused with forward revision |
+| 5 | reviewer approves only rollback-eligible targets; set paused→active with new config_revision and cutover-ready next_due_at | legacy | return target to paused with forward revision |
 | 6 | stop/drain legacy combined collection task and all in-flight runs; write Notification cutover watermark | none (maintenance boundary) | restart legacy before unified enable |
 | 7 | enable unified scheduler/worker as sole collection authority and delivery-only Beat as sole Telegram claimer | unified | stop/drain unified, reconcile cursors, restore legacy |
 | 8 | reconcile target/run/cursor/notification counts and operate through rollback window | unified + cursor dual-write | rollback only after verified target→legacy reconciliation |
@@ -410,6 +417,10 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 
 Migration B is never deployed while an old worker can run. Compatibility tests must prove old worker+Migration A and
 new worker+Migration A. There is no supported old worker+Migration B combination.
+
+R1 chooses the continuous maintenance hold for phases 0–3; it does not claim a high-watermark catch-up protocol.
+Delivery-only Telegram tasks may remain live only after a source audit proves they cannot invoke collection,
+stale recovery or writes to CollectionRun/CollectionCursor/RawItem. Otherwise they are drained too.
 
 ### 11.2 Cursor rollback contract
 
@@ -419,6 +430,18 @@ backfill target cursors remain separate, and backfill never overwrites legacy no
 complete-window watermark and revision marker are target-owned; because initial operations are non-pageable,
 continuation is null. The legacy cursor receives only the committed observation position/watermark/revision values
 its existing codec can represent.
+
+Legacy rollback identity is exactly `(source_account_id, legacy_cursor_type)`. During the rollback window, only a
+target with a one-to-one representable legacy identity may be activated, enforced by DB uniqueness for active rows
+plus service validation before activation/cutover. At most one active target may own any such pair. Two targets must
+never share, overwrite or compete for one legacy cursor. Rollback-window multi-target acceptance therefore covers
+different accounts or other distinct legacy-representable identities—not two targets under the same account using
+`provider_cursor_v1`.
+
+True same-SourceAccount multi-target activation is deferred until the rollback window is explicitly closed,
+Migration B is complete, legacy dual-write is disabled and operation is forward-recovery-only. Migration B acceptance
+then tests independent target-owned cursors for same-account targets. If the business requires that topology during
+the rollback window, R1 must abandon old-runtime rollback and return for a new review; it is not the default contract.
 
 Before rollback, stop/drain unified workers and compare every active target position with its legacy cursor. Any
 unrepresentable continuation/revision or mismatch blocks rollback. After restoring legacy, run duplicate/gap checks
@@ -469,11 +492,11 @@ bounded retry time; `—` means unchanged/not applicable. Source aggregate is di
 | timeout/429/5xx retry | RUNNING retry-pending | active | degraded | LA | unchanged | +1 | classified safe code | unchanged | NR | unchanged | recompute display | automatic bounded retry |
 | retry exhausted | FAILED, or PARTIAL only if items already committed | active | degraded | LA | unchanged | +1 | retry_exhausted | ND | NULL | last committed checkpoint only | recompute display | normal cadence/manual review |
 | config/schema invalid | no run if precheck; otherwise FAILED | blocked | blocked | LA only if run | unchanged | unchanged | config_invalid | unchanged | NULL | unchanged | recompute display | manual fix + forward revision |
-| credential missing | no run | active | degraded | LA | unchanged | unchanged | credential_missing | ND | NULL | unchanged | recompute display | credential restore/manual retry |
+| credential missing | no run | active | degraded | LA | unchanged | unchanged | credential_missing | ND | NULL | unchanged | recompute display | credential restored: next normal due; immediate retry only by reviewed manual action |
 | Source authorization change | no run; in-flight FAILED | blocked | blocked | LA if in-flight | unchanged | unchanged | source_unauthorized | unchanged | NULL | unchanged | recompute display | manual authorization + forward revision |
 | Account identity change | no run; in-flight FAILED | blocked | blocked | LA if in-flight | unchanged | unchanged | account_identity_invalid | unchanged | NULL | unchanged | recompute display | verify identity + forward revision |
-| DB/checkpoint failure | RUNNING retry-pending, then FAILED on exhaustion | active | degraded | LA | unchanged | +1 | database_unavailable | unchanged | NR or NULL on exhaustion | unchanged | recompute display | retry; manual after exhaustion |
-| lock lost | FAILED | active | degraded | LA | unchanged | +1 | lock_lost | unchanged | NR | unchanged | recompute display | stale/automatic retry |
+| DB/checkpoint failure | RUNNING retry-pending; on exhaustion FAILED, or PARTIAL if items committed | active | degraded | LA | unchanged | +1 | database_unavailable | unchanged while retrying; ND at terminal completion | NR while retrying; NULL terminal | last committed checkpoint only | recompute display | ordinary retry while RUNNING; normal cadence after terminal |
+| lock lost | old run immediately FAILED and RUNNING uniqueness released | active | degraded | LA | unchanged | +1 | lock_lost | unchanged | NR | last committed checkpoint only | recompute display | retry creates a new CollectionRun; audit links safe error+dispatch identity only |
 | stale recovery | FAILED | active unless separately blocked | degraded | unchanged | unchanged | +1 | stale_run | unchanged | classified NR/ND | unchanged | recompute display | automatic classified recovery |
 | manual pause | no run; in-flight FAILED | paused | unchanged | —/LA if in-flight | unchanged | unchanged | target_paused if in-flight | unchanged | NULL | unchanged | recompute display | manual resume + forward revision |
 | manual block | no run; in-flight FAILED | blocked | blocked | —/LA if in-flight | unchanged | unchanged | target_blocked | unchanged | NULL | unchanged | recompute display | manual reviewed unblock |
@@ -482,6 +505,9 @@ bounded retry time; `—` means unchanged/not applicable. Source aggregate is di
 
 Credential/config/authorization failures do not fast-loop. Coverage limitation does not increment failures. Only a
 complete success or valid no-new-items updates `last_success_at`; partial/failed/blocked outcomes never do.
+The same-run retry lineage applies only while a run is `RUNNING retry-pending`; lock-lost, stale-recovered and
+config-invalidated terminal runs are immutable, and any later retry creates a new CollectionRun. No parent-run schema
+is added; safe error code and dispatch identity provide the audit link.
 
 ## 12. Exact implementation file scope
 
@@ -526,11 +552,12 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 |---|---|---|
 | I-A | Migration A nullable expand + ORM compatibility + typed config registry | real-head linearity; old worker+A and new worker+A; deterministic target mapping; historical value-free audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
-| III | scheduler/claim/lock/retry/run/cursor/health | multi-target concurrency, target isolation, budgets, pagination-capability-none, restart/stale recovery |
+| III | scheduler/claim/lock/retry/run/cursor/health | rollback-eligible multi-target isolation, state matrix, budgets, pagination-capability-none, restart/stale recovery |
 | IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
 | I-B | Migration B final constraints after rollback-window approval | zero null/mismatch audit; new worker+B only; final constraints/triggers; forward recovery only |
 
-Each batch requires its own implementation review evidence inside the authorized implementation PR sequence.
+These are five acceptance batches (four functional batches plus Migration B finalization). Each batch requires its
+own implementation review evidence inside the authorized implementation PR sequence.
 No batch may activate production targets or perform bounded live verification without separate user authorization.
 
 ## 14. Required test matrix
@@ -545,7 +572,9 @@ No batch may activate production targets or perform bounded live verification wi
   replay/process restart, single enqueue per slot, retry lineage and no serialized config/credential.
 - concurrency: two same-provider targets both run; same target single owner; one failure does not block another;
   checkpoint compare-and-swap prevents stale overwrite; concurrent config edit, duplicate dispatch, pause/resume and
-  rollback generation make stale tasks fail before credential/network.
+  rollback generation make stale tasks fail before credential/network. During rollback, multi-target cases use
+  distinct legacy cursor identities and activation rejects duplicate `(source_account_id,legacy_cursor_type)`;
+  after Migration B, same-account targets prove independent target cursors.
 - budgets/pagination: operation units and request/runtime/byte ceilings; all initial operations require one page;
   `has_more=true` records truncated/incomplete/unsupported and never repeats page 1 or claims complete. Generic
   continuation contract is unit-tested without claiming Provider recovery support. Transport rejects oversized
@@ -559,11 +588,14 @@ No batch may activate production targets or perform bounded live verification wi
 - delivery: deterministic PENDING intent, atomic-or-reconcilable boundary, reconciler after intent failure,
   delivery-only DB polling/claim, missing credential preservation, retry/SENT dedup, Beat restart recovery and no
   simultaneous old/new delivery claim; exact candidate policy, cutover watermark, bounded keyset recovery and no
-  default historical backfill; Event delivery cannot gate collection.
+  default historical backfill; unresolved recovery AuditLogs are handled first and append a resolved AuditLog on
+  success so they do not scan forever; Event delivery cannot gate collection.
 - state machine: every row in §11.4, including config invalidation before/after run creation, pause/block/retire,
-  lock loss, stale recovery, retry exhaustion, credential/authorization changes and complete-success timestamps.
+  lock loss terminal-run/new-run retry, stale recovery, DB/checkpoint exhaustion normal cadence, credential missing
+  normal-cadence recovery, retry exhaustion, authorization changes and complete-success timestamps.
 - migration: real-head linearity, A upgrade/downgrade/re-upgrade, old worker+A, new worker+A, shadow comparison,
-  transactional cursor rollback drill, B finalization with new worker only, no double head and no PR #39 Draft migration.
+  phase-0 continuous collection-task drain, zero-run/null/count phase-3 verification, transactional cursor rollback
+  drill, rollback eligibility uniqueness, B finalization with new worker only, no double head and no PR #39 migration.
 - regression: all current Provider/CollectionRunner/RawItem/Evidence/Content/Event/Scheduler/Telegram tests PASS;
   network tests mock-only and package review contains no secret/local data.
 
@@ -576,7 +608,7 @@ No batch may activate production targets or perform bounded live verification wi
 - [ ] Reviewer accepts target-owned scheduling/state, budget, non-pageable v1 cursor and recovery contracts.
 - [ ] Reviewer accepts Notification intent/reconciler/delivery-only flow and Outbox non-use without schema changes.
 - [ ] Reviewer accepts legacy migration, shadow/cutover/rollback and single scheduler authority.
-- [ ] Reviewer accepts exact files, four implementation batches and test matrix.
+- [ ] Reviewer accepts exact files, five acceptance batches (four functional + Migration B finalization) and tests.
 - [ ] Foundation v2.3-FROZEN/R0 PASS is recorded, while R1 implementation remains unauthorized.
 - [ ] PR #39 remains Draft and untouched.
 - [ ] Docs-only validation PASS; no code/schema/runtime/request/credential action occurred.

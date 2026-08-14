@@ -110,8 +110,13 @@ PENDING Notification intent，独立 delivery-only task 从 DB claim/send，Tele
 并且只能清理自身 marker。HTTP transport 对 decoded body 在 JSON parse 前执行 hard byte budget。
 部署采用 Migration A nullable expand → old/new worker compatibility → shadow/cutover → cursor transactional
 dual-write rollback window → Migration B final constraints，禁止把 schema 与 worker 假定为原子部署。
+Migration A/backfill/scan/compatible runtime 部署期间持续停止所有 legacy collection/stale-recovery writer；
+只有 zero RUNNING、zero unmapped/null target identity 与 backfill count 一致后才恢复 compatible legacy authority。
+rollback window 每个 legacy `(source_account_id,cursor_type)` 只允许一个 active target；同账户多 target 在
+Migration B 后才启用，避免共享或覆盖 legacy cursor。
 Notification intent 只覆盖审核过的四 Provider、安全 Content kind 和 cutover watermark 之后的候选；默认
-不回补历史，恢复由 bounded DB keyset reconciler + unique dedup key 完成。
+不回补历史，也不存在未定义的 per-Content override；恢复先处理 unresolved AuditLog，成功后追加 resolved AuditLog，
+再执行 bounded watermark 后 missing-dedup scan。
 
 ### 2.1 Source Registry
 

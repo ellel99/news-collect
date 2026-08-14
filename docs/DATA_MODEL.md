@@ -169,6 +169,11 @@ v1 operation 均为 `none`、每 run 一次请求/一页；若 adapter 仍报告
 PARTIAL/`coverage_incomplete`，完整窗口 watermark 不推进。状态字段、迁移 A/B 和唯一规范状态矩阵以
 SPEC-0041 implementation contract 为准，本文件不另行定义竞争语义。
 
+rollback window 内 legacy cursor identity 为 `(source_account_id,legacy_cursor_type)`，每个 identity 最多
+一个 active target；同一账户的多个 `provider_cursor_v1` target 必须等 Migration B 完成、dual-write 停止且
+进入 forward-recovery-only 后才能激活。Notification recovery 不增加 ContentItem 字段：候选仅来自 cutover
+watermark 后的精确 policy；失败用 append-only AuditLog recovery/resolved pair 恢复和关闭。
+
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
 
 现有 bounded pipeline 的安全 projection 不能被描述为已完成的通用 durable contract。R2 将独立审核

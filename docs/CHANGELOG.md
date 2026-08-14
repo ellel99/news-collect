@@ -12,6 +12,11 @@
 - Defines deployable Migration A/B expand-contract sequencing, transactional cursor dual-write rollback, immutable
   legacy target mapping, exact notification cutover watermark/candidate policy and a single normative state matrix.
 - Requires decoded response-byte enforcement before JSON parsing and durable PARTIAL coverage-incomplete semantics.
+- Limits rollback-window activation to one target per legacy account/cursor identity; same-account multi-target begins
+  only after Migration B disables dual-write and establishes forward-recovery-only operation.
+- Holds all legacy collection/stale-recovery writers through Migration A/backfill/scan/compatible deployment, fixes
+  terminal retry/cadence semantics, and replaces an undefined per-Content override with append-only AuditLog closure.
+- Clarifies five acceptance batches: four functional batches plus Migration B finalization.
 - 从 `main@9c68dd6` 重新审计 ORM、migration、generic dispatcher/task、CollectionRunner、Provider runtime、
   Notification/Outbox、Redis lock/retry 与测试，未复制旧架构假设。
 - 新增 implementation-ready SPEC-0041 contract：固定 global immutable `target_key`、最终

@@ -176,7 +176,8 @@ validated target descriptor
 - credential 只在 worker runtime 按 provider/credential reference 解析，不可由 CLI task argument 注入；
 - factory 必须验证 adapter.provider 与 target provider、operation、contract version 匹配；
 - transport host/method/endpoint family 逐 operation allowlist；禁止 fallback 到网页或其他 provider；
-- credential missing 是 target-level blocked/config failure，不泄露名称或值，也不阻止其他 target。
+- credential missing 不泄露名称或值，也不阻止其他 target；R1 最终 implementation contract 固定为
+  target 保持 active/degraded、不创建 run、不 fast-retry，并在下一 normal cadence 自动复核 credential。
 
 现有 `AdapterRegistry` 与 `ProviderAdapterRegistry` 在实现期合并到上述一个 production factory；fake
 作为明确 `fake/test` operation 保留，不能成为真实 provider fallback。
@@ -188,7 +189,8 @@ validated target descriptor
 3. 以 target+scheduled slot 原子 claim dispatch marker；并发 Beat/restart 只能 enqueue 一次。
 4. task payload 只发送 `target_id`、slot、dispatch id。
 5. Worker 重新加载 target，获取 target owner-token lock，并创建 target-bound `CollectionRun`。
-6. Factory 注入 adapter/credential/transport；runner 执行受 budget 限制的 pages。
+6. Factory 注入 adapter/credential/transport；runner 执行受 budget 限制的 operation。首批四个 v1
+   operation 均不具备 pagination capability，最多一次请求；通用分页接口不等于当前 operation 可分页。
 7. 每 batch 原子持久化 RawItem/sidecar downstream input；成功后才 checkpoint。
 8. 完成、continuation、no-new-items 或分类失败分别更新 target health/next eligible time。
 9. 安全释放 lock；stale recovery 按 target/run 恢复，不推进 cursor。
@@ -255,7 +257,8 @@ Retry 是 target state，不能复用 provider cadence key。non-retryable failu
    `origin=legacy_bootstrap`、config schema/version、source/account ids 和 migration timestamp。
 3. AAPL、technology、electricity、SEC ticker/CIK 只作为历史 bootstrap 值迁移，**不自动 active，
    不代表生产授权**；Reviewer 必须逐 target 确认 operation、quota、cadence、retention。
-4. 现有 account cursor 仅在能证明 account 对应唯一 target 且 cursor codec 匹配时绑定；否则 target
+4. 现有 account cursor 仅在能证明 account 对应唯一 target 且 cursor codec 匹配时绑定；rollback window
+   内同一 `(source_account_id,legacy_cursor_type)` 最多一个 active target，否则 target
    保持 blocked，生成不含值的 migration audit，不复制/猜测 cursor。
 5. dual-read shadow validation 对比旧/新 due 与 cursor，不双写外部 request；Reviewer 批准后切换 dispatcher。
 6. 停止特殊 multi-provider Beat，再启用统一 task；保留 rollback window。
@@ -318,7 +321,7 @@ SPEC_INDEX 与 CHANGELOG。Foundation v2.2-FROZEN 仍是当前唯一生效版本
 | factory | real authorized operation resolved；unknown provider/operation 无 fallback |
 | credential | 不进入 DB/task/repr/log/error/package；worker-only injection |
 | request budget | operation unit、target override、plan ceiling、hard ceiling、quota group 生效 |
-| pagination | has_more 继续；max page/runtime 保存 continuation；不得用 `max_batches=1` 掩盖 |
+| pagination | 首批 v1 operation `has_more` 记录 PARTIAL/coverage_incomplete 并停止；不得重复第一页或伪装 complete；future pageable operation 另行审核 |
 | cursor | strict/snapshot/compound/page/date/backfill/revision cases；same timestamp tie-breaker |
 | persistence | checkpoint only after successful RawItem persistence |
 | restart/stale | committed continuation recovery；stale run 不推进 cursor |

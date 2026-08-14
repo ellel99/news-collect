@@ -43,6 +43,10 @@ document only; a separate explicit implementation authorization is still require
 - only one scheduler is authoritative; shadow mode performs no request/enqueue/write.
 - deployment is expand/contract: Migration A remains old/new-worker compatible, cursor rollback uses transactional
   dual-write, and Migration B is applied only after the reviewed rollback window closes.
+- phases 0–3 continuously stop every legacy collection/stale-recovery writer; legacy authority resumes only through
+  compatible runtime after zero RUNNING/null-unmapped rows and exact backfill-count verification.
+- rollback activation permits at most one active target per `(source_account_id,legacy_cursor_type)`; same-account
+  multi-target begins only after Migration B and rollback-window closure.
 - PR #39 Draft migrations are excluded; implementation revision derives from the then-current real main head.
 
 ## 3. Review checklist
@@ -60,11 +64,12 @@ document only; a separate explicit implementation authorization is still require
 - [ ] collection remains independent from Notification/Telegram/Event delivery through durable PENDING intent,
   reconciliation and a delivery-only DB polling task.
 - [ ] Notification candidate policy, cutover watermark, bounded reconciler and no-default-history rule are exact.
+- [ ] recovery AuditLogs are append-only closed after intent recovery; no undefined per-Content override exists.
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
 - [ ] Migration A compatibility, shadow/cutover, cursor dual-write rollback and Migration B finalization guarantee one
   authoritative scheduler and a deployable rolling sequence.
 - [ ] the normative state matrix and config-revision in-flight state machine cover all terminal/retry/manual states.
-- [ ] exact implementation files, four batches and PostgreSQL/Redis/Celery test matrix are accepted.
+- [ ] exact implementation files, five acceptance batches (four functional + Migration B) and test matrix are accepted.
 - [ ] R2–R8, Provider expansion, Event/Evidence/Fact/AI and Market Validation remain out of scope.
 - [ ] PR #39 remains Draft and untouched.
 
