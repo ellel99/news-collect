@@ -147,7 +147,7 @@ Phase 1 的 `summary` 只表示来源直接提供的摘要，字段实现时应�
 `collection_options` 是既有兼容字段，不再作为长期 production target contract。SPEC-0041 Docs
 Review 提议新增 `CollectionTarget` 与 typed/versioned config，并把 cursor/run/health 绑定到 target；
 当前尚无 migration 或 schema change，既有字段仍是运行事实。Foundation v2.3 Freeze Review 已 PASS，
-R1 implementation contract 正在 Docs Review；只有 Review PASS 后的单独明确授权才能形成 migration
+R1 implementation contract Docs Review 已 PASS，且用户已单独明确授权；只有独立 Implementation PR 才能形成 migration
 implementation authority。最终 schema 见
 `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`。
 
@@ -162,7 +162,7 @@ R1 最终合同还区分 `operation_config_version`（typed schema）、`provide
 单调 `config_revision`（执行 generation）。RawItem 不重复保存 target_id，而由不可变
 RawItem→CollectionRun→CollectionTarget 追溯；PostgreSQL 必须以 null-safe source/account 一致性约束
 保护该链。ContentItem/EvidenceItem 已复制 provenance 的完整 DB audit/constraint 决策是 R2/R8 强制
-前置项，本 R1 Docs Review 不修改 schema。
+前置项；已完成的 R1 Docs Review 本身不修改 schema。
 
 `pagination_capability` 不是数据库中的第二份配置，而是 typed operation registry 的唯一权威。首批四个
 v1 operation 均为 `none`、每 run 一次请求/一页；若 adapter 仍报告 `has_more=true`，run 必须持久化为

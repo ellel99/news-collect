@@ -1,6 +1,6 @@
 # SPEC-0041 Implementation — Unified Production Collection Control Plane
 
-状态：Active — Docs Review only；implementation not authorized
+状态：Active — Implementation Review；Docs Review PASS；implementation explicitly authorized after docs closeout merge
 
 Readiness step：R1
 
@@ -12,7 +12,8 @@ Foundation：v2.3-FROZEN（R0 Completed / PASS）
 
 本文件把已通过的 SPEC-0041 架构收敛为可直接实施的 R1 合同。本轮只审核文档，不修改 Python、
 Alembic、ORM/schema、runtime config 或测试逻辑，不读取 credential/`.env`，不执行 migration 或任何
-Provider、Telegram、AI 请求。Docs Review PASS 仍不等于 implementation authorization。
+Provider、Telegram、AI 请求。Docs Review 已以 `PASS — DOCS ONLY` 完成；用户于 2026-08-14 单独明确授权
+本合同在 docs closeout 合并后进入 bounded implementation。
 
 PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrations 不属于 `main`。R1 实施必须
 从实施授权时真实 `main` 和真实 Alembic head 开始。

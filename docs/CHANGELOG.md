@@ -2,6 +2,9 @@
 
 ## Unreleased — R1 Unified Production Collection Control Plane Docs Review
 
+- R1 Docs Review closeout recorded `PASS — DOCS ONLY` on 2026-08-14 at reviewed head
+  `52d316029de1f1eb0264825819b84d3d639c060f`; a separate explicit user command authorizes I-A/II/III/IV
+  implementation only after this docs closeout merges. Migration B and production activation remain unauthorized.
 - Review fix separates typed schema/adapter versions from monotonic target `config_revision`, with exact dispatch/
   worker generation checks and revision-race tests.
 - Corrects pagination claims: current Marketaux/EIA/SEC/Finnhub v1 operations are non-pageable; `has_more` records

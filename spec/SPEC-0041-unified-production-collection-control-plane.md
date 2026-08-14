@@ -56,7 +56,8 @@ flowchart TD
 - Active Foundation：v2.3-FROZEN；R0 Freeze Review 已 PASS/Completed。该 PASS 只允许 R1 进入独立
   SPEC/Docs Review，不授权 CollectionTarget/schema、migration、runtime 或外部请求。
 - R1 Docs Review 的唯一实施合同为
-  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；implementation not authorized。
+  `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；该合同 Docs Review 已 PASS，
+  用户已单独授权在 docs closeout 合并后开始 bounded implementation。
 - Provider-neutral、failure-visible、credential isolation、Broad Scan 与 Controlled Push 决策继续生效。
 - SPEC-0041 是唯一 Docs Review；不与 PR #39 的未合并 SPEC-0040 并行实施。
 - NewsAPI.ai / Event Registry 保持 future/blocked；GDELT 保持 runtime blocked/future evaluation。
@@ -272,7 +273,8 @@ new-only state 或完成可验证导出时允许，否则 BLOCKED。不得 down 
 当前 Marketaux/Finnhub/EIA/SEC 达到第 2 级及已审核 scheduler runtime；尚未达到第 3 级。Phase 1 core
 technical path PASS 仍成立，但完整 operations/backup/restore、X 与统一生产控制面是后置能力。
 
-Foundation v2.3-FROZEN 当前生效；R0 Completed/PASS，R1 仅 Active — Docs Review，implementation 未授权。
+Foundation v2.3-FROZEN 当前生效；R0 Completed/PASS，R1 Docs Review 已 PASS，implementation 已由用户
+明确授权在 docs closeout 合并后启动。
 本 PR 只维护控制面 architecture + normative implementation contract，不执行 migration/runtime。
 
 ## 13. Future implementation exact file scope
@@ -361,4 +363,4 @@ Provider/network tests mock-only；任何 live verification 需未来独立、�
 | Docs Review 0 | REQUEST CHANGES | Foundation conflict、readiness 路线、PR #39 freeze、Provider 状态 | 新增 v2.3 Draft、R0–R9 program 并统一状态 |
 | Docs Review 1 | PASS（2026-08-13） | 文档范围与治理门禁通过 | 仅批准 architecture Docs Review |
 | R0 Freeze Review | PASS（2026-08-13） | 八项有限 Foundation authorization | v2.3-FROZEN；不自动启动 R1 |
-| R1 Docs Review | PENDING | 最终 implementation contract | Active docs-only；implementation not authorized |
+| R1 Docs Review | PASS（2026-08-14） | 最终 implementation contract | Docs-only closeout；implementation separately authorized after merge |

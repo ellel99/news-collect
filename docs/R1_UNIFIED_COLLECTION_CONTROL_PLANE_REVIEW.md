@@ -1,14 +1,14 @@
 # R1 Unified Production Collection Control Plane — Docs Review Package
 
-Status：DRAFT — Reviewer decision PENDING
+Status：COMPLETED — Reviewer decision PASS（docs-only，2026-08-14）
 
 Foundation：v2.3-FROZEN
 
 R0：Completed / PASS
 
-Active SPEC：SPEC-0041 Implementation — Docs Review only
+Active SPEC：SPEC-0041 Implementation — Active — Implementation Review
 
-Implementation：NOT AUTHORIZED / NOT STARTED
+Implementation：AUTHORIZED by explicit user command after this docs closeout merges；NOT STARTED in this PR
 
 Baseline：`main@9c68dd6effe67d6f798fb080fdbffa6f80b77532`
 
@@ -95,9 +95,11 @@ document only; a separate explicit implementation authorization is still require
 
 ## 5. Reviewer result
 
-Current result：**PENDING**.
+Current result：**PASS — DOCS ONLY**（2026-08-14；reviewed head
+`52d316029de1f1eb0264825819b84d3d639c060f`）.
 
-Reviewer must explicitly record `PASS` or `REQUEST CHANGES`. A PASS does not start implementation.
+The separate explicit user command dated 2026-08-14 authorizes R1 implementation to start only after this docs
+closeout merges. This PR remains docs-only and does not itself contain implementation.
 
 ## 6. Validation evidence
 
