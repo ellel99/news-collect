@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from market_intelligence.collection.control_plane import (
     TargetDispatch,
     TargetScheduler,
     dispatch_task_id,
+    recover_stale_target_runs,
 )
 from market_intelligence.collection.locking import retry_marker_key
 from market_intelligence.collection.registry import build_fake_registry
@@ -177,12 +178,17 @@ async def _dispatch_control_plane() -> int:
     redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         repository = TargetRepository(factory, build_operation_registry())
-        requests = await TargetScheduler(repository, redis).claim_due(datetime.now(UTC))
+        scheduler = TargetScheduler(repository, redis)
+        requests = await scheduler.claim_due(datetime.now(UTC))
         for request in requests:
-            run_collection_target.apply_async(
-                kwargs=request.payload(),
-                task_id=dispatch_task_id(request.dispatch_id),
-            )
+            try:
+                run_collection_target.apply_async(
+                    kwargs=request.payload(),
+                    task_id=dispatch_task_id(request.dispatch_id),
+                )
+            except Exception:
+                await scheduler.release(request)
+                raise
         return len(requests)
     finally:
         await redis.aclose()
@@ -236,3 +242,25 @@ def run_collection_target(
             await engine.dispose()
 
     return asyncio.run(run())
+
+
+@celery_app.task(name="collection.control_plane.recover_stale")  # type: ignore[untyped-decorator]
+def recover_stale_collection_targets() -> dict[str, int]:
+    async def run() -> int:
+        settings = get_settings()
+        engine = create_engine(settings)
+        factory = create_session_factory(engine)
+        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            return await recover_stale_target_runs(
+                factory,
+                redis,
+                stale_before=datetime.now(UTC)
+                - timedelta(seconds=settings.COLLECTION_STALE_RUN_AFTER_SECONDS),
+                retry_delay_seconds=settings.COLLECTION_RETRY_BASE_SECONDS,
+            )
+        finally:
+            await redis.aclose()
+            await engine.dispose()
+
+    return {"recovered": asyncio.run(run())}

@@ -45,8 +45,10 @@ document only; a separate explicit implementation authorization is still require
   dual-write, and Migration B is applied only after the reviewed rollback window closes.
 - phases 0–3 continuously stop every legacy collection/stale-recovery writer; legacy authority resumes only through
   compatible runtime after zero RUNNING/null-unmapped rows and exact backfill-count verification.
-- rollback ownership permits only one target of any status per `(source_account_id,legacy_cursor_type)`; pause,
-  block, retire or config revision never releases it. Same-account multi-target begins only after Migration B.
+- rollback ownership permits only one **active** target per `(source_account_id,legacy_cursor_type)` through the
+  temporary partial unique index; draft/paused/blocked candidates do not own the runtime rollback identity. An active
+  target must be paused through the reviewed lifecycle before another reviewed target can claim that identity.
+  Same-account concurrent active multi-target operation begins only after Migration B.
 - `legacy_cursor_type varchar(100) NULL` is written only by migration-Phase-2 target INSERT from the static registry;
   every UPDATE is permanently forbidden and there is no repository initialization/transfer API.
 - three DB objects have distinct lifecycles: Migration A creates and Migration B retains the permanent identity/
@@ -77,8 +79,8 @@ document only; a separate explicit implementation authorization is still require
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
 - [ ] Migration A compatibility, shadow/cutover, cursor dual-write rollback and Migration B finalization guarantee one
   authoritative scheduler and a deployable rolling sequence.
-- [ ] DB-enforced rollback activation requires non-null account/type; rollback ownership is unique across every target
-  status and is not released by pause/block/retire. Migration B removes only the two temporary restrictions after
+- [ ] DB-enforced rollback activation requires non-null account/type; rollback ownership is unique across active
+  targets and is released only by a reviewed transition out of active. Migration B removes the two temporary restrictions after
   forward-recovery-only cutover and retains permanent immutability.
 - [ ] the normative state matrix and config-revision in-flight state machine cover all terminal/retry/manual states.
 - [ ] exact implementation files, five acceptance batches (four functional + Migration B) and test matrix are accepted.

@@ -2,6 +2,13 @@
 
 ## Unreleased — R1 Unified Production Collection Control Plane Implementation
 
+- Closes the consolidated PR #43 A1–A18 review ledger with an expand-only Migration A, explicit deterministic Phase 2,
+  recursive DB operation-config guard, safe downgrade refusal, target CAS/keyset scheduling, bounded worker retry/
+  lock/rate/cursor contracts, provider-neutral RawItem→Content→Evidence→Event/intent persistence, exact Notification
+  recovery/delivery state machines and real read-only authority audits.
+- Adds PostgreSQL behavior coverage for INSERT-time Phase 2 mapping/backfill, config rejection, provenance and active
+  rollback ownership; four-provider downstream idempotency/provenance; exact persisted Notification watermark,
+  recovery linkage, credential preservation and policy isolation; and scheduler contention beyond the first page.
 - Implements the authorized I-A/II/III/IV bounded scope behind inactive control-plane boundaries: Migration A
   `0006`, target repository/runtime contracts, target scheduler/worker, safe Notification intent reconciliation and
   delivery-only Telegram task.

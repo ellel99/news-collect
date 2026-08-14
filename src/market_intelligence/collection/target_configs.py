@@ -102,7 +102,7 @@ def _sec(config: Mapping[str, Any]) -> Mapping[str, Any]:
         raise TargetConfigError("operation_config_invalid")
     if cik is not None and (not isinstance(cik, str) or re.fullmatch(r"[0-9]{1,10}", cik) is None):
         raise TargetConfigError("operation_config_invalid")
-    if ticker is None and cik is None:
+    if ticker is None or cik is None:
         raise TargetConfigError("operation_config_invalid")
     result = dict(config)
     if cik is not None:

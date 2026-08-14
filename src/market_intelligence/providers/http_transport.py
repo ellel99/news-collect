@@ -10,6 +10,7 @@ from typing import Final
 import httpx
 
 from market_intelligence.providers.contracts import (
+    ProviderResponseTooLarge,
     ProviderTransportRequest,
     ProviderTransportResponse,
     ProviderTransportTimeout,
@@ -117,14 +118,14 @@ async def _bounded_get(
         if declared is not None:
             try:
                 if int(declared) > request.max_response_bytes:
-                    raise RuntimeError("provider_response_too_large")
+                    raise ProviderResponseTooLarge("provider_response_too_large")
             except ValueError:
                 pass
         body = bytearray()
         async for chunk in response.aiter_bytes():
             body.extend(chunk)
             if len(body) > request.max_response_bytes:
-                raise RuntimeError("provider_response_too_large")
+                raise ProviderResponseTooLarge("provider_response_too_large")
         return response.status_code, response.headers, bytes(body)
 
 

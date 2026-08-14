@@ -3,8 +3,6 @@
 # ruff: noqa: E501
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -40,160 +38,42 @@ ENUMS: tuple[postgresql.ENUM, ...] = (
 )
 
 
-def _legacy_contract(provider: str, options: dict[str, Any]) -> dict[str, Any] | None:
-    contracts: dict[str, tuple[str, str, str, str, int, str]] = {
-        "fake": ("fake_sequence", "strict_incremental", "incremental", "ignore", 100, "fake:test"),
-        "marketaux": ("news_all", "compound", "incremental", "ignore", 3, "marketaux:default"),
-        "finnhub": ("quote", "compound", "incremental", "ignore", 1, "finnhub:default"),
-        "eia": (
-            "electricity_retail_sales",
-            "compound",
-            "snapshot",
-            "safe_replace",
-            5,
-            "eia:default",
-        ),
-        "sec_edgar": (
-            "submissions_recent",
-            "revision",
-            "snapshot",
-            "reconcile",
-            10,
-            "sec-edgar:public",
-        ),
-    }
-    item = contracts.get(provider)
-    if item is None:
-        return None
-    operation, strategy, mode, revision_policy, limit, rate_group = item
-    config: dict[str, Any]
-    if provider == "marketaux":
-        config = {key: options[key] for key in ("query", "language", "symbols") if key in options}
-        if not isinstance(config.get("query"), str) or not config["query"].strip():
-            return None
-    elif provider == "finnhub":
-        config = {"symbol": options.get("symbol")}
-        if not isinstance(config["symbol"], str) or not config["symbol"]:
-            return None
-    elif provider == "eia":
-        if options.get("dataset") != "electricity":
-            return None
-        config = {"dataset": "electricity"}
-    elif provider == "sec_edgar":
-        config = {key: options[key] for key in ("ticker", "cik") if key in options}
-        if not config or any(not isinstance(value, str) or not value for value in config.values()):
-            return None
-    else:
-        config = {key: value for key, value in options.items() if key in {"values", "has_more"}}
-    return {
-        "operation_key": operation,
-        "operation_config": config,
-        "cursor_strategy": strategy,
-        "collection_mode": mode,
-        "revision_policy": revision_policy,
-        "batch_limit": limit,
-        "rate_limit_group": rate_group,
-    }
-
-
-def _create_legacy_targets() -> None:
-    bind = op.get_bind()
-    rows = bind.execute(
-        sa.text(
-            """
-            SELECT s.id AS source_id, s.access_method, s.schedule_seconds,
-                   a.id AS account_id, COALESCE(a.collection_options, '{}'::jsonb) AS options
-            FROM sources s
-            LEFT JOIN source_accounts a ON a.source_id = s.id
-            ORDER BY s.id, a.id
-            """
-        )
-    ).mappings()
-    now = datetime.now(UTC)
-    candidates: list[dict[str, Any]] = []
-    ownership: dict[tuple[Any, str], int] = {}
-    for row in rows:
-        contract = _legacy_contract(str(row["access_method"]), dict(row["options"]))
-        account_id = row["account_id"]
-        provider = str(row["access_method"])
-        legacy_type = (
-            None
-            if account_id is None or contract is None
-            else ("fake_sequence" if provider == "fake" else "provider_cursor_v1")
-        )
-        candidate = {"row": row, "contract": contract, "legacy_type": legacy_type}
-        candidates.append(candidate)
-        if legacy_type is not None:
-            key = (account_id, legacy_type)
-            ownership[key] = ownership.get(key, 0) + 1
-    for candidate in candidates:
-        row = candidate["row"]
-        contract = candidate["contract"]
-        account_id = row["account_id"]
-        provider = str(row["access_method"])
-        legacy_type = candidate["legacy_type"]
-        if legacy_type is not None and ownership[(account_id, legacy_type)] != 1:
-            legacy_type = None
-        valid = contract is not None and (account_id is not None or provider == "fake")
-        status = "paused" if valid else "blocked"
-        if contract is None:
-            contract = {
-                "operation_key": "unsupported",
-                "operation_config": {},
-                "cursor_strategy": "strict_incremental",
-                "collection_mode": "incremental",
-                "revision_policy": "ignore",
-                "batch_limit": 1,
-                "rate_limit_group": "blocked:unsupported",
-            }
-        identity = (
-            f"account.{str(account_id).lower()}"
-            if account_id
-            else f"source.{str(row['source_id']).lower()}"
-        )
-        bind.execute(
-            sa.text(
-                """
-                INSERT INTO collection_targets (
-                    target_key, source_id, source_account_id, operation_key, legacy_cursor_type,
-                    operation_config_version, provider_contract_version, config_revision, operation_config,
-                    status, cadence_seconds, batch_limit, max_requests_per_run, max_pages_per_run,
-                    max_response_bytes, request_timeout_seconds, max_runtime_seconds, cursor_strategy,
-                    cursor_version, collection_mode, backfill_policy, revision_policy, rate_limit_group,
-                    priority, next_due_at, consecutive_failures, health_status, created_at, updated_at
-                ) VALUES (
-                    :target_key, :source_id, :account_id, :operation_key, :legacy_type,
-                    1, 1, 1, CAST(:config AS jsonb), :status, :cadence, :batch_limit, 1, 1,
-                    1000000, 30, 120, :cursor_strategy, 1, :collection_mode, 'disabled',
-                    :revision_policy, :rate_group, 100, :now, 0, 'unknown', :now, :now
-                )
-                """
-            ),
-            {
-                "target_key": f"legacy.{provider}.{identity}",
-                "source_id": row["source_id"],
-                "account_id": account_id,
-                "operation_key": contract["operation_key"],
-                "legacy_type": legacy_type,
-                "config": __import__("json").dumps(contract["operation_config"]),
-                "status": status,
-                "cadence": int(row["schedule_seconds"] or 3600),
-                "batch_limit": contract["batch_limit"],
-                "cursor_strategy": contract["cursor_strategy"],
-                "collection_mode": contract["collection_mode"],
-                "revision_policy": contract["revision_policy"],
-                "rate_group": contract["rate_limit_group"],
-                "now": now,
-            },
-        )
-
-
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.execute(
         sa.text("SELECT count(*) FROM collection_runs WHERE status='running'")
     ).scalar_one():
         raise RuntimeError("migration_a_requires_zero_running_collection_runs")
+    provenance_mismatches = bind.execute(
+        sa.text("""
+        SELECT count(*) FROM raw_items i
+        JOIN collection_runs r ON r.id=i.collection_run_id
+        WHERE i.source_id IS DISTINCT FROM r.source_id
+           OR i.source_account_id IS DISTINCT FROM r.source_account_id
+        """)
+    ).scalar_one()
+    if provenance_mismatches:
+        raise RuntimeError("migration_a_historical_provenance_mismatch")
+    duplicate_external = bind.execute(
+        sa.text("""
+        SELECT count(*) FROM (
+          SELECT source_id, external_id FROM raw_items
+          WHERE external_id IS NOT NULL
+          GROUP BY source_id, external_id HAVING count(*) > 1
+        ) duplicated
+        """)
+    ).scalar_one()
+    duplicate_hash = bind.execute(
+        sa.text("""
+        SELECT count(*) FROM (
+          SELECT source_id, payload_hash FROM raw_items
+          WHERE external_id IS NULL AND payload_hash IS NOT NULL
+          GROUP BY source_id, payload_hash HAVING count(*) > 1
+        ) duplicated
+        """)
+    ).scalar_one()
+    if duplicate_external or duplicate_hash:
+        raise RuntimeError("migration_a_raw_identity_conflict")
     for enum_type in ENUMS:
         enum_type.create(bind, checkfirst=True)
     op.create_unique_constraint(
@@ -338,7 +218,7 @@ def upgrade() -> None:
         "collection_targets",
         ["source_account_id", "legacy_cursor_type"],
         unique=True,
-        postgresql_where=sa.text("legacy_cursor_type IS NOT NULL"),
+        postgresql_where=sa.text("status = 'active' AND legacy_cursor_type IS NOT NULL"),
     )
     op.create_index(
         "ix_collection_targets_source_status", "collection_targets", ["source_id", "status"]
@@ -364,7 +244,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("status = 'active' AND next_retry_at IS NOT NULL"),
     )
 
-    _create_legacy_targets()
     op.add_column(
         "collection_runs", sa.Column("target_id", postgresql.UUID(as_uuid=True), nullable=True)
     )
@@ -441,21 +320,34 @@ def upgrade() -> None:
         postgresql_where=sa.text("target_id IS NOT NULL"),
     )
     op.execute("""
-        UPDATE collection_runs r SET target_id=t.id
-        FROM collection_targets t
-        WHERE r.target_id IS NULL AND r.source_id=t.source_id
-          AND r.source_account_id IS NOT DISTINCT FROM t.source_account_id
-          AND (SELECT count(*) FROM collection_targets x
-               WHERE x.source_id=r.source_id
-                 AND x.source_account_id IS NOT DISTINCT FROM r.source_account_id)=1
+    CREATE FUNCTION r1_operation_config_safe(config_value jsonb) RETURNS boolean AS $$
+    DECLARE item record; BEGIN
+      IF jsonb_typeof(config_value)='object' THEN
+        FOR item IN SELECT entry.key, entry.value FROM jsonb_each(config_value) AS entry LOOP
+          IF item.key ~* '(api[_-]?key|api[_-]?token|token|password|secret|authorization|url|endpoint|module|class|import)'
+             OR NOT r1_operation_config_safe(item.value) THEN RETURN false; END IF;
+        END LOOP;
+      ELSIF jsonb_typeof(config_value)='array' THEN
+        FOR item IN SELECT element.value FROM jsonb_array_elements(config_value) AS element LOOP
+          IF NOT r1_operation_config_safe(item.value) THEN RETURN false; END IF;
+        END LOOP;
+      ELSIF jsonb_typeof(config_value)='string' THEN
+        IF trim(both '"' from config_value::text) ~* '(https?://|api[_-]?key|api[_-]?token|token|password|secret|authorization)'
+          THEN RETURN false; END IF;
+      END IF;
+      RETURN true;
+    END; $$ LANGUAGE plpgsql IMMUTABLE
     """)
     op.execute("""
-        UPDATE collection_cursors c SET target_id=t.id
-        FROM collection_targets t
-        WHERE c.target_id IS NULL AND c.source_account_id=t.source_account_id
-          AND c.cursor_type=t.legacy_cursor_type
+    CREATE FUNCTION r1_operation_config_guard() RETURNS trigger AS $$ BEGIN
+      IF NOT r1_operation_config_safe(NEW.operation_config) THEN
+        RAISE EXCEPTION 'collection_target_operation_config_unsafe'; END IF;
+      RETURN NEW; END; $$ LANGUAGE plpgsql
     """)
-
+    op.execute("""
+    CREATE TRIGGER trg_r1_operation_config_guard BEFORE INSERT OR UPDATE OF operation_config
+      ON collection_targets FOR EACH ROW EXECUTE FUNCTION r1_operation_config_guard()
+    """)
     op.execute("""
     CREATE FUNCTION r1_target_identity_guard() RETURNS trigger AS $$ BEGIN
       IF NEW.target_key IS DISTINCT FROM OLD.target_key OR NEW.source_id IS DISTINCT FROM OLD.source_id
@@ -494,12 +386,43 @@ def upgrade() -> None:
           RAISE EXCEPTION 'collection_run_target_provenance_mismatch'; END IF;
       END IF;
       IF TG_OP='INSERT' THEN RETURN NEW; END IF;
+      IF OLD.target_id IS NULL AND NEW.target_id IS NOT NULL
+         AND current_setting('r1.phase2_backfill', true)='on'
+         AND NEW.source_id IS NOT DISTINCT FROM OLD.source_id
+         AND NEW.source_account_id IS NOT DISTINCT FROM OLD.source_account_id
+         AND NEW.run_mode IS NOT DISTINCT FROM OLD.run_mode THEN RETURN NEW; END IF;
       IF NEW.target_id IS DISTINCT FROM OLD.target_id OR NEW.source_id IS DISTINCT FROM OLD.source_id
          OR NEW.source_account_id IS DISTINCT FROM OLD.source_account_id OR NEW.run_mode IS DISTINCT FROM OLD.run_mode THEN
         RAISE EXCEPTION 'collection_run_identity_immutable'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql
     """)
     op.execute("""
     CREATE TRIGGER trg_r1_run_identity_guard BEFORE INSERT OR UPDATE ON collection_runs FOR EACH ROW EXECUTE FUNCTION r1_run_identity_guard();
+    """)
+    op.execute("""
+    CREATE FUNCTION r1_cursor_identity_guard() RETURNS trigger AS $$ DECLARE t collection_targets%ROWTYPE; BEGIN
+      IF NEW.target_id IS NOT NULL THEN
+        SELECT * INTO t FROM collection_targets WHERE id=NEW.target_id;
+        IF NOT FOUND OR NEW.source_account_id IS DISTINCT FROM t.source_account_id THEN
+          RAISE EXCEPTION 'collection_cursor_target_provenance_mismatch'; END IF;
+      END IF;
+      IF TG_OP='INSERT' THEN RETURN NEW; END IF;
+      IF OLD.target_id IS NULL AND NEW.target_id IS NOT NULL
+         AND current_setting('r1.phase2_backfill', true)='on'
+         AND NEW.source_account_id IS NOT DISTINCT FROM OLD.source_account_id
+         AND NEW.cursor_type IS NOT DISTINCT FROM OLD.cursor_type
+         AND NEW.cursor_version IS NOT DISTINCT FROM OLD.cursor_version
+         AND NEW.run_mode IS NOT DISTINCT FROM OLD.run_mode THEN RETURN NEW; END IF;
+      IF NEW.target_id IS DISTINCT FROM OLD.target_id
+         OR NEW.source_account_id IS DISTINCT FROM OLD.source_account_id
+         OR NEW.cursor_type IS DISTINCT FROM OLD.cursor_type
+         OR NEW.cursor_version IS DISTINCT FROM OLD.cursor_version
+         OR NEW.run_mode IS DISTINCT FROM OLD.run_mode THEN
+        RAISE EXCEPTION 'collection_cursor_identity_immutable'; END IF;
+      RETURN NEW; END; $$ LANGUAGE plpgsql
+    """)
+    op.execute("""
+    CREATE TRIGGER trg_r1_cursor_identity_guard BEFORE INSERT OR UPDATE ON collection_cursors
+      FOR EACH ROW EXECUTE FUNCTION r1_cursor_identity_guard()
     """)
     op.execute("""
     CREATE FUNCTION r1_raw_run_provenance_guard() RETURNS trigger AS $$ DECLARE r collection_runs%ROWTYPE; BEGIN
@@ -511,12 +434,40 @@ def upgrade() -> None:
     CREATE CONSTRAINT TRIGGER trg_r1_raw_run_provenance_guard AFTER INSERT OR UPDATE OF collection_run_id,source_id,source_account_id
       ON raw_items DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION r1_raw_run_provenance_guard()
     """)
+    op.create_index(
+        "uq_raw_items_source_external_identity",
+        "raw_items",
+        ["source_id", "external_id"],
+        unique=True,
+        postgresql_where=sa.text("external_id IS NOT NULL"),
+    )
+    op.create_index(
+        "uq_raw_items_source_projection_hash",
+        "raw_items",
+        ["source_id", "payload_hash"],
+        unique=True,
+        postgresql_where=sa.text("external_id IS NULL AND payload_hash IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    unsafe = bind.execute(
+        sa.text("""
+      SELECT EXISTS(SELECT 1 FROM collection_runs WHERE target_id IS NOT NULL)
+          OR EXISTS(SELECT 1 FROM collection_cursors WHERE target_id IS NOT NULL)
+          OR EXISTS(SELECT 1 FROM collection_targets)
+    """)
+    ).scalar_one()
+    if unsafe:
+        raise RuntimeError("migration_a_downgrade_unsafe_target_state")
+    op.drop_index("uq_raw_items_source_projection_hash", table_name="raw_items")
+    op.drop_index("uq_raw_items_source_external_identity", table_name="raw_items")
     for statement in (
         "DROP TRIGGER trg_r1_raw_run_provenance_guard ON raw_items",
         "DROP FUNCTION r1_raw_run_provenance_guard()",
+        "DROP TRIGGER IF EXISTS trg_r1_cursor_identity_guard ON collection_cursors",
+        "DROP FUNCTION IF EXISTS r1_cursor_identity_guard()",
         "DROP TRIGGER trg_r1_run_identity_guard ON collection_runs",
         "DROP FUNCTION r1_run_identity_guard()",
         "DROP TRIGGER trg_r1_active_legacy_identity_guard ON collection_targets",
@@ -525,6 +476,9 @@ def downgrade() -> None:
         "DROP FUNCTION r1_source_provider_guard()",
         "DROP TRIGGER trg_r1_target_identity_guard ON collection_targets",
         "DROP FUNCTION r1_target_identity_guard()",
+        "DROP TRIGGER trg_r1_operation_config_guard ON collection_targets",
+        "DROP FUNCTION r1_operation_config_guard()",
+        "DROP FUNCTION r1_operation_config_safe(jsonb)",
     ):
         op.execute(statement)
     op.drop_index("uq_collection_cursors_target_type_version_mode", table_name="collection_cursors")

@@ -344,7 +344,7 @@ class CollectionTarget(Base):
             "source_account_id",
             "legacy_cursor_type",
             unique=True,
-            postgresql_where=text("legacy_cursor_type IS NOT NULL"),
+            postgresql_where=text("status = 'active' AND legacy_cursor_type IS NOT NULL"),
         ),
         Index(
             "ix_collection_targets_due",
@@ -571,6 +571,20 @@ class RawItem(Base):
         Index("ix_raw_items_source_external_id", "source_id", "external_id"),
         Index("ix_raw_items_source_fetched", "source_id", "fetched_at"),
         Index("ix_raw_items_payload_hash", "payload_hash"),
+        Index(
+            "uq_raw_items_source_external_identity",
+            "source_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_raw_items_source_projection_hash",
+            "source_id",
+            "payload_hash",
+            unique=True,
+            postgresql_where=text("external_id IS NULL AND payload_hash IS NOT NULL"),
+        ),
         Index("ix_raw_items_parse_status", "parse_status"),
         Index("uq_raw_items_id_source_id", "id", "source_id", unique=True),
     )

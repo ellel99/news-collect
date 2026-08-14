@@ -696,8 +696,10 @@ migration, bounded live request or PR #39 work.
 
 The authorized I-A, II, III and IV implementation is present on the dedicated Draft implementation branch:
 
-- I-A: Alembic `0006` (down revision `0005`) adds the nullable expand model, deterministic paused/blocked legacy
-  targets, INSERT-time registry identity, permanent identity/provenance triggers and temporary rollback guards.
+- I-A: Alembic `0006` (down revision `0005`) is expand-only and adds the nullable model, permanent
+  identity/provenance/config-safety triggers and temporary rollback guards. Explicit Phase 2 reuses the runtime typed
+  registry to INSERT deterministic paused/blocked legacy targets, backfill Run/Cursor identity, reconcile counts and
+  write value-free AuditLog evidence; Alembic upgrade never invokes Phase 2.
 - II: target repository/CAS, exact four-operation registry, allowlisted factory, worker reload, worker-only runtime
   credentials and decoded response-byte enforcement are implemented without live Provider access.
 - III: target scheduler/dispatch identity, Redis marker and owner lock, target-owned run/cursor, transactional legacy
@@ -708,3 +710,18 @@ The authorized I-A, II, III and IV implementation is present on the dedicated Dr
 Migration B, production target activation, cutover, historical replay and live Provider/Telegram verification remain
 not implemented and not authorized. This section records implementation evidence only; the SPEC remains
 `Active — Implementation Review` until an explicit reviewer decision.
+
+### Consolidated implementation-review remediation ledger
+
+The PR #43 review baseline identified A1–A18 as one bounded remediation set. The implementation now maps those
+findings as follows: A1/A2 use the single provider-neutral downstream transaction for RawItem, safe ContentItem,
+Evidence, Event boundary and Notification intent, with PostgreSQL conflict-target idempotency and exact run counters;
+A3–A5 keep Migration A expand-only, move deterministic target/backfill work to explicit Phase 2, enforce recursive
+DB config safety and fail downgrade closed after any target-owned state; A6/A7 add typed CAS lifecycle validation and
+fair keyset dispatch beyond contested pages; A8–A10 enforce dispatch/revision identity, bounded retries, owner-lock
+renew/loss, grouped rate limits, wall-clock/transport budgets, typed cursor decisions and non-retryable decoded-byte
+overflow; A11/A12 implement the approved provider-scoped intent/watermark/recovery and delivery-only state machines;
+A13/A14 provide read-only authority evidence plus one fail-closed legacy/shadow/unified schedule switch; A15 adds
+behavioral PostgreSQL and mock-only tests; A16 preserves the four exact non-pageable v1 operations; A17/A18 are
+covered by the ordered remediation and complete validation/package-review evidence. No production activation,
+cutover, historical replay, live request or Migration B is part of this remediation.

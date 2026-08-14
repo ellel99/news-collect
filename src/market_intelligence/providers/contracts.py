@@ -52,10 +52,13 @@ class ProviderFetchRequest:
     deadline_at: datetime
     correlation_id: str
     max_response_bytes: int = 1_000_000
+    request_timeout_seconds: float = 10.0
 
     def __post_init__(self) -> None:
         if not 1024 <= self.max_response_bytes <= 10_000_000:
             raise ValueError("provider_response_budget_invalid")
+        if not 1 <= self.request_timeout_seconds <= 60:
+            raise ValueError("provider_timeout_budget_invalid")
         object.__setattr__(self, "config", _immutable_mapping(self.config))
 
 
@@ -120,6 +123,10 @@ class ProviderFetchResult:
 
 class ProviderTransportTimeout(TimeoutError):
     """Safe transport timeout signal without request details."""
+
+
+class ProviderResponseTooLarge(RuntimeError):
+    """Safe, non-retryable decoded response budget signal."""
 
 
 class ProviderTransport(Protocol):

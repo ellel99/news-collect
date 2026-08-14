@@ -51,8 +51,9 @@ target-specific typed config、cadence/cursor/lock/retry/health、统一 factory
 Docs Review 设计。该后置项不撤销 core technical PASS，也不得把未勾选的完整 operations/
 backup/restore gate 写成已完成。
 
-Foundation v2.3 Freeze Review 已 PASS，仅允许上述后置工作进入独立 R1–R8 SPEC/Review；R1 尚未
-启动或授权。真实 AI 必须继续等待 Pre-AI Collection Readiness R0–R8；PR #39 的 Draft 不构成
+Foundation v2.3 Freeze Review 已 PASS；R1 Docs Review 后用户已单独授权 I-A/II/III/IV bounded
+implementation，当前 Draft PR #43 仍待 Implementation Review，且未 activation/cutover。真实 AI 必须继续等待
+Pre-AI Collection Readiness R0–R8；PR #39 的 Draft 不构成
 acceptance evidence 或 implementation authority。
 
 ## 4. 后续架构提案与本验收标准的关系

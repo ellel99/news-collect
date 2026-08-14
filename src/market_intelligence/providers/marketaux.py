@@ -16,6 +16,7 @@ from market_intelligence.providers.contracts import (
     ProviderAdapterErrorCode,
     ProviderFetchRequest,
     ProviderFetchResult,
+    ProviderResponseTooLarge,
     ProviderTransport,
     ProviderTransportRequest,
     ProviderTransportTimeout,
@@ -86,7 +87,7 @@ class MarketauxAdapter:
             provider=self.provider_key,
             operation="news_all",
             params=params,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, request.request_timeout_seconds),
             max_response_bytes=request.max_response_bytes,
             runtime_credential=self._credential,
         )
@@ -98,6 +99,14 @@ class MarketauxAdapter:
                     code=ProviderAdapterErrorCode.TIMEOUT,
                     safe_message="provider_request_timed_out",
                     retryable=True,
+                )
+            )
+        except ProviderResponseTooLarge:
+            return _failed(
+                ProviderAdapterError(
+                    code=ProviderAdapterErrorCode.CONTRACT_INVALID,
+                    safe_message="provider_response_too_large",
+                    retryable=False,
                 )
             )
         except Exception:

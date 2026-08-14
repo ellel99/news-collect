@@ -2,8 +2,8 @@
 
 Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 Active — Docs Review only；
-implementation not authorized
+Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 Active — Implementation Review；
+I-A/II/III/IV bounded implementation authorized in Draft PR #43；Migration B/activation/cutover unauthorized
 
 ## 1. Purpose and release gate
 
@@ -49,7 +49,8 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 - **Impact:** documents only; no runtime/config/schema change.
 - **Verification gate:** Foundation diff, decision impact and downstream-document review.
 - **Acceptance:** PASS（2026-08-13；baseline `4df76e1f0ed9812d962369b9766bf372b102d952`）。
-  R0 is completed; R1 Docs Review is now active, but implementation remains not authorized.
+  R0 is completed; R1 Docs Review subsequently passed and the user separately authorized bounded I-A/II/III/IV
+  implementation. That later authorization does not change the scope of the R0 decision itself.
 
 ### R1 — Unified Production Collection Control Plane
 

@@ -5,6 +5,10 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -95,9 +99,22 @@ async def test_active_requires_legacy_identity_and_owner_is_exclusive() -> None:
         async with engine.connect() as connection:
             transaction = await connection.begin()
             source_id, account_id = await _source_account(connection)
-            await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+            first = await _target(
+                connection,
+                source_id,
+                account_id,
+                key=f"r1.{uuid.uuid4().hex}",
+                status="active",
+            )
+            assert first is not None
             with pytest.raises(IntegrityError):
-                await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+                await _target(
+                    connection,
+                    source_id,
+                    account_id,
+                    key=f"r1.{uuid.uuid4().hex}",
+                    status="active",
+                )
             await transaction.rollback()
             transaction = await connection.begin()
             source_id, account_id = await _source_account(connection)
@@ -109,6 +126,57 @@ async def test_active_requires_legacy_identity_and_owner_is_exclusive() -> None:
                     key=f"r1.{uuid.uuid4().hex}",
                     status="active",
                     legacy=None,
+                )
+            await transaction.rollback()
+            transaction = await connection.begin()
+            source_id, account_id = await _source_account(connection)
+            await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+            await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+            await transaction.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsafe_config",
+    (
+        '{"api_key":"redacted"}',
+        '{"query":"https://example.invalid/path"}',
+        '{"nested":{"module":"provider.dynamic"}}',
+        '{"query":"authorization"}',
+    ),
+)
+async def test_operation_config_database_guard_rejects_unsafe_manual_sql(
+    unsafe_config: str,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    try:
+        async with engine.connect() as connection:
+            transaction = await connection.begin()
+            source_id, account_id = await _source_account(connection)
+            with pytest.raises(DBAPIError, match="collection_target_operation_config_unsafe"):
+                await connection.execute(
+                    text("""
+                    INSERT INTO collection_targets(
+                      target_key,source_id,source_account_id,operation_key,legacy_cursor_type,
+                      operation_config_version,provider_contract_version,operation_config,status,
+                      cadence_seconds,batch_limit,max_response_bytes,request_timeout_seconds,
+                      max_runtime_seconds,cursor_strategy,collection_mode,backfill_policy,
+                      revision_policy,rate_limit_group,next_due_at,health_status
+                    ) VALUES (
+                      :key,:source,:account,'news_all','provider_cursor_v1',1,1,
+                      CAST(:config AS jsonb),'paused',300,1,1000000,10,60,'compound',
+                      'incremental','disabled','ignore','marketaux:default',:now,'unknown'
+                    )
+                    """),
+                    {
+                        "key": f"r1.{uuid.uuid4().hex}",
+                        "source": source_id,
+                        "account": account_id,
+                        "config": unsafe_config,
+                        "now": datetime.now(UTC),
+                    },
                 )
             await transaction.rollback()
     finally:
@@ -152,6 +220,28 @@ async def test_referenced_source_provider_and_run_raw_provenance_are_immutable()
                         "now": datetime.now(UTC),
                     },
                 )
+            await transaction.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_migration_a_downgrade_fails_closed_when_target_state_exists() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    try:
+        async with engine.connect() as connection:
+            transaction = await connection.begin()
+            source_id, account_id = await _source_account(connection)
+            await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+
+            def attempt(sync_connection: object) -> None:
+                revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0006")
+                assert revision is not None
+                with Operations.context(MigrationContext.configure(sync_connection)):
+                    revision.module.downgrade()
+
+            with pytest.raises(RuntimeError, match="migration_a_downgrade_unsafe_target_state"):
+                await connection.run_sync(attempt)
             await transaction.rollback()
     finally:
         await engine.dispose()

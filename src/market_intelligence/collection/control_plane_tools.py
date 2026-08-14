@@ -1,13 +1,15 @@
-"""Read-only shadow and guarded cutover/rollback audit tooling."""
+"""Read-only shadow comparison and guarded cutover/rollback evidence."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql import Executable
 
+from market_intelligence.collection.target_configs import OperationRegistry, TargetConfigError
+from market_intelligence.collection.target_repository import eligible
 from market_intelligence.db.models import (
     CollectionCursor,
     CollectionRun,
@@ -15,108 +17,202 @@ from market_intelligence.db.models import (
     CollectionTarget,
     CollectionTargetStatus,
     ContentItem,
+    Notification,
+    RawItem,
+    Source,
+    SourceAccount,
+)
+from market_intelligence.notifications.intent import (
+    POLICY_ID,
+    IntentWatermark,
+    load_cutover_watermark,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class AuthorityAudit:
     status: str
-    active_targets: int
+    target_count: int
+    eligible_count: int
     running_runs: int
-    unmapped_runs: int
-    unmapped_cursors: int
+    mapping_mismatches: int
+    config_mismatches: int
+    cursor_mismatches: int
+    provenance_mismatches: int
+    content_gaps: int
+    evidence_gaps: int
     notification_gaps: int
+    rollback_ineligible: int
+    cutover_watermark_present: bool
     safe_errors: tuple[str, ...]
 
 
 class ControlPlaneAuditService:
-    def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
-        self._factory = factory
+    def __init__(
+        self,
+        factory: async_sessionmaker[AsyncSession],
+        registry: OperationRegistry,
+    ) -> None:
+        self._factory, self._registry = factory, registry
 
     async def shadow(self) -> AuthorityAudit:
-        """Pure read-only comparison: never enqueue, request, or write."""
+        """Compare legacy/new authority without enqueue, external request, or write."""
         async with self._factory() as session:
-            active = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(CollectionTarget)
-                    .where(CollectionTarget.status == CollectionTargetStatus.ACTIVE)
-                )
-                or 0
+            targets = tuple(
+                await session.scalars(select(CollectionTarget).order_by(CollectionTarget.id))
             )
-            running = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(CollectionRun)
-                    .where(CollectionRun.status == CollectionRunStatus.RUNNING)
+            sources = {item.id: item for item in await session.scalars(select(Source))}
+            accounts = {item.id: item for item in await session.scalars(select(SourceAccount))}
+            account_sources = {item.source_id for item in accounts.values()}
+            mapping = config = rollback = eligible_count = 0
+            for target in targets:
+                source = sources.get(target.source_id)
+                account = (
+                    accounts.get(target.source_account_id) if target.source_account_id else None
                 )
-                or 0
+                if (
+                    source is None
+                    or (account is not None and account.source_id != target.source_id)
+                    or (target.source_account_id is None and target.source_id in account_sources)
+                ):
+                    mapping += 1
+                    continue
+                if eligible(source, account, target):
+                    eligible_count += 1
+                if target.status is CollectionTargetStatus.ACTIVE and (
+                    target.source_account_id is None or target.legacy_cursor_type is None
+                ):
+                    rollback += 1
+                try:
+                    contract = self._registry.resolve(
+                        source.access_method,
+                        target.operation_key,
+                        target.operation_config_version,
+                        target.provider_contract_version,
+                    )
+                    self._registry.validate(
+                        contract,
+                        target.operation_config,
+                        batch_limit=target.batch_limit,
+                        max_requests=target.max_requests_per_run,
+                        max_pages=target.max_pages_per_run,
+                    )
+                except TargetConfigError:
+                    config += 1
+            running = await self._count(
+                session,
+                select(func.count())
+                .select_from(CollectionRun)
+                .where(CollectionRun.status == CollectionRunStatus.RUNNING),
             )
-            unmapped_runs = int(
-                await session.scalar(
+            cursor_mismatch = await self._count(
+                session,
+                select(func.count())
+                .select_from(CollectionCursor)
+                .outerjoin(CollectionTarget, CollectionTarget.id == CollectionCursor.target_id)
+                .where(
+                    CollectionCursor.target_id.is_(None)
+                    | CollectionCursor.source_account_id.is_distinct_from(
+                        CollectionTarget.source_account_id
+                    )
+                ),
+            )
+            provenance = await self._count(
+                session,
+                select(func.count())
+                .select_from(RawItem)
+                .join(CollectionRun, CollectionRun.id == RawItem.collection_run_id)
+                .where(
+                    (RawItem.source_id != CollectionRun.source_id)
+                    | RawItem.source_account_id.is_distinct_from(CollectionRun.source_account_id)
+                    | CollectionRun.target_id.is_(None)
+                ),
+            )
+            content_gaps = await self._count(
+                session,
+                select(func.count())
+                .select_from(RawItem)
+                .join(CollectionRun, CollectionRun.id == RawItem.collection_run_id)
+                .where(CollectionRun.target_id.is_not(None), ~RawItem.content_item.has()),
+            )
+            evidence_gaps = await self._count(
+                session,
+                select(func.count())
+                .select_from(RawItem)
+                .join(CollectionRun, CollectionRun.id == RawItem.collection_run_id)
+                .where(CollectionRun.target_id.is_not(None), ~RawItem.evidence_items.any()),
+            )
+            watermark = await load_cutover_watermark(session)
+            notification_gaps = 0
+            if watermark is not None:
+                notification_gaps = await self._count(
+                    session,
                     select(func.count())
-                    .select_from(CollectionRun)
-                    .where(CollectionRun.target_id.is_(None))
+                    .select_from(ContentItem)
+                    .where(
+                        or_(
+                            ContentItem.created_at > watermark.created_at,
+                            and_(
+                                ContentItem.created_at == watermark.created_at,
+                                ContentItem.id > watermark.content_item_id,
+                            ),
+                        ),
+                        ~ContentItem.notifications.any(Notification.policy_rule_id == POLICY_ID),
+                    ),
                 )
-                or 0
-            )
-            unmapped_cursors = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(CollectionCursor)
-                    .where(CollectionCursor.target_id.is_(None))
-                )
-                or 0
-            )
             errors = tuple(
                 code
-                for condition, code in (
-                    (running > 0, "collection_runs_still_running"),
-                    (unmapped_runs > 0, "collection_runs_unmapped"),
-                    (unmapped_cursors > 0, "collection_cursors_unmapped"),
+                for count, code in (
+                    (mapping, "target_mapping_mismatch"),
+                    (config, "target_config_mismatch"),
+                    (cursor_mismatch, "cursor_identity_mismatch"),
+                    (provenance, "run_raw_provenance_mismatch"),
+                    (content_gaps, "content_completeness_gap"),
+                    (evidence_gaps, "evidence_completeness_gap"),
+                    (notification_gaps, "notification_intent_gap"),
+                    (rollback, "rollback_identity_ineligible"),
                 )
-                if condition
+                if count
             )
             return AuthorityAudit(
                 "PASS" if not errors else "BLOCKED",
-                active,
+                len(targets),
+                eligible_count,
                 running,
-                unmapped_runs,
-                unmapped_cursors,
-                0,
+                mapping,
+                config,
+                cursor_mismatch,
+                provenance,
+                content_gaps,
+                evidence_gaps,
+                notification_gaps,
+                rollback,
+                watermark is not None,
                 errors,
             )
 
-    async def notification_gap_audit(self, watermark: datetime) -> AuthorityAudit:
+    async def cutover_watermark_candidate(self) -> IntentWatermark | None:
+        """Read the stable newest Content tuple; never persists or activates it."""
         async with self._factory() as session:
-            gaps = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(ContentItem)
-                    .where(ContentItem.created_at >= watermark, ~ContentItem.notifications.any())
+            row = (
+                await session.execute(
+                    select(ContentItem.created_at, ContentItem.id)
+                    .order_by(ContentItem.created_at.desc(), ContentItem.id.desc())
+                    .limit(1)
                 )
-                or 0
-            )
-        return AuthorityAudit(
-            "PASS" if gaps == 0 else "BLOCKED",
-            0,
-            0,
-            0,
-            0,
-            gaps,
-            (() if gaps == 0 else ("notification_intent_gap",)),
+            ).one_or_none()
+            return None if row is None else IntentWatermark(row.created_at, row.id)
+
+    async def rollback_eligible(self) -> bool:
+        report = await self.shadow()
+        return (
+            report.running_runs == 0
+            and report.mapping_mismatches == 0
+            and report.cursor_mismatches == 0
+            and report.provenance_mismatches == 0
+            and report.rollback_ineligible == 0
         )
 
-
-def cutover_watermark(now: datetime | None = None) -> datetime:
-    """Return a watermark candidate without persisting or activating it."""
-    return now or datetime.now(UTC)
-
-
-def legacy_combined_task_retirement_plan() -> dict[str, object]:
-    return {
-        "legacy_task": "multi_provider.telegram.run",
-        "replacement_collection": "collection.control_plane.dispatch",
-        "replacement_delivery": "notification.telegram.deliver",
-        "activation_performed": False,
-    }
+    @staticmethod
+    async def _count(session: AsyncSession, statement: Executable) -> int:
+        return int(await session.scalar(statement) or 0)
