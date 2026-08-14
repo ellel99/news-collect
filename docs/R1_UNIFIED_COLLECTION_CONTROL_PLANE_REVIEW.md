@@ -47,18 +47,21 @@ document only; a separate explicit implementation authorization is still require
   compatible runtime after zero RUNNING/null-unmapped rows and exact backfill-count verification.
 - rollback ownership permits only one target of any status per `(source_account_id,legacy_cursor_type)`; pause,
   block, retire or config revision never releases it. Same-account multi-target begins only after Migration B.
-- `legacy_cursor_type varchar(100) NULL` is registry-derived compatibility metadata with one locked migration-Phase-2
-  NULL→registry initialization, then permanent immutability.
+- `legacy_cursor_type varchar(100) NULL` is written only by migration-Phase-2 target INSERT from the static registry;
+  every UPDATE is permanently forbidden and there is no repository initialization/transfer API.
 - three DB objects have distinct lifecycles: Migration A creates and Migration B retains the permanent identity/
   provenance immutability trigger; Migration A creates and Migration B removes the temporary active non-null
   constraint; Migration A creates and Migration B removes the temporary rollback-ownership partial unique index.
+- `Source.access_method` becomes permanently immutable once any target references the Source; pre-trigger migration
+  scan blocks mismatches, while unreferenced Source follows existing management rules.
 - PR #39 Draft migrations are excluded; implementation revision derives from the then-current real main head.
 
 ## 3. Review checklist
 
 - [ ] Final fields, nullability, enums, checks, indexes, FKs and lifecycle are implementable.
-- [ ] Permanent target/source/account/operation identity, one-time legacy initialization, config and secret constraints
-  are unambiguous and PostgreSQL-enforced.
+- [ ] Permanent target/source/account/operation identity, INSERT-time legacy mapping, config and secret constraints
+  are unambiguous and PostgreSQL-enforced; legacy identity is INSERT-time only with no UPDATE exception.
+- [ ] Referenced Source provider identity is immutable and historical Run/RawItem provenance cannot drift.
 - [ ] `config_revision` race, stale task, pause/resume and rollback semantics are accepted.
 - [ ] Four Provider operation v1 schemas do not expand operation scope.
 - [ ] cadence/cursor/lock/retry/run/health/dispatch ownership is target-specific.
@@ -81,6 +84,7 @@ document only; a separate explicit implementation authorization is still require
 - [ ] exact implementation files, five acceptance batches (four functional + Migration B) and test matrix are accepted.
 - [ ] R2–R8, Provider expansion, Event/Evidence/Fact/AI and Market Validation remain out of scope.
 - [ ] PR #39 remains Draft and untouched.
+- [ ] `AI_CONTEXT.md` local protocol reference resolves to Git-tracked `docs/REVIEW_PROTOCOL.md` in a clean archive.
 
 ## 4. Non-actions in this PR
 
@@ -106,3 +110,5 @@ Reviewer must explicitly record `PASS` or `REQUEST CHANGES`. A PASS does not sta
   was changed to mask the mismatch.
 - package review：PASS for required files, links and freeze markers. It detected the ignored local `.env`; the file
   was not read, modified, tracked or packaged.
+- review protocol self-containment：`docs/REVIEW_PROTOCOL.md` is Git-tracked and present in clean `git archive`;
+  `AI_CONTEXT.md` does not depend on an untracked local file.

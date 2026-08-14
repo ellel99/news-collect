@@ -17,9 +17,11 @@
 - Holds all legacy collection/stale-recovery writers through Migration A/backfill/scan/compatible deployment, fixes
   terminal retry/cadence semantics, and replaces an undefined per-Content override with append-only AuditLog closure.
 - Clarifies five acceptance batches: four functional batches plus Migration B finalization.
-- Adds registry-derived `legacy_cursor_type` with one migration-Phase-2 initialization. Migration A creates a permanent identity
+- Makes registry-derived `legacy_cursor_type` INSERT-time only with no UPDATE exception. Migration A creates permanent target/Source identity
   trigger plus temporary active non-null and ownership-unique constraints; Migration B removes only the temporary
   objects after rollback ends and retains the field/trigger for audit.
+- Protects referenced `Source.access_method` as immutable Provider identity and removes fictional legacy migration
+  metadata (`origin`, separate migration timestamp) from the high-level SPEC.
 - 从 `main@9c68dd6` 重新审计 ORM、migration、generic dispatcher/task、CollectionRunner、Provider runtime、
   Notification/Outbox、Redis lock/retry 与测试，未复制旧架构假设。
 - 新增 implementation-ready SPEC-0041 contract：固定 global immutable `target_key`、最终

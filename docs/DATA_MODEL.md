@@ -172,11 +172,16 @@ SPEC-0041 implementation contract 为准，本文件不另行定义竞争语义�
 rollback window 内 legacy cursor identity 为 `(source_account_id,legacy_cursor_type)`，每个 identity 只能
 由一个 target 持有，pause/blocked/retired 不释放；同一账户的多个 `provider_cursor_v1` target 必须等 Migration B 完成、dual-write 停止且
 进入 forward-recovery-only 后才能激活。`legacy_cursor_type varchar(100) NULL` 只由 static operation registry
-确定，不是 cursor strategy/version 或 target-owned cursor type。Migration A 创建三个对象：永久 identity/
-provenance immutability trigger（含 migration Phase 2 唯一一次 NULL→registry 初始化）、临时 active non-null constraint/
+确定并在 migration Phase 2 target INSERT 时写入，不是 cursor strategy/version 或 target-owned cursor type。
+INSERT 后任何 legacy type UPDATE 都被永久拒绝。Migration A 创建三个对象：永久 identity/
+provenance immutability trigger、临时 active non-null constraint/
 trigger、临时 rollback ownership partial unique index。Migration B 只移除后两项，字段和永久 trigger 保留，
 且不恢复 old runtime rollback。Notification recovery 不增加 ContentItem 字段：候选仅来自 cutover
 watermark 后的精确 policy；失败用 append-only AuditLog recovery/resolved pair 恢复和关闭。
+
+`Source.access_method` 是 Provider identity：当任一 CollectionTarget 引用 Source 后永久不可修改，变更
+Provider 必须创建新 Source 和新 target。enabled、authorization、schedule、health 等非 identity 字段仍按
+既有 Source 合同更新；PostgreSQL trigger 是最终权威。
 
 ### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
 

@@ -74,7 +74,7 @@ PR #39/SPEC-0040 保持 Draft、不得修改/合并/rebase；其未合并 migrat
 | `source_id` | UUID FK→sources RESTRICT | no | provider/auth/license authority |
 | `source_account_id` | UUID | yes | composite FK with source；null only for source-level operation |
 | `operation_key` | varchar(100) | no | static registry key；not URL/class path |
-| `legacy_cursor_type` | varchar(100) | yes | registry-derived rollback ownership；one migration-Phase-2 NULL→value initialization, then immutable audit |
+| `legacy_cursor_type` | varchar(100) | yes | registry-derived rollback ownership written on INSERT；immutable thereafter |
 | `operation_config_version` | smallint | no | `>0` |
 | `provider_contract_version` | smallint | no | `>0`；must match adapter |
 | `config_revision` | bigint | no / `1` | target execution generation；monotonic、`>0` |
@@ -124,8 +124,11 @@ Additional constraints/indexes:
 - config must be JSON object; recursive service validation rejects secret keys/values, URLs, class/module/import
   fields, nested credentials and secret-bearing strings. DB text checks provide defense-in-depth for
   `api_key`, `api_token`, `token`, `authorization`, `password`, `secret`, `http://`, `https://`;
-- permanent PostgreSQL identity/provenance immutability trigger protects `target_key`, `source_id`,
-  `source_account_id`, `operation_key`, and initialized `legacy_cursor_type`; service validation is only preflight;
+- permanent PostgreSQL target identity/provenance trigger rejects every UPDATE to `target_key`, `source_id`,
+  `source_account_id`, `operation_key`, or `legacy_cursor_type`; service validation is only preflight;
+- permanent PostgreSQL Source provider-identity trigger rejects update of `Source.access_method` once any
+  CollectionTarget references that Source; enabled/authorization/schedule/health remain governed by existing mutable
+  Source rules. Provider change requires a new Source and new target;
 - only `status=active` is dispatchable. `retired` is terminal; rows are not physically deleted. `blocked→active`
   requires explicit reviewed repair. Config change creates an audit entry, increments config version as required,
   resets health to unknown and cannot mutate `target_key`.
@@ -136,19 +139,23 @@ dual-write/runtime rollback compatibility between Migration A and rollback-windo
 typed operation-registry property keyed by `operation_key`; operation config, environment and request payload cannot
 supply or override it.
 
-Migration A creates the permanent identity trigger with one initialization exception: INSERT may set the registry
-value directly; a Migration-A-created non-active target awaiting migration Phase 2 backfill may make exactly one
-`NULL → registry-derived non-NULL` transition. That transition is allowed only during migration Phase 2 maintenance hold, only
-for `draft/paused/blocked`, under row lock/CAS, and only when the service proves exact
-`(Source.access_method,operation_key)` registry equality. Active initialization, non-registry values, concurrent
-different values, non-NULL mutation, or reset to NULL fail closed. Phase 3 verifies every rollback candidate is
-initialized. Any Source, Account, operation, or legacy mapping change requires a new target. The field remains
-immutable/read-only audit data after Migration B; physical removal requires a later cleanup SPEC.
+Migration A creates the permanent target identity trigger with no UPDATE exception. During migration Phase 2, each
+legacy target INSERT deterministically supplies its registry-derived non-null value when it has a unique legal
+rollback owner. Unknown, ambiguous, conflicting, source-level or otherwise non-representable candidates are INSERTed
+with NULL and remain draft/paused/blocked. After INSERT, every `legacy_cursor_type` UPDATE fails—including
+NULL→value, value→value and value→NULL. Repository/service exposes no initialization, backfill or transfer API. If a
+blocked candidate must acquire ownership before Migration B, all writers must stop and a separate migration/
+reconciliation Review is required. Phase 3 verifies every rollback candidate was valid at INSERT. Any Source,
+Account, operation, or legacy mapping change requires a new target. The field remains immutable/read-only audit data
+after Migration B; physical removal requires a later cleanup SPEC.
 
 `target_key`, `source_id`, `source_account_id`, and `operation_key` are immutable immediately after INSERT, without
-an initialization exception. Config, cadence, budgets and allowed execution semantics change only through a new
+exception. Config, cadence, budgets and allowed execution semantics change only through a new
 `config_revision`; they cannot change identity. This permanently stabilizes
 `RawItem → CollectionRun → CollectionTarget → Source/SourceAccount` provenance. Migration B retains this trigger.
+Migration A first scans existing Source/target mappings before enabling Source protection; any provider mismatch
+fails closed with value-free audit. Once referenced, `Source.access_method` never changes, so historical Run/RawItem
+provider provenance cannot drift.
 
 `operation_config_version` means only the typed decoder/schema version. `provider_contract_version` means only the
 adapter contract version. `config_revision` is the target's monotonic execution generation. Every change to
@@ -510,14 +517,16 @@ Registry rollback mapping is exact: `fake/fake_sequence → fake_sequence`; the 
 above each map to `provider_cursor_v1`. A source-level fake target has no rollback identity and cannot activate during
 the rollback window. These values are registry metadata, not operation config or target cursor codecs.
 
-Migration A deterministic backfill derives `legacy_cursor_type` only from this registry mapping. A mapping is accepted
-only when exactly one target candidate owns the legacy identity. If multiple target candidates map to the same pair,
-all competing targets keep `legacy_cursor_type=NULL` and remain draft/paused/blocked until a separately reviewed
-ownership/reconciliation procedure; backfill never selects a winner. Unknown provider, multiple operation
-interpretations, missing mapping/config, source-level real-provider row, duplicate ownership, or account/source
-inconsistency aborts backfill acceptance. No target guesses, copies or steals ownership. Every created target starts
+Migration Phase 2 deterministic target creation derives `legacy_cursor_type` only from this registry mapping and
+writes it in the INSERT. A mapping is accepted only when exactly one target candidate owns the legacy identity. If
+multiple candidates map to the same pair, all competing targets are INSERTed with `legacy_cursor_type=NULL` and remain
+draft/paused/blocked until a separately reviewed migration/reconciliation; no ordinary update can repair them and
+creation never selects a winner. Unknown provider, multiple operation interpretations, missing mapping/config,
+source-level real-provider row, duplicate ownership, or account/source inconsistency aborts rollback acceptance. No
+target guesses, copies or steals ownership. Every created target starts
 `config_revision=1`, `health_status=unknown`, `consecutive_failures=0`, `next_retry_at=NULL`, `last_attempt_at=NULL`,
-`last_success_at=NULL`. `next_due_at` is the migration timestamp but paused/blocked status prevents dispatch; explicit
+`last_success_at=NULL`. `next_due_at` is set to the Phase 2 target INSERT timestamp, using the existing column rather
+than a separate migration metadata field, but paused/blocked status prevents dispatch; explicit
 activation sets a reviewed next_due_at and increments revision. Cadence is the positive legacy Source schedule when
 present, otherwise the already-configured provider cadence setting; if neither is valid, block. Rate groups are the
 four static groups in §7 (fake=`fake:test`). Budgets are exact §6/§7 v1 hard values, max pages/requests=1. No smoke
@@ -595,7 +604,7 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 
 | batch | scope | merge/acceptance gate |
 |---|---|---|
-| I-A | Migration A nullable expand + ORM compatibility + typed config registry | permanent identity trigger; one-time Phase 2 initialization; temporary active CHECK and ownership index; old/new worker+A; deterministic audits; no activation |
+| I-A | Migration A nullable expand + ORM compatibility + typed config registry | INSERT-time registry identity; permanent target/Source identity triggers; temporary active CHECK/ownership index; old/new worker+A; deterministic audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
 | III | scheduler/claim/lock/retry/run/cursor/health | rollback-eligible multi-target isolation, state matrix, budgets, pagination-capability-none, restart/stale recovery |
 | IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
@@ -612,12 +621,16 @@ No batch may activate production targets or perform bounded live verification wi
   permanent immutability of target/source/account/operation identity; active requires non-null account+legacy type
   during rollback; two targets of any status cannot hold one non-null rollback identity; paused/blocked/retired owner
   retains it; ordinary pause/resume cannot transfer it; registry unknown/ambiguous/null mapping fails closed.
-- identity initialization: INSERT may set the registry value; migration Phase 2 allows exactly one locked/CAS
-  `NULL→registry value` on non-active target; wrong value, active initialization, reset/mutation and concurrent
-  different initialization fail. Phase 3 proves every rollback candidate initialized.
+- identity initialization: migration Phase 2 INSERT writes the exact registry value for the unique legal owner;
+  unknown/ambiguous/conflicting/source-level candidates INSERT NULL and remain non-active. Every post-INSERT legacy
+  type update fails; no repository initialization/transfer API exists. Concurrent candidate creation cannot assign
+  one ownership identity twice. Phase 3 proves every rollback candidate was correctly initialized on INSERT.
 - repository/ORM: identity edits are rejected before flush and the PostgreSQL trigger remains final authority;
   config/cadence/budget revision cannot mutate target/source/account/operation/legacy ownership. Source/Account or
   operation change creates a new target.
+- Source provider identity: changing `access_method` fails when any target references Source; an unreferenced Source
+  follows existing Source management rules. Pre-trigger migration scan fails closed on mismatch, while historical
+  Run/RawItem provider provenance remains stable.
 - Redis: concurrent dispatch SET NX EX, owner-token acquire/renew/release/loss, rate-group cooldown, retry vs cadence,
   stale recovery, restart markers and TTL coverage; stale revision can remove only its own marker and cannot consume
   a newer revision retry/dispatch key.
@@ -650,9 +663,9 @@ No batch may activate production targets or perform bounded live verification wi
   normal-cadence recovery, retry exhaustion, authorization changes and complete-success timestamps.
 - migration: real-head linearity, A upgrade/downgrade/re-upgrade, old worker+A, new worker+A, shadow comparison,
   phase-0 continuous collection-task drain, zero-run/null/count phase-3 verification, transactional cursor rollback
-  drill; A upgrade/downgrade/re-upgrade creates all three objects (permanent identity trigger, temporary active CHECK,
-  temporary ownership index); B removes only the two temporary objects after rollback closure and proves the
-  permanent trigger/audit field remain; no old-runtime rollback, double head or PR #39 migration.
+  drill; A upgrade/downgrade/re-upgrade creates permanent target and Source identity triggers plus temporary active
+  CHECK and ownership index; B removes only the two temporary objects after rollback closure and proves both
+  permanent triggers/audit field remain; no old-runtime rollback, double head or PR #39 migration.
 - docs consistency: high-level SPEC and normative contract have identical field names, operation keys/configs,
   lifecycle, task payload, authority phases and Migration A/B object lifecycles; no competing proposed schema remains.
 - regression: all current Provider/CollectionRunner/RawItem/Evidence/Content/Event/Scheduler/Telegram tests PASS;

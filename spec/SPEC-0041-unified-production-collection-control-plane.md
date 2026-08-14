@@ -106,10 +106,11 @@ enum、index、constraint、trigger 和 lifecycle 必须逐项以该表为准。
 `max_runtime_seconds`。`rate_limit_group` 是 non-null static opaque group；`next_due_at`、`next_retry_at` 和
 target health 字段落在 target。Retention authority 仍属于 Source，不增加 `retention_policy_ref`。
 
-`legacy_cursor_type varchar(100) NULL` 由 Migration A 引入并由 static operation registry 决定。它是旧
+`legacy_cursor_type varchar(100) NULL` 由 Migration A 引入并在 migration Phase 2 target INSERT 时由 static operation registry 决定。它是旧
 runtime rollback ownership identity，不是 cursor strategy/version；Migration B 后保留为 immutable audit。
 `target_key/source_id/source_account_id/operation_key` 永久不可变，initialized `legacy_cursor_type` 同样由
-永久 PostgreSQL trigger 保护。完整一次性初始化与临时 rollback constraint/index 生命周期见 normative
+永久 PostgreSQL trigger 保护，且 INSERT 后没有 NULL→value 更新例外。被任何 target 引用后，
+`Source.access_method` 也永久不可变；Provider 变化必须新建 Source/target。完整 INSERT-time mapping 与临时 rollback constraint/index 生命周期见 normative
 contract §4/§11。
 
 ### 5.3 target-specific state
@@ -241,8 +242,9 @@ Retry 是 target state，不能复用 provider cadence key。non-retryable failu
 
 1. Phase 0–3 全部为 `none — maintenance hold`；Migration A、backfill/audit、compatible runtime 部署/验证期间
    所有 legacy collection/stale-recovery writer 持续停止。
-2. 只把可确定识别的 legacy rows 转为 `status=draft` 或 `paused` target，记录
-   `origin=legacy_bootstrap`、config schema/version、source/account ids 和 migration timestamp。
+2. 只把可确定识别的 legacy rows 转为 `status=draft` 或 `paused` target。来源通过 deterministic
+   `legacy.*` target_key、既有 `created_at` 和 value-free migration AuditLog 审计；不新增 `origin` 或独立
+   migration timestamp 字段。版本字段准确使用 `operation_config_version`，其他字段只引用 normative contract。
 3. AAPL、technology、electricity、SEC ticker/CIK 只作为历史 bootstrap 值迁移，**不自动 active，
    不代表生产授权**；Reviewer 必须逐 target 确认 operation、quota、cadence、retention。
 4. Migration A registry-backfills legacy identity；rollback window 内同一

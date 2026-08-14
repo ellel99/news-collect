@@ -29,7 +29,8 @@
   dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
   合同。最终修正还限制 rollback window 每个 legacy cursor identity 由一个 target 跨 lifecycle 独占、
   phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
-  trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger。Notification 使用
+  trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger；legacy identity
+  仅在 target INSERT 写入，Source 被 target 引用后 access_method 永久不可变。Notification 使用
   AuditLog recovery/resolved pair。以上仍只是
   Docs Review 内容，不是实现事实。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持

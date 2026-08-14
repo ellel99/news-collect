@@ -118,6 +118,9 @@ operation registry 生成。Migration A 创建永久 identity/provenance immutab
 constraint/trigger 和临时 rollback ownership partial unique index；Migration B 在 forward-recovery-only 后只
 删除两项临时对象、停止 dual-write，字段与永久 trigger 保留。它不等于 cursor strategy/version，也不恢复
 旧 runtime rollback。
+legacy identity 只能在 migration Phase 2 创建 target 的 INSERT 中写入；INSERT 后任何 UPDATE 均被永久
+trigger 拒绝，不存在普通补写/转移 API。Source 被任何 target 引用后，`access_method` 同样永久不可变，
+从而稳定 RawItem→Run→Target→Source Provider provenance；Provider 变化必须创建新 Source/target。
 Notification intent 只覆盖审核过的四 Provider、安全 Content kind 和 cutover watermark 之后的候选；默认
 不回补历史，也不存在未定义的 per-Content override；恢复先处理 unresolved AuditLog，成功后追加 resolved AuditLog，
 再执行 bounded watermark 后 missing-dedup scan。
