@@ -131,8 +131,34 @@ async def test_active_requires_legacy_identity_and_owner_is_exclusive() -> None:
             transaction = await connection.begin()
             source_id, account_id = await _source_account(connection)
             await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
-            await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+            with pytest.raises(IntegrityError):
+                await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
             await transaction.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rollback_owner_is_retained_across_lifecycle_and_revision() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    try:
+        async with engine.connect() as connection, connection.begin():
+            source_id, account_id = await _source_account(connection)
+            owner = await _target(connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}")
+            for status in ("paused", "blocked", "retired"):
+                retired_at = datetime.now(UTC) if status == "retired" else None
+                await connection.execute(
+                    text("""
+                    UPDATE collection_targets SET status=:status, retired_at=:retired,
+                      config_revision=config_revision+1 WHERE id=:id
+                    """),
+                    {"status": status, "retired": retired_at, "id": owner},
+                )
+                with pytest.raises(IntegrityError):
+                    async with connection.begin_nested():
+                        await _target(
+                            connection, source_id, account_id, key=f"r1.{uuid.uuid4().hex}"
+                        )
     finally:
         await engine.dispose()
 

@@ -45,6 +45,11 @@ def test_operation_registry_is_exact_and_non_pageable() -> None:
             marketaux, {"query": "technology"}, batch_limit=3, max_requests=2, max_pages=1
         )
     sec = registry.resolve("sec_edgar", "submissions_recent", 1, 1)
+    eia = registry.resolve("eia", "electricity_retail_sales", 1, 1)
+    assert sec.cursor_strategy.value == "snapshot_watermark"
+    assert eia.cursor_strategy.value == "snapshot_watermark"
+    fake = registry.resolve("fake", "fake_sequence", 1, 1)
+    assert fake.legacy_cursor_type == "fake_sequence"
     with pytest.raises(TargetConfigError, match="operation_config_invalid"):
         registry.validate(sec, {"ticker": "AAPL"}, batch_limit=1, max_requests=1, max_pages=1)
     assert (
@@ -132,12 +137,13 @@ def test_cursor_strategies_are_deterministic_and_fail_closed() -> None:
     newer = _cursor("2026-01-02T00:00:00+00:00", "b")
     older = _cursor("2025-12-01T00:00:00+00:00", "z")
     assert decide_cursor("compound", current, newer).action == "advance"
-    assert decide_cursor("revision", current, current).action == "no_new_items"
     assert decide_cursor("snapshot_watermark", current, current).action == "no_new_items"
     with pytest.raises(CursorContractError, match="cursor_not_successor"):
         decide_cursor("compound", current, older)
     with pytest.raises(CursorContractError, match="cursor_strategy_invalid"):
         decide_cursor("page_token", current, newer)
+    with pytest.raises(CursorContractError, match="cursor_strategy_invalid"):
+        decide_cursor("revision", current, current)
 
 
 class _FakeRedis:

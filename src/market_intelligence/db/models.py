@@ -344,7 +344,7 @@ class CollectionTarget(Base):
             "source_account_id",
             "legacy_cursor_type",
             unique=True,
-            postgresql_where=text("status = 'active' AND legacy_cursor_type IS NOT NULL"),
+            postgresql_where=text("legacy_cursor_type IS NOT NULL"),
         ),
         Index(
             "ix_collection_targets_due",

@@ -3,7 +3,12 @@ from typing import Any
 import pytest
 
 from market_intelligence.tasks import collection, marketaux_telegram, multi_provider_scheduler
-from market_intelligence.tasks.celery_app import celery_app
+from market_intelligence.tasks.celery_app import (
+    celery_app,
+    legacy_schedule,
+    shadow_schedule,
+    unified_schedule,
+)
 from market_intelligence.tasks.health import health_ping
 
 
@@ -26,6 +31,16 @@ def test_collection_tasks_and_beat_entries_are_registered() -> None:
         "collection.recover_stale_runs",
         "multi_provider.telegram.run",
     }
+
+
+def test_authority_schedules_keep_shadow_read_only_and_default_legacy() -> None:
+    legacy_tasks = {entry["task"] for entry in legacy_schedule.values()}
+    shadow_tasks = {entry["task"] for entry in shadow_schedule.values()}
+    unified_tasks = {entry["task"] for entry in unified_schedule.values()}
+    assert shadow_tasks == legacy_tasks | {"collection.control_plane.shadow_audit"}
+    assert "collection.control_plane.dispatch" not in shadow_tasks
+    assert "multi_provider.telegram.run" not in unified_tasks
+    assert celery_app.conf.beat_schedule == legacy_schedule
 
 
 def test_run_target_eager_contract(monkeypatch: pytest.MonkeyPatch) -> None:

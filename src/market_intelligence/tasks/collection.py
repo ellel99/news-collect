@@ -8,6 +8,7 @@ from uuid import UUID
 
 from celery import Task
 from redis.asyncio import Redis
+from sqlalchemy import select
 
 from market_intelligence.collection.contracts import CollectionTarget
 from market_intelligence.collection.control_plane import (
@@ -17,6 +18,11 @@ from market_intelligence.collection.control_plane import (
     dispatch_task_id,
     recover_stale_target_runs,
 )
+from market_intelligence.collection.control_plane_tools import (
+    AUTHORITY_APPROVED,
+    AUTHORITY_KEY,
+    ControlPlaneAuditService,
+)
 from market_intelligence.collection.locking import retry_marker_key
 from market_intelligence.collection.registry import build_fake_registry
 from market_intelligence.collection.runner import CollectionRunner, recover_stale_runs
@@ -24,6 +30,7 @@ from market_intelligence.collection.scheduler import DispatchRequest, dispatch_d
 from market_intelligence.collection.target_configs import build_operation_registry
 from market_intelligence.collection.target_repository import TargetRepository
 from market_intelligence.core.config import get_settings
+from market_intelligence.db.base import system_metadata
 from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.providers.http_transport import HttpxProviderTransport
 from market_intelligence.tasks.celery_app import celery_app
@@ -177,6 +184,12 @@ async def _dispatch_control_plane() -> int:
     factory = create_session_factory(engine)
     redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
+        async with factory() as session:
+            authority = await session.scalar(
+                select(system_metadata.c.value).where(system_metadata.c.key == AUTHORITY_KEY)
+            )
+        if authority != AUTHORITY_APPROVED:
+            return 0
         repository = TargetRepository(factory, build_operation_registry())
         scheduler = TargetScheduler(repository, redis)
         requests = await scheduler.claim_due(datetime.now(UTC))
@@ -201,6 +214,28 @@ def dispatch_collection_targets() -> dict[str, int]:
     return {"dispatched": asyncio.run(_dispatch_control_plane())}
 
 
+async def _shadow_control_plane() -> dict[str, Any]:
+    settings = get_settings()
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        report = await ControlPlaneAuditService(factory, build_operation_registry()).shadow()
+        return {
+            "status": report.status,
+            "target_count": report.target_count,
+            "eligible_count": report.eligible_count,
+            "safe_errors": list(report.safe_errors),
+        }
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="collection.control_plane.shadow_audit")  # type: ignore[untyped-decorator]
+def shadow_collection_control_plane() -> dict[str, Any]:
+    """Read-only audit: no enqueue, credential, Provider request, or collection write."""
+    return asyncio.run(_shadow_control_plane())
+
+
 @celery_app.task(name="collection.control_plane.run_target")  # type: ignore[untyped-decorator]
 def run_collection_target(
     target_id: str,
@@ -215,6 +250,17 @@ def run_collection_target(
         factory = create_session_factory(engine)
         redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
         try:
+            async with factory() as session:
+                authority = await session.scalar(
+                    select(system_metadata.c.value).where(system_metadata.c.key == AUTHORITY_KEY)
+                )
+            if authority != AUTHORITY_APPROVED:
+                return {
+                    "target_id": target_id,
+                    "run_id": None,
+                    "status": "blocked",
+                    "safe_error": "authority_activation_not_approved",
+                }
             worker = CollectionControlPlaneWorker(
                 factory,
                 TargetRepository(factory, build_operation_registry()),
@@ -252,6 +298,12 @@ def recover_stale_collection_targets() -> dict[str, int]:
         factory = create_session_factory(engine)
         redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
         try:
+            async with factory() as session:
+                authority = await session.scalar(
+                    select(system_metadata.c.value).where(system_metadata.c.key == AUTHORITY_KEY)
+                )
+            if authority != AUTHORITY_APPROVED:
+                return 0
             return await recover_stale_target_runs(
                 factory,
                 redis,

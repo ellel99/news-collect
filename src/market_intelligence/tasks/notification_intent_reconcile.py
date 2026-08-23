@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from market_intelligence.collection.control_plane_tools import authority_is_approved
 from market_intelligence.core.config import get_settings
 from market_intelligence.db.session import create_engine, create_session_factory
 from market_intelligence.notifications.intent import NotificationIntentReconciler
@@ -13,9 +14,11 @@ def reconcile_notification_intents(limit: int = 100) -> dict[str, int]:
     async def run() -> dict[str, int]:
         engine = create_engine(get_settings())
         try:
-            report = await NotificationIntentReconciler(create_session_factory(engine)).reconcile(
-                limit=limit
-            )
+            factory = create_session_factory(engine)
+            async with factory() as session:
+                if not await authority_is_approved(session):
+                    return {"scanned": 0, "created": 0, "resolved": 0}
+            report = await NotificationIntentReconciler(factory).reconcile(limit=limit)
             return {
                 "scanned": report.scanned,
                 "created": report.created,

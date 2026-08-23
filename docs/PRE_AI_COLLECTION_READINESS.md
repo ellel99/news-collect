@@ -70,7 +70,10 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 ### R2 — Durable Safe Projection
 
 - **Current limitation:** parts of provider projection/handoff are in-memory or optimized for bounded runs; Event/AI
-  cannot depend on ephemeral sidecars or raw provider payload.
+  cannot depend on ephemeral sidecars or raw provider payload. R1 deliberately persists only canonical RawItem:
+  Marketaux summary fields, Finnhub numeric quote values, EIA metric/value/unit and same-period revision identity,
+  and SEC safe facts/same-accession revision identity are not durable R1 facts. Presence flags and zero placeholders
+  are never substitutes for those values.
 - **Target:** durable, versioned, provider-neutral safe projection derived from RawItem/Evidence, with content/
   numeric/official-fact allowlists, provenance and retention class.
 - **Safety/license:** no raw response, secret, unrestricted body or unauthorized full text; field-level provenance

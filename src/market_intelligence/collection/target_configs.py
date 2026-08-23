@@ -110,6 +110,17 @@ def _sec(config: Mapping[str, Any]) -> Mapping[str, Any]:
     return MappingProxyType(result)
 
 
+def _fake(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    _keys(config, frozenset({"behavior", "pages"}))
+    behavior = config.get("behavior", "empty")
+    pages = config.get("pages", 1)
+    if behavior not in {"empty", "items", "timeout", "error"}:
+        raise TargetConfigError("operation_config_invalid")
+    if not isinstance(pages, int) or not 1 <= pages <= 20:
+        raise TargetConfigError("operation_config_invalid")
+    return MappingProxyType({"behavior": behavior, "pages": pages})
+
+
 class OperationRegistry:
     def __init__(self, contracts: tuple[OperationContract, ...]) -> None:
         self._contracts = {
@@ -153,6 +164,19 @@ def build_operation_registry() -> OperationRegistry:
     return OperationRegistry(
         (
             OperationContract(
+                "fake",
+                "fake_sequence",
+                1,
+                1,
+                CollectionCursorStrategy.STRICT_INCREMENTAL,
+                CollectionMode.INCREMENTAL,
+                20,
+                (),
+                "fake_sequence",
+                "none",
+                _fake,
+            ),
+            OperationContract(
                 "marketaux",
                 "news_all",
                 1,
@@ -183,7 +207,7 @@ def build_operation_registry() -> OperationRegistry:
                 "electricity_retail_sales",
                 1,
                 1,
-                CollectionCursorStrategy.COMPOUND,
+                CollectionCursorStrategy.SNAPSHOT_WATERMARK,
                 CollectionMode.SNAPSHOT,
                 5,
                 ("EIA_API_KEY",),
@@ -196,7 +220,7 @@ def build_operation_registry() -> OperationRegistry:
                 "submissions_recent",
                 1,
                 1,
-                CollectionCursorStrategy.REVISION,
+                CollectionCursorStrategy.SNAPSHOT_WATERMARK,
                 CollectionMode.SNAPSHOT,
                 10,
                 ("SEC_USER_AGENT", "SEC_CONTACT_EMAIL"),

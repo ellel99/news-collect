@@ -10,7 +10,9 @@ from sqlalchemy.sql import Executable
 
 from market_intelligence.collection.target_configs import OperationRegistry, TargetConfigError
 from market_intelligence.collection.target_repository import eligible
+from market_intelligence.db.base import system_metadata
 from market_intelligence.db.models import (
+    AuditLog,
     CollectionCursor,
     CollectionRun,
     CollectionRunStatus,
@@ -25,8 +27,21 @@ from market_intelligence.db.models import (
 from market_intelligence.notifications.intent import (
     POLICY_ID,
     IntentWatermark,
+    _persist_cutover_watermark,
     load_cutover_watermark,
 )
+
+AUTHORITY_KEY = "collection.authority.activation.v1"
+AUTHORITY_APPROVED = "reviewer-approved"
+
+
+async def authority_is_approved(session: AsyncSession) -> bool:
+    return (
+        await session.scalar(
+            select(system_metadata.c.value).where(system_metadata.c.key == AUTHORITY_KEY)
+        )
+        == AUTHORITY_APPROVED
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,19 +54,19 @@ class AuthorityAudit:
     config_mismatches: int
     cursor_mismatches: int
     provenance_mismatches: int
-    content_gaps: int
-    evidence_gaps: int
     notification_gaps: int
+    unmapped_runs: int
+    unmapped_cursors: int
     rollback_ineligible: int
+    phase2_reconciled: bool
     cutover_watermark_present: bool
+    authority_approved: bool
     safe_errors: tuple[str, ...]
 
 
 class ControlPlaneAuditService:
     def __init__(
-        self,
-        factory: async_sessionmaker[AsyncSession],
-        registry: OperationRegistry,
+        self, factory: async_sessionmaker[AsyncSession], registry: OperationRegistry
     ) -> None:
         self._factory, self._registry = factory, registry
 
@@ -97,6 +112,11 @@ class ControlPlaneAuditService:
                         max_requests=target.max_requests_per_run,
                         max_pages=target.max_pages_per_run,
                     )
+                    if (
+                        contract.cursor_strategy is not target.cursor_strategy
+                        or contract.collection_mode is not target.collection_mode
+                    ):
+                        raise TargetConfigError("target_operation_semantics_invalid")
                 except TargetConfigError:
                     config += 1
             running = await self._count(
@@ -111,10 +131,10 @@ class ControlPlaneAuditService:
                 .select_from(CollectionCursor)
                 .outerjoin(CollectionTarget, CollectionTarget.id == CollectionCursor.target_id)
                 .where(
-                    CollectionCursor.target_id.is_(None)
-                    | CollectionCursor.source_account_id.is_distinct_from(
+                    CollectionCursor.target_id.is_not(None),
+                    CollectionCursor.source_account_id.is_distinct_from(
                         CollectionTarget.source_account_id
-                    )
+                    ),
                 ),
             )
             provenance = await self._count(
@@ -128,21 +148,34 @@ class ControlPlaneAuditService:
                     | CollectionRun.target_id.is_(None)
                 ),
             )
-            content_gaps = await self._count(
+            unmapped_runs = await self._count(
                 session,
                 select(func.count())
-                .select_from(RawItem)
-                .join(CollectionRun, CollectionRun.id == RawItem.collection_run_id)
-                .where(CollectionRun.target_id.is_not(None), ~RawItem.content_item.has()),
+                .select_from(CollectionRun)
+                .where(CollectionRun.target_id.is_(None)),
             )
-            evidence_gaps = await self._count(
+            unmapped_cursors = await self._count(
                 session,
                 select(func.count())
-                .select_from(RawItem)
-                .join(CollectionRun, CollectionRun.id == RawItem.collection_run_id)
-                .where(CollectionRun.target_id.is_not(None), ~RawItem.evidence_items.any()),
+                .select_from(CollectionCursor)
+                .where(CollectionCursor.target_id.is_(None)),
+            )
+            phase2_reconciled = bool(
+                await session.scalar(
+                    select(AuditLog.id)
+                    .where(
+                        AuditLog.action == "r1_phase2_reconciliation",
+                        AuditLog.after["status"].astext == "reconciled",
+                        AuditLog.after["remaining_unmapped_runs"].astext == "0",
+                        AuditLog.after["remaining_unmapped_cursors"].astext == "0",
+                        AuditLog.after["mismatched_target_owned_rows"].astext == "0",
+                    )
+                    .order_by(AuditLog.created_at.desc())
+                    .limit(1)
+                )
             )
             watermark = await load_cutover_watermark(session)
+            authority_approved = await authority_is_approved(session)
             notification_gaps = 0
             if watermark is not None:
                 notification_gaps = await self._count(
@@ -167,10 +200,11 @@ class ControlPlaneAuditService:
                     (config, "target_config_mismatch"),
                     (cursor_mismatch, "cursor_identity_mismatch"),
                     (provenance, "run_raw_provenance_mismatch"),
-                    (content_gaps, "content_completeness_gap"),
-                    (evidence_gaps, "evidence_completeness_gap"),
                     (notification_gaps, "notification_intent_gap"),
+                    (unmapped_runs, "collection_run_unmapped"),
+                    (unmapped_cursors, "collection_cursor_unmapped"),
                     (rollback, "rollback_identity_ineligible"),
+                    (not phase2_reconciled, "phase2_reconciliation_missing"),
                 )
                 if count
             )
@@ -183,16 +217,17 @@ class ControlPlaneAuditService:
                 config,
                 cursor_mismatch,
                 provenance,
-                content_gaps,
-                evidence_gaps,
                 notification_gaps,
+                unmapped_runs,
+                unmapped_cursors,
                 rollback,
+                phase2_reconciled,
                 watermark is not None,
+                authority_approved,
                 errors,
             )
 
     async def cutover_watermark_candidate(self) -> IntentWatermark | None:
-        """Read the stable newest Content tuple; never persists or activates it."""
         async with self._factory() as session:
             row = (
                 await session.execute(
@@ -203,13 +238,33 @@ class ControlPlaneAuditService:
             ).one_or_none()
             return None if row is None else IntentWatermark(row.created_at, row.id)
 
+    async def prepare_cutover_watermark(self) -> bool:
+        """Persist one immutable candidate only after all non-activation gates pass."""
+        report = await self.shadow()
+        if report.running_runs or report.safe_errors or report.eligible_count == 0:
+            raise RuntimeError("cutover_authority_audit_blocked")
+        candidate = await self.cutover_watermark_candidate()
+        if candidate is None:
+            raise RuntimeError("cutover_watermark_candidate_missing")
+        async with self._factory.begin() as session:
+            existing = await load_cutover_watermark(session)
+            if existing is not None:
+                if existing != candidate:
+                    raise RuntimeError("cutover_watermark_immutable")
+                return False
+            return await _persist_cutover_watermark(session, candidate)
+
     async def rollback_eligible(self) -> bool:
         report = await self.shadow()
         return (
             report.running_runs == 0
             and report.mapping_mismatches == 0
+            and report.config_mismatches == 0
             and report.cursor_mismatches == 0
             and report.provenance_mismatches == 0
+            and report.unmapped_runs == 0
+            and report.unmapped_cursors == 0
+            and report.phase2_reconciled
             and report.rollback_ineligible == 0
         )
 

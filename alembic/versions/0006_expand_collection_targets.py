@@ -218,7 +218,7 @@ def upgrade() -> None:
         "collection_targets",
         ["source_account_id", "legacy_cursor_type"],
         unique=True,
-        postgresql_where=sa.text("status = 'active' AND legacy_cursor_type IS NOT NULL"),
+        postgresql_where=sa.text("legacy_cursor_type IS NOT NULL"),
     )
     op.create_index(
         "ix_collection_targets_source_status", "collection_targets", ["source_id", "status"]
@@ -457,6 +457,10 @@ def downgrade() -> None:
       SELECT EXISTS(SELECT 1 FROM collection_runs WHERE target_id IS NOT NULL)
           OR EXISTS(SELECT 1 FROM collection_cursors WHERE target_id IS NOT NULL)
           OR EXISTS(SELECT 1 FROM collection_targets)
+          OR EXISTS(
+            SELECT 1 FROM system_metadata
+            WHERE key IN ('notification.intent.cutover.v1','collection.authority.activation.v1')
+          )
     """)
     ).scalar_one()
     if unsafe:

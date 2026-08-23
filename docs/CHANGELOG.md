@@ -1,5 +1,10 @@
 # Changelog
 
+- PR #43 second review remediation keeps R1 at the authorized RawItem/control-plane boundary: removes the added
+  durable Content/Evidence/Event path, restores rollback ownership across all target lifecycle states, adds fake
+  migration compatibility and exact Phase 2 reconciliation, narrows v1 cursor claims, and makes shadow/unified
+  authority fail closed. No Provider/Telegram/AI request, activation, cutover, replay, or Migration B was executed.
+
 ## Unreleased — R1 Unified Production Collection Control Plane Implementation
 
 - Closes the consolidated PR #43 A1–A18 review ledger with an expand-only Migration A, explicit deterministic Phase 2,
@@ -38,7 +43,7 @@
   terminal retry/cadence semantics, and replaces an undefined per-Content override with append-only AuditLog closure.
 - Clarifies five acceptance batches: four functional batches plus Migration B finalization.
 - Makes registry-derived `legacy_cursor_type` INSERT-time only with no UPDATE exception. Migration A creates permanent target/Source identity
-  trigger plus temporary active non-null and ownership-unique constraints; Migration B removes only the temporary
+  trigger plus temporary active non-null and cross-lifecycle ownership-unique constraints; Migration B removes only the temporary
   objects after rollback ends and retains the field/trigger for audit.
 - Protects referenced `Source.access_method` as immutable Provider identity and removes fictional legacy migration
   metadata (`origin`, separate migration timestamp) from the high-level SPEC.

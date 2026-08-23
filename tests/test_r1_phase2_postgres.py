@@ -5,10 +5,13 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from market_intelligence.collection.phase2_migration import LegacyTargetPhase2Service
+from market_intelligence.collection.phase2_migration import (
+    LegacyTargetPhase2Service,
+    Phase2MigrationError,
+)
 from market_intelligence.collection.target_configs import build_operation_registry
 from market_intelligence.db.models import (
     AuditLog,
@@ -114,6 +117,14 @@ async def test_phase2_is_explicit_deterministic_idempotent_and_value_free() -> N
             rendered = repr([(item.before, item.after) for item in audits]).lower()
             assert "technology" not in rendered
             assert "api_key" not in rendered
+        async with factory.begin() as session:
+            await session.execute(
+                update(CollectionTarget)
+                .where(CollectionTarget.source_account_id == account_id)
+                .values(cadence_seconds=301)
+            )
+        with pytest.raises(Phase2MigrationError, match="phase2_existing_target_mismatch"):
+            await service.run()
     finally:
         if source_id is not None:
             async with factory.begin() as session:
@@ -184,4 +195,88 @@ async def test_phase2_unknown_mapping_is_blocked_without_legacy_identity() -> No
                 )
                 await session.execute(delete(SourceAccount).where(SourceAccount.id == account_id))
                 await session.execute(delete(Source).where(Source.id == source_id))
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_phase2_fake_account_and_source_level_mapping_are_allowlisted() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    marker = uuid.uuid4().hex
+    source_ids: list[uuid.UUID] = []
+    account_id = run_id = cursor_id = None
+    try:
+        async with factory.begin() as session:
+            account_source = Source(
+                code=f"r1-fake-account-{marker}",
+                name="Fake account",
+                source_type=SourceType.API,
+                access_method="fake",
+                authorization_status=AuthorizationStatus.IMPLEMENTED,
+                retention_class="metadata_only",
+                enabled=True,
+            )
+            source_level = Source(
+                code=f"r1-fake-source-{marker}",
+                name="Fake source",
+                source_type=SourceType.API,
+                access_method="fake",
+                authorization_status=AuthorizationStatus.IMPLEMENTED,
+                retention_class="metadata_only",
+                enabled=True,
+            )
+            session.add_all((account_source, source_level))
+            await session.flush()
+            account = SourceAccount(
+                source_id=account_source.id,
+                identity_status=IdentityStatus.VERIFIED,
+                enabled=True,
+                collection_options={"behavior": "items", "pages": 2},
+            )
+            session.add(account)
+            await session.flush()
+            run = CollectionRun(
+                source_id=account_source.id,
+                source_account_id=account.id,
+                started_at=datetime.now(UTC),
+                status=CollectionRunStatus.SUCCEEDED,
+            )
+            cursor = CollectionCursor(
+                source_account_id=account.id, cursor_type="fake_sequence", cursor_value="1"
+            )
+            session.add_all((run, cursor))
+            await session.flush()
+            source_ids = [account_source.id, source_level.id]
+            account_id, run_id, cursor_id = account.id, run.id, cursor.id
+
+        report = await LegacyTargetPhase2Service(factory, build_operation_registry()).run()
+        assert report.remaining_unmapped_runs == 0
+        assert report.remaining_unmapped_cursors == 0
+        async with factory() as session:
+            rows = tuple(
+                await session.scalars(
+                    select(CollectionTarget).where(CollectionTarget.source_id.in_(source_ids))
+                )
+            )
+            account_target = next(row for row in rows if row.source_account_id == account_id)
+            source_target = next(row for row in rows if row.source_account_id is None)
+            assert account_target.operation_key == "fake_sequence"
+            assert account_target.legacy_cursor_type == "fake_sequence"
+            assert account_target.operation_config == {"behavior": "items", "pages": 2}
+            assert source_target.operation_key == "fake_sequence"
+            assert source_target.legacy_cursor_type is None
+            assert source_target.status.value == "paused"
+    finally:
+        if source_ids:
+            async with factory.begin() as session:
+                await session.execute(delete(AuditLog).where(AuditLog.action.like("r1_phase2%")))
+                await session.execute(
+                    delete(CollectionCursor).where(CollectionCursor.id == cursor_id)
+                )
+                await session.execute(delete(CollectionRun).where(CollectionRun.id == run_id))
+                await session.execute(
+                    delete(CollectionTarget).where(CollectionTarget.source_id.in_(source_ids))
+                )
+                await session.execute(delete(SourceAccount).where(SourceAccount.id == account_id))
+                await session.execute(delete(Source).where(Source.id.in_(source_ids)))
         await engine.dispose()

@@ -30,7 +30,10 @@ POLICY_ID = "spec-0038-multi-provider-telegram"
 POLICY_VERSION = "1"
 WATERMARK_KEY = "notification.intent.cutover.v1"
 _PROVIDERS = frozenset({"marketaux", "finnhub", "eia", "sec_edgar"})
-_KINDS = frozenset({ContentKind.ARTICLE, ContentKind.FEED_ENTRY, ContentKind.OFFICIAL_RELEASE})
+_POLICY_KINDS = {
+    "marketaux": frozenset({ContentKind.ARTICLE, ContentKind.FEED_ENTRY}),
+    "sec_edgar": frozenset({ContentKind.OFFICIAL_RELEASE}),
+}
 _SECRET = re.compile(r"(?i)(api[_-]?key|api[_-]?token|authorization|token|secret|password)")
 
 
@@ -60,7 +63,8 @@ def notification_dedup_key(provider: str, content_item_id: UUID) -> str:
     return f"{provider}:telegram:{content_item_id}"
 
 
-async def persist_cutover_watermark(session: AsyncSession, watermark: IntentWatermark) -> bool:
+async def _persist_cutover_watermark(session: AsyncSession, watermark: IntentWatermark) -> bool:
+    """Private primitive; runtime callers must use the guarded control-plane operation."""
     created = await session.scalar(
         insert(system_metadata)
         .values(key=WATERMARK_KEY, value=watermark.encode())
@@ -233,7 +237,7 @@ async def _candidate(
         or not source.enabled
         or source.authorization_status
         not in {AuthorizationStatus.AUTHORIZED, AuthorizationStatus.IMPLEMENTED}
-        or content.content_kind not in _KINDS
+        or content.content_kind not in _POLICY_KINDS.get(provider, frozenset())
         or content.source_published_at is None
         or not _safe_text(content.title)
         or not _safe_url(content.canonical_url)

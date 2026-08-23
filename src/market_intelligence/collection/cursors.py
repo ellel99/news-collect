@@ -50,7 +50,6 @@ def decide_cursor(
         CollectionCursorStrategy.STRICT_INCREMENTAL,
         CollectionCursorStrategy.SNAPSHOT_WATERMARK,
         CollectionCursorStrategy.COMPOUND,
-        CollectionCursorStrategy.REVISION,
     }:
         raise CursorContractError("cursor_strategy_invalid")
     previous, proposed = decode_cursor(current), decode_cursor(candidate)
@@ -60,7 +59,6 @@ def decide_cursor(
         return CursorDecision("advance", proposed)
     if proposed == previous and normalized_strategy in {
         CollectionCursorStrategy.SNAPSHOT_WATERMARK,
-        CollectionCursorStrategy.REVISION,
         CollectionCursorStrategy.COMPOUND,
     }:
         return CursorDecision("no_new_items", proposed)

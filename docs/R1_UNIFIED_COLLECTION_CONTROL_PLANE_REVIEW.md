@@ -45,10 +45,10 @@ document only; a separate explicit implementation authorization is still require
   dual-write, and Migration B is applied only after the reviewed rollback window closes.
 - phases 0–3 continuously stop every legacy collection/stale-recovery writer; legacy authority resumes only through
   compatible runtime after zero RUNNING/null-unmapped rows and exact backfill-count verification.
-- rollback ownership permits only one **active** target per `(source_account_id,legacy_cursor_type)` through the
-  temporary partial unique index; draft/paused/blocked candidates do not own the runtime rollback identity. An active
-  target must be paused through the reviewed lifecycle before another reviewed target can claim that identity.
-  Same-account concurrent active multi-target operation begins only after Migration B.
+- rollback ownership permits only one target across **all lifecycle states** per
+  `(source_account_id,legacy_cursor_type)` through the temporary partial unique index. Draft, paused, blocked and
+  retired owners retain the identity; pause, repair, resume and config revision never transfer it. Same-account
+  multi-target operation begins only after Migration B removes this rollback-window restriction.
 - `legacy_cursor_type varchar(100) NULL` is written only by migration-Phase-2 target INSERT from the static registry;
   every UPDATE is permanently forbidden and there is no repository initialization/transfer API.
 - three DB objects have distinct lifecycles: Migration A creates and Migration B retains the permanent identity/
@@ -79,8 +79,8 @@ document only; a separate explicit implementation authorization is still require
 - [ ] legacy migration never auto-activates smoke defaults and ambiguous state blocks safely.
 - [ ] Migration A compatibility, shadow/cutover, cursor dual-write rollback and Migration B finalization guarantee one
   authoritative scheduler and a deployable rolling sequence.
-- [ ] DB-enforced rollback activation requires non-null account/type; rollback ownership is unique across active
-  targets and is released only by a reviewed transition out of active. Migration B removes the two temporary restrictions after
+- [ ] DB-enforced rollback activation requires non-null account/type; rollback ownership is unique across every
+  lifecycle and has no ordinary transfer API. Migration B removes the two temporary restrictions only after
   forward-recovery-only cutover and retains permanent immutability.
 - [ ] the normative state matrix and config-revision in-flight state machine cover all terminal/retry/manual states.
 - [ ] exact implementation files, five acceptance batches (four functional + Migration B) and test matrix are accepted.
@@ -116,3 +116,26 @@ closeout merges. This PR remains docs-only and does not itself contain implement
   was not read, modified, tracked or packaged.
 - review protocol self-containment：`docs/REVIEW_PROTOCOL.md` is Git-tracked and present in clean `git archive`;
   `AI_CONTEXT.md` does not depend on an untracked local file.
+
+## 7. Implementation Review evidence (PR #43)
+
+- R1 persistence ends at canonical `RawItem`; existing safe projection sidecars remain an in-memory handoff. PR #43
+  does not create ContentItem, EvidenceItem, EventCandidate, Fact or AI records. Durable provider projection is R2;
+  Event/Evidence/Fact completeness is R8.
+- Finnhub numeric quote fields, EIA metric/value/unit and revision identity, SEC same-accession revision identity,
+  and expanded Marketaux summaries are explicit R2/R3–R5 prerequisites. No zero, presence flag or placeholder is
+  persisted as a factual value.
+- Canonical RawItem idempotency is preserved. The current schema proves which run first persisted a canonical item;
+  it does not persist every later run observation. Adding a run↔item observation association requires a reviewed
+  additive schema and is an R1 Docs blocker, not silently invented in this implementation.
+- Migration A remains expand-only. Phase 2 is an explicit all-or-nothing service with exact existing-target
+  comparison, historical provenance preflight, unique candidate checks, exact count reconciliation and value-free
+  AuditLog evidence.
+- Rollback ownership is unique across every lifecycle until Migration B. Fake compatibility is allowlisted only for
+  deterministic test/history migration and never activates a production Provider.
+- Current v1 cursor support is limited to fake strict-incremental, Marketaux/Finnhub compound ordering, and EIA/SEC
+  snapshot-watermark ordering. Same-period EIA revisions and same-accession SEC revisions cannot be proven from the
+  R1 safe projection and remain R2/R4/R5 prerequisites; unsupported revision strategy fails closed.
+- `legacy` remains the default authority. Shadow has a real read-only Beat audit and performs no enqueue/request/
+  credential/write. Unified tasks require persisted reviewer-approved authority evidence before enqueue or network.
+  No activation, cutover, replay or Migration B was executed.

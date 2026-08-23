@@ -25,11 +25,14 @@
 - Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 为
   `spec/SPEC-0041-implementation-unified-production-collection-control-plane.md`；仅 I-A/II/III/IV 已授权，
   Migration B、production activation、cutover 与 historical replay 仍禁止。
+- R1 scope correction：统一 worker 只持久化 canonical RawItem；不新增 durable Content/Evidence/Event 写路径。
+  Marketaux summary、Finnhub numeric quote、EIA metric/value/unit 与 revision identity、SEC safe facts/revision
+  identity 登记为 R2/R3–R5/R8 前置能力，不得以 0、presence flag 或 placeholder 伪造事实。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
   dual-write rollback、pre-parse response-byte budget、coverage-incomplete persistence 与唯一状态矩阵已写入
-  合同。最终修正还限制 rollback window 每个 legacy cursor identity 最多由一个 active target 占用、
+  合同。rollback window 每个 legacy cursor identity 由一个 target 跨全部 lifecycle 独占，
   phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
   trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger；legacy identity
   仅在 target INSERT 写入，Source 被 target 引用后 access_method 永久不可变。Notification 使用

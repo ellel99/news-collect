@@ -6,8 +6,11 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import delete, func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from market_intelligence.collection.control_plane_tools import ControlPlaneAuditService
+from market_intelligence.collection.target_configs import build_operation_registry
 from market_intelligence.db.base import system_metadata
 from market_intelligence.db.models import (
     AuditLog,
@@ -35,7 +38,7 @@ from market_intelligence.notifications.intent import (
     WATERMARK_KEY,
     IntentWatermark,
     NotificationIntentReconciler,
-    persist_cutover_watermark,
+    create_pending_intent,
     record_intent_recovery,
 )
 from market_intelligence.telegram.manual_push import (
@@ -61,6 +64,62 @@ class _TelegramTransport:
         return TelegramSendResult(self.status_code)
 
 
+async def _seed_watermark(session: AsyncSession, watermark: IntentWatermark) -> None:
+    await session.execute(
+        insert(system_metadata)
+        .values(key=WATERMARK_KEY, value=watermark.encode())
+        .on_conflict_do_nothing(index_elements=[system_metadata.c.key])
+    )
+
+
+@pytest.mark.asyncio
+async def test_finnhub_quote_content_is_not_a_notification_candidate() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    marker = uuid.uuid4().hex
+    source_id, account_id, run_id, raw_id, content_id = await _content_fixture(factory, marker)
+    try:
+        async with factory.begin() as session:
+            source = await session.get(Source, source_id)
+            content = await session.get(ContentItem, content_id)
+            assert source is not None and content is not None
+            source.access_method = "finnhub"
+            content.content_kind = ContentKind.FEED_ENTRY
+            await _seed_watermark(
+                session, IntentWatermark(datetime(2000, 1, 1, tzinfo=UTC), uuid.UUID(int=0))
+            )
+            assert await create_pending_intent(session, content_id) is None
+    finally:
+        await _cleanup(factory, source_id, account_id, run_id, raw_id, content_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_cutover_watermark_is_guarded_idempotent_and_immutable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    marker = uuid.uuid4().hex
+    source_id, account_id, run_id, raw_id, content_id = await _content_fixture(factory, marker)
+    try:
+        service = ControlPlaneAuditService(factory, build_operation_registry())
+
+        async def passed_audit() -> object:
+            return type(
+                "PassedAudit",
+                (),
+                {"running_runs": 0, "safe_errors": (), "eligible_count": 1},
+            )()
+
+        monkeypatch.setattr(service, "shadow", passed_audit)
+        assert await service.prepare_cutover_watermark() is True
+        assert await service.prepare_cutover_watermark() is False
+    finally:
+        await _cleanup(factory, source_id, account_id, run_id, raw_id, content_id)
+        await engine.dispose()
+
+
 async def _content_fixture(factory: async_sessionmaker, marker: str):  # type: ignore[no-untyped-def]
     async with factory.begin() as session:
         source = Source(
@@ -78,7 +137,7 @@ async def _content_fixture(factory: async_sessionmaker, marker: str):  # type: i
             source_id=source.id,
             identity_status=IdentityStatus.VERIFIED,
             enabled=True,
-            collection_options={},
+            collection_options={"query": "technology"},
         )
         session.add(account)
         await session.flush()
@@ -142,7 +201,7 @@ async def test_recovery_is_prioritized_exactly_resolved_and_bounded() -> None:
     source_id, account_id, run_id, raw_id, content_id = await _content_fixture(factory, marker)
     try:
         async with factory.begin() as session:
-            await persist_cutover_watermark(
+            await _seed_watermark(
                 session,
                 IntentWatermark(datetime(2000, 1, 1, tzinfo=UTC), uuid.UUID(int=0)),
             )
@@ -255,6 +314,7 @@ async def _cleanup(
     content_id: uuid.UUID,
 ) -> None:
     async with factory.begin() as session:
+        await session.execute(delete(AuditLog).where(AuditLog.action.like("r1_phase2%")))
         await session.execute(delete(AuditLog).where(AuditLog.target_id == content_id))
         await session.execute(
             delete(Notification).where(Notification.content_item_id == content_id)

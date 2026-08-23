@@ -439,7 +439,7 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 | phase | action | authoritative path | rollback condition |
 |---|---|---|---|
 | 0 | stop and continuously hold all legacy collection/stale-recovery tasks that may create or modify CollectionRun, CollectionCursor or RawItem; drain to zero RUNNING. Delivery-only Telegram work may continue only if it cannot invoke collection or mutate those tables | none — maintenance hold | resume unchanged legacy tasks only before Migration A/backfill starts |
-| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, permanent identity trigger, temporary active-identity CHECK/trigger and rollback-ownership partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; downgrade removes all A-created objects |
+| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, permanent identity trigger, temporary active non-null CHECK/trigger and cross-lifecycle rollback-ownership partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; downgrade removes all A-created objects |
 | 2 | with legacy collection still stopped, perform deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | none — maintenance hold | abort on mismatch; keep tasks stopped and targets paused/blocked |
 | 3 | deploy compatible runtime while collection remains stopped; verify zero RUNNING legacy runs, zero unmapped/new NULL target_id runs/cursors, and exact backfill reconciliation counts | none — maintenance hold | keep maintenance hold; deploy previous compatible worker only if Migration A downgrade remains safe |
 | 3A | only after phase-3 verification, resume legacy authority through the compatible runtime that writes target_id and transactionally dual-writes eligible target+legacy cursor | legacy compatible runtime | stop/drain compatible runtime; nullable expand schema remains |
@@ -605,7 +605,7 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 
 | batch | scope | merge/acceptance gate |
 |---|---|---|
-| I-A | Migration A nullable expand + ORM compatibility + typed config registry | INSERT-time registry identity; permanent target/Source identity triggers; temporary active CHECK/ownership index; old/new worker+A; deterministic audits; no activation |
+| I-A | Migration A nullable expand + ORM compatibility + typed config registry | INSERT-time registry identity; permanent target/Source identity triggers; temporary active non-null CHECK plus cross-lifecycle ownership index; old/new worker+A; deterministic audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
 | III | scheduler/claim/lock/retry/run/cursor/health | rollback-eligible multi-target isolation, state matrix, budgets, pagination-capability-none, restart/stale recovery |
 | IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
@@ -650,8 +650,11 @@ No batch may activate production targets or perform bounded live verification wi
   Content-Length and streamed decoded bodies before JSON parsing/persistence, including exact-boundary tests.
 - coverage state: DB restart observes PARTIAL/coverage_incomplete, degraded target, unchanged complete watermark,
   normal cadence, no failure increment and no false complete/succeeded/no-new state.
-- cursor: strict, snapshot, compound, normal/backfill separation and revision cases; no v1 Provider page recovery;
-  target↔legacy transactional dual-write, mismatch blocking, rollback reconciliation and rollback-window exit.
+- cursor: fake strict-incremental, Marketaux/Finnhub compound ordering, EIA/SEC snapshot-watermark ordering, and
+  normal/backfill separation; unsupported strategy/operation combinations fail closed. Same-period EIA and
+  same-accession SEC revision detection remain R2/R4/R5 prerequisites and are not simulated by timestamp/item ID.
+  No v1 Provider page recovery; target↔legacy transactional dual-write, mismatch blocking, rollback reconciliation
+  and rollback-window exit remain required.
 - eligibility: scheduler and worker share exact Source authorization/enabled, Account identity/enabled/source-level,
   target status/revision and registry rules; post-dispatch state change prevents network.
 - delivery: deterministic PENDING intent, atomic-or-reconcilable boundary, reconciler after intent failure,
@@ -691,37 +694,3 @@ No batch may activate production targets or perform bounded live verification wi
 No operation expansion, durable safe projection, Event/Evidence/Fact/AI change, Market Validation, Recommendation,
 Portfolio/Holding/Investment Plan, Provider addition, X, GDELT, NewsAPI.ai, streaming/webhook/event bus, live
 migration, bounded live request or PR #39 work.
-
-## 17. Implementation evidence (pending Implementation Review)
-
-The authorized I-A, II, III and IV implementation is present on the dedicated Draft implementation branch:
-
-- I-A: Alembic `0006` (down revision `0005`) is expand-only and adds the nullable model, permanent
-  identity/provenance/config-safety triggers and temporary rollback guards. Explicit Phase 2 reuses the runtime typed
-  registry to INSERT deterministic paused/blocked legacy targets, backfill Run/Cursor identity, reconcile counts and
-  write value-free AuditLog evidence; Alembic upgrade never invokes Phase 2.
-- II: target repository/CAS, exact four-operation registry, allowlisted factory, worker reload, worker-only runtime
-  credentials and decoded response-byte enforcement are implemented without live Provider access.
-- III: target scheduler/dispatch identity, Redis marker and owner lock, target-owned run/cursor, transactional legacy
-  cursor dual-write, retry/cadence/health, stale recovery, PARTIAL coverage and read-only authority tools are present.
-- IV: durable deterministic PENDING Notification intent, AuditLog recovery/resolution, bounded reconciler and an
-  independent delivery-only Telegram task are present. Existing production authority is not switched.
-
-Migration B, production target activation, cutover, historical replay and live Provider/Telegram verification remain
-not implemented and not authorized. This section records implementation evidence only; the SPEC remains
-`Active — Implementation Review` until an explicit reviewer decision.
-
-### Consolidated implementation-review remediation ledger
-
-The PR #43 review baseline identified A1–A18 as one bounded remediation set. The implementation now maps those
-findings as follows: A1/A2 use the single provider-neutral downstream transaction for RawItem, safe ContentItem,
-Evidence, Event boundary and Notification intent, with PostgreSQL conflict-target idempotency and exact run counters;
-A3–A5 keep Migration A expand-only, move deterministic target/backfill work to explicit Phase 2, enforce recursive
-DB config safety and fail downgrade closed after any target-owned state; A6/A7 add typed CAS lifecycle validation and
-fair keyset dispatch beyond contested pages; A8–A10 enforce dispatch/revision identity, bounded retries, owner-lock
-renew/loss, grouped rate limits, wall-clock/transport budgets, typed cursor decisions and non-retryable decoded-byte
-overflow; A11/A12 implement the approved provider-scoped intent/watermark/recovery and delivery-only state machines;
-A13/A14 provide read-only authority evidence plus one fail-closed legacy/shadow/unified schedule switch; A15 adds
-behavioral PostgreSQL and mock-only tests; A16 preserves the four exact non-pageable v1 operations; A17/A18 are
-covered by the ordered remediation and complete validation/package-review evidence. No production activation,
-cutover, historical replay, live request or Migration B is part of this remediation.

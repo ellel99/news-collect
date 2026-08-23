@@ -48,12 +48,19 @@ unified_schedule = {
         "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
     },
 }
+shadow_schedule = {
+    **legacy_schedule,
+    "r1-control-plane-shadow-audit": {
+        "task": "collection.control_plane.shadow_audit",
+        "schedule": settings.COLLECTION_DISPATCH_INTERVAL_SECONDS,
+    },
+}
 beat_schedule = (
     legacy_schedule
     if settings.COLLECTION_AUTHORITY == "legacy"
     else unified_schedule
     if settings.COLLECTION_AUTHORITY == "unified"
-    else {}
+    else shadow_schedule
 )
 
 celery_app.conf.update(

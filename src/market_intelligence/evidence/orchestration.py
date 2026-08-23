@@ -107,7 +107,6 @@ class EvidencePipelineRequest:
     sanitized_projection: Mapping[str, object]
     observed_at: datetime
     correlation_id: str
-    content_item_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +159,6 @@ class EvidencePipelineService:
                 source_id=request.source_id,
                 source_account_id=request.source_account_id,
                 raw_item_id=request.raw_item_id,
-                content_item_id=request.content_item_id,
             )
         )
         return _write_outcome(request, write_outcome)
