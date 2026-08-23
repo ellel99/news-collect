@@ -54,8 +54,9 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 
 ### R1 — Unified Production Collection Control Plane
 
-- **Current limitation:** generic scheduler is fake-only; real scheduler is provider-level, single-target and uses
-  unversioned `collection_options` plus a global limit.
+- **Current limitation:** Draft PR #43 implements the reviewed multi-target control plane, typed targets and
+  decoupled delivery, but it is inactive and not yet merged or activated; production authority remains `legacy`.
+  Existing bounded Provider operations and smoke evidence do not prove complete production coverage.
 - **Target:** SPEC-0041 `CollectionTarget`, target-owned state, typed config, unified factory, independent delivery,
   operation budgets and cursor/backfill/revision contracts.
 - **Safety/license:** worker-only credentials, operation/transport allowlists, legacy defaults paused, fail closed.
@@ -66,6 +67,11 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
   until an independently approved bounded cutover verification.
 - **Acceptance:** multiple targets independently schedule/retry/checkpoint/recover; no double collection; delivery
   failure cannot stop collection; rollback drill PASS.
+
+Canonical `RawItem.collection_run_id` records only the first canonical persistence run. Later runs observing the
+same canonical item have no durable run↔item association. Overwriting that immutable lineage or inserting duplicate
+canonical RawItems is prohibited. A separately reviewed additive observation-association schema is a prerequisite
+for observation/revision analytics and complete replay provenance, but is not a PR #43 merge blocker.
 
 ### R2 — Durable Safe Projection
 

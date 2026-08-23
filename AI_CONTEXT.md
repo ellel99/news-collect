@@ -36,7 +36,13 @@
   phase 0–3 持续 drain legacy writers；`legacy_cursor_type` 由 registry 固定，Migration A 创建永久 identity
   trigger 与两项临时 rollback 约束，Migration B 只移除临时对象并保留审计字段/trigger；legacy identity
   仅在 target INSERT 写入，Source 被 target 引用后 access_method 永久不可变。Notification 使用
-  AuditLog recovery/resolved pair。Draft PR #43 是当前实现证据，尚待整体 Implementation Review。
+  AuditLog recovery/resolved pair。Draft PR #43 是当前实现证据，尚待最终 Implementation Review；其
+  Notification reconciler 以 policy eligibility 在 LIMIT 前过滤，并以 value-free durable scan marker 越过
+  安全校验失败记录，防止有限分页 starvation。
+- RawItem observation lineage：`RawItem.collection_run_id` 仅证明首次 canonical persistence run；后续 run
+  对同一 item 的重复 observation 尚无 durable association。不得覆盖该字段或创建重复 canonical RawItem；
+  这是后续 observation/revision analytics、完整 replay provenance 与 Pre-AI readiness 的 prerequisite，
+  不是 PR #43 merge blocker，须由独立审核的 additive schema 解决。
 - Pre-AI gate：`docs/PRE_AI_COLLECTION_READINESS.md` 的 R0–R8 完成前，PR #39/SPEC-0040 必须保持
   Draft、不得合并。完成后须在届时最新 main 重新审计/rebase；其现有 AI/Fact/snapshot/routing 设计
   不保证原样保留。

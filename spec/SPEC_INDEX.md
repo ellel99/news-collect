@@ -109,7 +109,9 @@ SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均�
 SPEC-0030–0039 已完成；SPEC-0041 Architecture 与 Implementation Contract Docs Review 已 PASS。当前 Active
 SPEC 为 SPEC-0041 Implementation Review；Foundation v2.3-FROZEN 生效，R0 Completed/PASS；R1 implementation
 I-A/II/III/IV 已由用户授权并在 Draft PR #43 接受 Implementation Review；Migration B、production
-activation、cutover 与 historical replay 未授权、未开始。
+activation、cutover 与 historical replay 未授权、未开始。PR #43 的 control-plane implementation 停在
+canonical RawItem boundary，production authority 仍为 `legacy`；durable safe projection、Evidence/Event
+handoff、Provider operation expansion 与重复 observation lineage association 均属于后续独立审核范围。
 PR #39 的 SPEC-0040 是未合并 Draft，在 Pre-AI R0–R8 完成前不得合并；之后须基于最新 main
 重新审计/rebase。SPEC-0005 及其他 Planned/candidate 不代表批准；SPEC-0022 已被 SPEC-0039
 absorb/supersede。

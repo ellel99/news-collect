@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -35,6 +36,7 @@ from market_intelligence.db.models import (
 from market_intelligence.notifications.delivery import NotificationDeliveryService
 from market_intelligence.notifications.intent import (
     POLICY_ID,
+    SCAN_ACTION,
     WATERMARK_KEY,
     IntentWatermark,
     NotificationIntentReconciler,
@@ -243,6 +245,129 @@ async def test_recovery_is_prioritized_exactly_resolved_and_bounded() -> None:
         assert (await NotificationIntentReconciler(factory).reconcile(limit=2)).scanned == 0
     finally:
         await _cleanup(factory, source_id, account_id, run_id, raw_id, content_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_policy_filter_cannot_starve_later_eligible_content() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    fixtures = [await _content_fixture(factory, uuid.uuid4().hex) for _ in range(5)]
+    try:
+        base = datetime(2025, 1, 1, tzinfo=UTC)
+        async with factory.begin() as session:
+            for index, fixture in enumerate(fixtures):
+                source = await session.get(Source, fixture[0])
+                content = await session.get(ContentItem, fixture[4])
+                assert source is not None and content is not None
+                source.access_method = (
+                    "finnhub" if index < 2 else "eia" if index < 4 else "marketaux"
+                )
+                content.created_at = base + timedelta(seconds=index)
+            await _seed_watermark(
+                session, IntentWatermark(base - timedelta(seconds=1), uuid.UUID(int=0))
+            )
+
+        first = await NotificationIntentReconciler(factory).reconcile(limit=2)
+        assert (first.scanned, first.created) == (1, 1)
+        second = await NotificationIntentReconciler(factory).reconcile(limit=2)
+        assert (second.scanned, second.created) == (0, 0)
+        async with factory() as session:
+            fixture_ids = [fixture[4] for fixture in fixtures]
+            notified = set(
+                await session.scalars(
+                    select(Notification.content_item_id).where(
+                        Notification.content_item_id.in_(fixture_ids)
+                    )
+                )
+            )
+            assert fixtures[-1][4] in notified
+            assert all(fixture[4] not in notified for fixture in fixtures[:-1])
+    finally:
+        for fixture in reversed(fixtures):
+            await _cleanup(factory, *fixture)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_durably_advances_past_invalid_candidate_page() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    fixtures = [await _content_fixture(factory, uuid.uuid4().hex) for _ in range(3)]
+    try:
+        base = datetime(2025, 2, 1, tzinfo=UTC)
+        async with factory.begin() as session:
+            for index, fixture in enumerate(fixtures):
+                content = await session.get(ContentItem, fixture[4])
+                assert content is not None
+                content.created_at = base + timedelta(seconds=index)
+                if index < 2:
+                    content.title = "authorization=unsafe"
+            await _seed_watermark(
+                session, IntentWatermark(base - timedelta(seconds=1), uuid.UUID(int=0))
+            )
+
+        first = await NotificationIntentReconciler(factory).reconcile(limit=2)
+        assert (first.scanned, first.created) == (2, 0)
+        second = await NotificationIntentReconciler(factory).reconcile(limit=2)
+        assert (second.scanned, second.created) == (1, 1)
+        third = await NotificationIntentReconciler(factory).reconcile(limit=2)
+        assert (third.scanned, third.created) == (0, 0)
+        async with factory() as session:
+            fixture_ids = [fixture[4] for fixture in fixtures]
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AuditLog)
+                    .where(
+                        AuditLog.action == SCAN_ACTION,
+                        AuditLog.target_id.in_(fixture_ids),
+                    )
+                )
+                == 2
+            )
+            notified = set(
+                await session.scalars(
+                    select(Notification.content_item_id).where(
+                        Notification.content_item_id.in_(fixture_ids)
+                    )
+                )
+            )
+            assert notified == {fixtures[-1][4]}
+    finally:
+        for fixture in reversed(fixtures):
+            await _cleanup(factory, *fixture)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reconcile_keeps_notification_intent_idempotent() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    marker = uuid.uuid4().hex
+    fixture = await _content_fixture(factory, marker)
+    try:
+        async with factory.begin() as session:
+            await _seed_watermark(
+                session,
+                IntentWatermark(datetime(2000, 1, 1, tzinfo=UTC), uuid.UUID(int=0)),
+            )
+        reports = await asyncio.gather(
+            NotificationIntentReconciler(factory).reconcile(limit=1),
+            NotificationIntentReconciler(factory).reconcile(limit=1),
+        )
+        assert sum(report.created for report in reports) == 1
+        async with factory() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Notification)
+                    .where(Notification.content_item_id == fixture[4])
+                )
+                == 1
+            )
+    finally:
+        await _cleanup(factory, *fixture)
         await engine.dispose()
 
 

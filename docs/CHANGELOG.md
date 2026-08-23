@@ -4,12 +4,16 @@
   durable Content/Evidence/Event path, restores rollback ownership across all target lifecycle states, adds fake
   migration compatibility and exact Phase 2 reconciliation, narrows v1 cursor claims, and makes shadow/unified
   authority fail closed. No Provider/Telegram/AI request, activation, cutover, replay, or Migration B was executed.
+- Fixes bounded Notification intent reconciliation starvation by applying provider/content-kind policy before LIMIT
+  and recording value-free durable scan markers for invalid candidates; later Marketaux/SEC content remains
+  reachable without generating Finnhub/EIA pseudo-news. Records duplicate RawItem observation lineage as a later
+  additive-schema prerequisite rather than a PR #43 blocker.
 
 ## Unreleased — R1 Unified Production Collection Control Plane Implementation
 
 - Closes the consolidated PR #43 A1–A18 review ledger with an expand-only Migration A, explicit deterministic Phase 2,
   recursive DB operation-config guard, safe downgrade refusal, target CAS/keyset scheduling, bounded worker retry/
-  lock/rate/cursor contracts, provider-neutral RawItem→Content→Evidence→Event/intent persistence, exact Notification
+  lock/rate/cursor contracts, canonical RawItem persistence, exact Notification
   recovery/delivery state machines and real read-only authority audits.
 - Adds PostgreSQL behavior coverage for INSERT-time Phase 2 mapping/backfill, config rejection, provenance and active
   rollback ownership; four-provider downstream idempotency/provenance; exact persisted Notification watermark,

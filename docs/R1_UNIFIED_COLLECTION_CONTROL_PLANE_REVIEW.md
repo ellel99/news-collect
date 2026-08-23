@@ -127,7 +127,9 @@ closeout merges. This PR remains docs-only and does not itself contain implement
   persisted as a factual value.
 - Canonical RawItem idempotency is preserved. The current schema proves which run first persisted a canonical item;
   it does not persist every later run observation. Adding a run↔item observation association requires a reviewed
-  additive schema and is an R1 Docs blocker, not silently invented in this implementation.
+  additive schema and is a later prerequisite for observation/revision analytics, complete replay provenance and
+  Pre-AI Data Readiness—not a PR #43 merge blocker. Implementations must not overwrite `RawItem.collection_run_id`
+  or create duplicate canonical RawItems to fabricate lineage.
 - Migration A remains expand-only. Phase 2 is an explicit all-or-nothing service with exact existing-target
   comparison, historical provenance preflight, unique candidate checks, exact count reconciliation and value-free
   AuditLog evidence.
@@ -139,3 +141,7 @@ closeout merges. This PR remains docs-only and does not itself contain implement
 - `legacy` remains the default authority. Shadow has a real read-only Beat audit and performs no enqueue/request/
   credential/write. Unified tasks require persisted reviewer-approved authority evidence before enqueue or network.
   No activation, cutover, replay or Migration B was executed.
+- Notification reconciliation applies provider/content-kind eligibility before its bounded LIMIT. Candidates that
+  pass that SQL policy gate but fail value-level safety validation receive a value-free, versioned scan AuditLog so
+  later eligible content cannot be starved by a permanently repeated first page. No Finnhub quote or ordinary EIA
+  observation is converted into a notification.

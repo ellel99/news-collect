@@ -28,6 +28,7 @@ from market_intelligence.db.models import (
 
 POLICY_ID = "spec-0038-multi-provider-telegram"
 POLICY_VERSION = "1"
+SCAN_ACTION = f"notification_intent_candidate_scanned_v{POLICY_VERSION}"
 WATERMARK_KEY = "notification.intent.cutover.v1"
 _PROVIDERS = frozenset({"marketaux", "finnhub", "eia", "sec_edgar"})
 _POLICY_KINDS = {
@@ -184,6 +185,7 @@ class NotificationIntentReconciler:
                 resolved += 1
             remaining = limit - scanned
             if remaining:
+                scanned_candidate = aliased(AuditLog)
                 ids = tuple(
                     await session.scalars(
                         select(ContentItem.id)
@@ -200,15 +202,46 @@ class NotificationIntentReconciler:
                                     Notification.channel == NotificationChannel.TELEGRAM_PUSH,
                                 )
                             ),
+                            ~select(scanned_candidate.id)
+                            .where(
+                                scanned_candidate.action == SCAN_ACTION,
+                                scanned_candidate.target_id == ContentItem.id,
+                            )
+                            .exists(),
+                            Source.enabled.is_(True),
+                            Source.authorization_status.in_(
+                                (
+                                    AuthorizationStatus.AUTHORIZED,
+                                    AuthorizationStatus.IMPLEMENTED,
+                                )
+                            ),
+                            or_(
+                                and_(
+                                    Source.access_method == "marketaux",
+                                    ContentItem.content_kind.in_(
+                                        (
+                                            ContentKind.ARTICLE,
+                                            ContentKind.FEED_ENTRY,
+                                        )
+                                    ),
+                                ),
+                                and_(
+                                    Source.access_method == "sec_edgar",
+                                    ContentItem.content_kind == ContentKind.OFFICIAL_RELEASE,
+                                ),
+                            ),
                         )
                         .order_by(ContentItem.created_at, ContentItem.id)
                         .limit(remaining)
+                        .with_for_update(skip_locked=True, of=ContentItem)
                     )
                 )
                 for content_id in ids:
                     scanned += 1
                     if await create_pending_intent(session, content_id) is not None:
                         created += 1
+                    else:
+                        _record_scanned_candidate(session, content_id)
             return ReconcileReport(scanned, created, resolved)
 
 
@@ -276,5 +309,25 @@ def _resolve_recovery(session: AsyncSession, recovery: AuditLog, status: str) ->
             target_id=recovery.target_id,
             before=None,
             after=after,
+        )
+    )
+
+
+def _record_scanned_candidate(session: AsyncSession, content_item_id: UUID) -> None:
+    """Durably advance bounded scans past a value-free invalid candidate."""
+    session.add(
+        AuditLog(
+            actor_type="system",
+            actor_id=None,
+            action=SCAN_ACTION,
+            target_type="content_item",
+            target_id=content_item_id,
+            before=None,
+            after={
+                "policy_id": POLICY_ID,
+                "policy_version": POLICY_VERSION,
+                "status": "not_applicable",
+                "safe_error": "notification_candidate_invalid",
+            },
         )
     )
