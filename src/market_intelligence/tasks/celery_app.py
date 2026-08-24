@@ -14,8 +14,15 @@ celery_app = Celery(
         "market_intelligence.tasks.multi_provider_scheduler",
         "market_intelligence.tasks.notification_intent_reconcile",
         "market_intelligence.tasks.notification_delivery",
+        "market_intelligence.tasks.safe_projection",
     ],
 )
+safe_projection_schedule = {
+    "safe-projection-reconciliation": {
+        "task": "safe_projection.validate_pending",
+        "schedule": settings.SAFE_PROJECTION_RECONCILE_INTERVAL_SECONDS,
+    },
+}
 legacy_schedule = {
     "collection-dispatch": {
         "task": "collection.dispatch_due_targets",
@@ -29,6 +36,7 @@ legacy_schedule = {
         "task": "multi_provider.telegram.run",
         "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
     },
+    **safe_projection_schedule,
 }
 unified_schedule = {
     "r1-control-plane-dispatch": {
@@ -47,6 +55,7 @@ unified_schedule = {
         "task": "notification.telegram.deliver",
         "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
     },
+    **safe_projection_schedule,
 }
 shadow_schedule = {
     **legacy_schedule,

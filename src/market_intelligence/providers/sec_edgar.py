@@ -23,6 +23,11 @@ from market_intelligence.providers.contracts import (
     ProviderTransportTimeout,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    sec_official_url,
+    validate_factual_payload,
+)
 
 
 class SecEdgarAdapter:
@@ -93,7 +98,7 @@ class SecEdgarAdapter:
                 "provider_response_shape_invalid",
                 False,
             )
-        raws, projections, displays, candidates = [], [], [], []
+        raws, projections, factuals, displays, candidates = [], [], [], [], []
         for row in recent[: request.limit]:
             accession, filing_date, form = (
                 safe_identifier(row.get("accessionNumber")),
@@ -112,15 +117,46 @@ class SecEdgarAdapter:
                     False,
                 )
             assert isinstance(accession, str) and isinstance(form, str)
+            primary_document = safe_identifier(row.get("primaryDocument"), max_length=255)
+            if primary_document is None:
+                return failed(
+                    self.provider_key,
+                    ProviderAdapterErrorCode.CONTRACT_INVALID,
+                    "provider_item_reference_invalid",
+                    False,
+                )
+            official_url = sec_official_url(cik.zfill(10), accession, primary_document)
             projection = {
                 "provider_item_id": accession,
                 "published_at": published_at,
                 "field_names": safe_field_names(row),
                 "ticker": ticker.upper(),
                 "form": form,
-                "has_primary_document": isinstance(row.get("primaryDocument"), str)
-                and bool(row.get("primaryDocument")),
+                "has_primary_document": True,
             }
+            factual = {
+                "provider_item_id": accession,
+                "published_at": published_at,
+                "ticker": ticker.upper(),
+                "cik": cik.zfill(10),
+                "accession_number": accession,
+                "form": form,
+                "filing_date": str(filing_date),
+                "primary_document": primary_document,
+                "official_url": official_url,
+                "official_source": True,
+            }
+            try:
+                factual = validate_factual_payload(
+                    self.provider_key, "submissions_recent", 1, factual
+                )
+            except ProjectionContractError:
+                return failed(
+                    self.provider_key,
+                    ProviderAdapterErrorCode.CONTRACT_INVALID,
+                    "provider_factual_contract_invalid",
+                    False,
+                )
             display = {
                 "provider_item_id": accession,
                 "published_at": published_at,
@@ -130,6 +166,7 @@ class SecEdgarAdapter:
                 raw_envelope(self.provider_key, accession, projection, response, "link_only")
             )
             projections.append(projection)
+            factuals.append(factual)
             displays.append(display)
             candidates.append((published_at, accession))
         published_at, item_id = max(candidates)
@@ -146,6 +183,7 @@ class SecEdgarAdapter:
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,
+            factual_projections=tuple(factuals),
         )
 
 

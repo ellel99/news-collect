@@ -239,7 +239,7 @@ async def test_runner_uses_provider_registry_and_checkpoints_after_raw_item(
 
 
 @pytest.mark.asyncio
-async def test_provider_raw_item_failure_does_not_advance_cursor(
+async def test_provider_item_identity_failure_does_not_advance_cursor(
     collection_runtime: tuple[async_sessionmaker[AsyncSession], Redis],
 ) -> None:
     factory, redis = collection_runtime
@@ -258,7 +258,7 @@ async def test_provider_raw_item_failure_does_not_advance_cursor(
         provider_transport=transport,
     ).run(make_target(source, account))
 
-    assert outcome.status == "retry"
+    assert outcome.status == "failed"
     async with factory() as session:
         assert await session.scalar(select(text("count(*)")).select_from(RawItem)) == 0
         assert await session.scalar(select(text("count(*)")).select_from(CollectionCursor)) == 0

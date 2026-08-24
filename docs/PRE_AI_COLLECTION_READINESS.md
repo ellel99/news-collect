@@ -2,8 +2,8 @@
 
 Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 Active — Implementation Review；
-I-A/II/III/IV bounded implementation authorized in Draft PR #43；Migration B/activation/cutover unauthorized
+Current gate：R0/R1 Completed；R2 Active — Implementation Review；production authority remains `legacy`；
+Migration B/activation/cutover unauthorized
 
 ## 1. Purpose and release gate
 
@@ -54,8 +54,8 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 
 ### R1 — Unified Production Collection Control Plane
 
-- **Current limitation:** Draft PR #43 implements the reviewed multi-target control plane, typed targets and
-  decoupled delivery, but it is inactive and not yet merged or activated; production authority remains `legacy`.
+- **Current limitation:** the reviewed multi-target control plane, typed targets and decoupled delivery are merged
+  but inactive; production authority remains `legacy`.
   Existing bounded Provider operations and smoke evidence do not prove complete production coverage.
 - **Target:** SPEC-0041 `CollectionTarget`, target-owned state, typed config, unified factory, independent delivery,
   operation budgets and cursor/backfill/revision contracts.
@@ -68,25 +68,24 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 - **Acceptance:** multiple targets independently schedule/retry/checkpoint/recover; no double collection; delivery
   failure cannot stop collection; rollback drill PASS.
 
-Canonical `RawItem.collection_run_id` records only the first canonical persistence run. Later runs observing the
-same canonical item have no durable run↔item association. Overwriting that immutable lineage or inserting duplicate
-canonical RawItems is prohibited. A separately reviewed additive observation-association schema is a prerequisite
-for observation/revision analytics and complete replay provenance, but is not a PR #43 merge blocker.
+Canonical `RawItem.collection_run_id` records only the first canonical persistence run. R2 adds a separate durable
+run↔item observation association; overwriting that immutable first-run lineage or inserting duplicate canonical
+RawItems remains prohibited.
 
-### R2 — Durable Safe Projection
+### R2 — Durable Safe Projection（Active — Implementation Review）
 
-- **Current limitation:** parts of provider projection/handoff are in-memory or optimized for bounded runs; Event/AI
-  cannot depend on ephemeral sidecars or raw provider payload. R1 deliberately persists only canonical RawItem:
-  Marketaux summary fields, Finnhub numeric quote values, EIA metric/value/unit and same-period revision identity,
-  and SEC safe facts/same-accession revision identity are not durable R1 facts. Presence flags and zero placeholders
-  are never substitutes for those values.
+- **Current limitation:** R1 persisted only canonical RawItem; legacy display/evidence sidecars are not the R2 factual
+  authority. R2 implementation now introduces durable observation lineage and typed factual projection for the four
+  existing operations, pending independent review and without production activation.
 - **Target:** durable, versioned, provider-neutral safe projection derived from RawItem/Evidence, with content/
   numeric/official-fact allowlists, provenance and retention class.
 - **Safety/license:** no raw response, secret, unrestricted body or unauthorized full text; field-level provenance
   and redaction/version audit required.
 - **Non-goals:** Event clustering, AI summarization, semantic normalization or provider SDK fields downstream.
 - **Dependencies:** R1 target identity/provenance; approved provider contracts.
-- **Impact:** likely additive migration/ORM/repository and projection version config; exact schema requires Docs Review.
+- **Impact:** additive Migration `0007`, ORM models, atomic collection handoff, exact v1 typed contracts, independent
+  bounded validation worker and authority-neutral periodic reconciliation; no existing table is removed or
+  rewritten. Legacy placeholder mapping remains compatibility-only, not Rich Evidence input.
 - **Verification gate:** synthetic/mock fixtures, PostgreSQL persistence/idempotency/replay, redaction/source audit;
   any live verification separately authorized and structural only.
 - **Acceptance:** restart-safe projection can reproduce allowed Evidence/Content inputs, reject unsafe content and

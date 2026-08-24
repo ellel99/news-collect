@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from market_intelligence.providers.adapter_support import (
     failed,
     iso_timestamp,
@@ -20,6 +22,10 @@ from market_intelligence.providers.contracts import (
     ProviderTransportTimeout,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    validate_factual_payload,
+)
 
 _QUOTE_FIELDS = ("c", "d", "dp", "h", "l", "o", "pc")
 
@@ -90,25 +96,69 @@ class FinnhubAdapter:
                 "provider_response_shape_invalid",
                 False,
             )
-        published_at = iso_timestamp(response.body.get("t"))
-        numeric_count = sum(
-            isinstance(response.body.get(key), (int, float)) for key in _QUOTE_FIELDS
-        )
-        if published_at is None or numeric_count == 0:
+        provider_timestamp = response.body.get("t")
+        if not isinstance(provider_timestamp, int) or isinstance(provider_timestamp, bool):
             return failed(
                 self.provider_key,
                 ProviderAdapterErrorCode.CONTRACT_INVALID,
                 "provider_response_shape_invalid",
                 False,
             )
-        item_id = f"{symbol.upper()}:{response.body['t']}"
+        published_at = iso_timestamp(provider_timestamp)
+        if provider_timestamp <= 0 or published_at is None or int(published_at[:4]) <= 1970:
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_quote_no_data",
+                False,
+            )
+        quote = {
+            key: response.body.get(key)
+            for key in _QUOTE_FIELDS
+            if isinstance(response.body.get(key), (int, float))
+            and not isinstance(response.body.get(key), bool)
+            and math.isfinite(float(response.body[key]))
+        }
+        if set(quote) != set(_QUOTE_FIELDS):
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_response_shape_invalid",
+                False,
+            )
+        if all(value == 0 for value in quote.values()):
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_quote_no_data",
+                False,
+            )
+        item_id = f"{symbol.upper()}:{provider_timestamp}"
         projection = {
             "provider_item_id": item_id,
             "published_at": published_at,
             "field_names": safe_field_names(response.body),
             "symbol": symbol.upper(),
-            "numeric_field_count": numeric_count,
+            "numeric_field_count": len(quote),
         }
+        factual = {
+            "provider_item_id": item_id,
+            "published_at": published_at,
+            "symbol": symbol.upper(),
+            "provider_timestamp": provider_timestamp,
+            **quote,
+            "currency": "unknown",
+            "exchange": "unknown",
+        }
+        try:
+            factual = validate_factual_payload(self.provider_key, "quote", 1, factual)
+        except ProjectionContractError:
+            return failed(
+                self.provider_key,
+                ProviderAdapterErrorCode.CONTRACT_INVALID,
+                "provider_factual_contract_invalid",
+                False,
+            )
         raw = raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
         return ProviderFetchResult(
             raw_items=(raw,),
@@ -125,6 +175,7 @@ class FinnhubAdapter:
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,
+            factual_projections=(factual,),
         )
 
 

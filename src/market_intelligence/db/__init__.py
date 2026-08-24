@@ -13,6 +13,8 @@ from market_intelligence.db.models import (
     Notification,
     OutboxMessage,
     RawItem,
+    RawItemObservation,
+    SafeFactProjection,
     Source,
     SourceAccount,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "Notification",
     "OutboxMessage",
     "RawItem",
+    "RawItemObservation",
+    "SafeFactProjection",
     "Source",
     "SourceAccount",
 ]

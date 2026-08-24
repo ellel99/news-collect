@@ -105,8 +105,16 @@ def test_repository_inventory_is_linear_and_contains_0003() -> None:
     report = load_migration_inventory(project_root)
 
     assert report.chain_intact is True
-    assert report.revisions == ("0001", "0002", "0003", "0004", "0005", "0006")
-    assert report.code_heads == ("0006",)
+    assert report.revisions == (
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+    )
+    assert report.code_heads == ("0007",)
 
 
 @pytest.mark.asyncio

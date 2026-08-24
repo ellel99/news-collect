@@ -122,7 +122,16 @@ async def _target(factory, provider: str, options: dict[str, object]) -> Collect
 
 def _response(provider: str, status: int = 200) -> ProviderTransportResponse:
     bodies = {
-        "finnhub": {"c": 100.0, "d": 1.0, "h": 102.0, "l": 98.0, "t": 1786300000},
+        "finnhub": {
+            "c": 100.0,
+            "d": 1.0,
+            "dp": 1.01,
+            "h": 102.0,
+            "l": 98.0,
+            "o": 99.0,
+            "pc": 99.0,
+            "t": 1786300000,
+        },
         "eia": {
             "response": {
                 "data": [
@@ -493,6 +502,100 @@ async def test_adapter_contract_rejects_malformed_response(provider) -> None:
     )
     assert result.raw_items == ()
     assert result.safe_errors[0].safe_message == "provider_response_shape_invalid"
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    (
+        (
+            {"c": 1, "d": 1, "dp": 1, "h": 1, "l": 1, "o": 1, "pc": 1, "t": 0},
+            "provider_quote_no_data",
+        ),
+        (
+            {"c": 1, "d": 1, "dp": 1, "h": 1, "l": 1, "o": 1, "pc": 1, "t": 1},
+            "provider_quote_no_data",
+        ),
+        (
+            {
+                "c": 0,
+                "d": 0,
+                "dp": 0,
+                "h": 0,
+                "l": 0,
+                "o": 0,
+                "pc": 0,
+                "t": 1767225600,
+            },
+            "provider_quote_no_data",
+        ),
+        (
+            {"c": 1, "d": 1, "dp": 1, "h": 1, "l": 1, "o": 1, "t": 1767225600},
+            "provider_response_shape_invalid",
+        ),
+        (
+            {
+                "c": float("nan"),
+                "d": 1,
+                "dp": 1,
+                "h": 1,
+                "l": 1,
+                "o": 1,
+                "pc": 1,
+                "t": 1767225600,
+            },
+            "provider_response_shape_invalid",
+        ),
+        (
+            {
+                "c": float("inf"),
+                "d": 1,
+                "dp": 1,
+                "h": 1,
+                "l": 1,
+                "o": 1,
+                "pc": 1,
+                "t": 1767225600,
+            },
+            "provider_response_shape_invalid",
+        ),
+        (
+            {
+                "c": True,
+                "d": 1,
+                "dp": 1,
+                "h": 1,
+                "l": 1,
+                "o": 1,
+                "pc": 1,
+                "t": 1767225600,
+            },
+            "provider_response_shape_invalid",
+        ),
+    ),
+)
+@pytest.mark.asyncio
+async def test_finnhub_no_data_and_invalid_quote_fail_before_raw_persistence(
+    body: dict[str, object], message: str
+) -> None:
+    adapter = FinnhubAdapter(RuntimeCredential("FINNHUB_API_KEY", SECRET))
+    request = ProviderFetchRequest(
+        uuid.uuid4(),
+        uuid.uuid4(),
+        None,
+        {"symbol": "AAPL"},
+        1,
+        datetime.now(UTC) + timedelta(seconds=30),
+        "synthetic",
+    )
+    result = await adapter.fetch(
+        request,
+        MockProviderTransport([ProviderTransportResponse(200, datetime.now(UTC), body)]),
+    )
+    assert result.raw_items == ()
+    assert result.factual_projections == ()
+    assert result.next_cursor is None
+    assert result.safe_errors[0].safe_message == message
+    assert result.safe_errors[0].retryable is False
 
 
 @pytest.mark.parametrize(

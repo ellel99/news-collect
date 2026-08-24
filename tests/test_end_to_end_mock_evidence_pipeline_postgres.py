@@ -209,7 +209,7 @@ async def test_reprocessing_run_is_idempotent(e2e_runtime) -> None:
 
 
 @pytest.mark.asyncio
-async def test_raw_item_persistence_failure_never_writes_evidence(e2e_runtime) -> None:
+async def test_invalid_provider_identity_never_writes_raw_or_evidence(e2e_runtime) -> None:
     factory, redis = e2e_runtime
     source, account = await _source(factory)
     pipeline, _ = _pipeline(factory, redis, _response(item_id="x" * 300))
@@ -217,7 +217,7 @@ async def test_raw_item_persistence_failure_never_writes_evidence(e2e_runtime) -
     outcome = await pipeline.run(_target(source, account))
 
     assert outcome.status is EndToEndStatus.COLLECTION_FAILED
-    assert outcome.retry_delay is not None
+    assert outcome.retry_delay is None
     assert await _counts(factory) == (0, 0)
 
 
