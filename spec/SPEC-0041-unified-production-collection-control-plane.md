@@ -350,7 +350,7 @@ Provider/network tests mock-only；任何 live verification 需未来独立、�
 
 | Finding | 文档修正 | Gate / result |
 |---|---|---|
-| historical v2.2 scheduler rewrite conflict | Foundation v2.3 Freeze Review completed; normative R1 contract retains independent authorization gate | R0 PASS；R1 implementation still unauthorized |
+| historical v2.2 scheduler rewrite conflict | Foundation v2.3 Freeze Review completed; normative R1 contract retained an independent authorization gate | R0 PASS；later explicit user authorization limited implementation to I-A/II/III/IV |
 | readiness 路线过于模糊 | 新增 `PRE_AI_COLLECTION_READINESS.md` R0–R9，SPEC §17 改为完整依赖 | R0–R8 PASS 前禁止 AI re-review |
 | PR #39 未被充分冻结 | Foundation v2.3、Program R9、SPEC §11 固定 Draft/re-audit/rebase/migration rule | 不合并、不保证现设计保留 |
 | Provider 状态矛盾 | 重写 Official Contracts 状态及四 Provider current/not-implemented/Pending sections | smoke/runtime/production capability 分级 |

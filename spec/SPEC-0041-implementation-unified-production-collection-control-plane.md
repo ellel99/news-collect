@@ -439,7 +439,7 @@ Draft `0006/0007`). It uses two serial revisions; deployment never assumes migra
 | phase | action | authoritative path | rollback condition |
 |---|---|---|---|
 | 0 | stop and continuously hold all legacy collection/stale-recovery tasks that may create or modify CollectionRun, CollectionCursor or RawItem; drain to zero RUNNING. Delivery-only Telegram work may continue only if it cannot invoke collection or mutate those tables | none — maintenance hold | resume unchanged legacy tasks only before Migration A/backfill starts |
-| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, permanent identity trigger, temporary active-identity CHECK/trigger and rollback-ownership partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; downgrade removes all A-created objects |
+| 1 / Migration A | create enums/target table including nullable legacy_cursor_type; add nullable target/run/cursor compatibility fields, permanent identity trigger, temporary active non-null CHECK/trigger and cross-lifecycle rollback-ownership partial unique index | none — maintenance hold | downgrade A only if no target-owned writes; downgrade removes all A-created objects |
 | 2 | with legacy collection still stopped, perform deterministic target/backfill and historical Run/RawItem/Cursor consistency scan | none — maintenance hold | abort on mismatch; keep tasks stopped and targets paused/blocked |
 | 3 | deploy compatible runtime while collection remains stopped; verify zero RUNNING legacy runs, zero unmapped/new NULL target_id runs/cursors, and exact backfill reconciliation counts | none — maintenance hold | keep maintenance hold; deploy previous compatible worker only if Migration A downgrade remains safe |
 | 3A | only after phase-3 verification, resume legacy authority through the compatible runtime that writes target_id and transactionally dual-writes eligible target+legacy cursor | legacy compatible runtime | stop/drain compatible runtime; nullable expand schema remains |
@@ -605,7 +605,7 @@ message/routing expansion, Market Validation, new Provider, PR #39 files, creden
 
 | batch | scope | merge/acceptance gate |
 |---|---|---|
-| I-A | Migration A nullable expand + ORM compatibility + typed config registry | INSERT-time registry identity; permanent target/Source identity triggers; temporary active CHECK/ownership index; old/new worker+A; deterministic audits; no activation |
+| I-A | Migration A nullable expand + ORM compatibility + typed config registry | INSERT-time registry identity; permanent target/Source identity triggers; temporary active non-null CHECK plus cross-lifecycle ownership index; old/new worker+A; deterministic audits; no activation |
 | II | target repository/factory/credential resolver + worker reload | static allowlist; task carries IDs only; worker-only credential; unknown/mismatch no network |
 | III | scheduler/claim/lock/retry/run/cursor/health | rollback-eligible multi-target isolation, state matrix, budgets, pagination-capability-none, restart/stale recovery |
 | IV | Notification intent/reconciler/delivery-only task + shadow/single-authority cutover | cutover watermark; no historical default; no dual collection/delivery claim; rollback drill; full regressions |
@@ -650,8 +650,11 @@ No batch may activate production targets or perform bounded live verification wi
   Content-Length and streamed decoded bodies before JSON parsing/persistence, including exact-boundary tests.
 - coverage state: DB restart observes PARTIAL/coverage_incomplete, degraded target, unchanged complete watermark,
   normal cadence, no failure increment and no false complete/succeeded/no-new state.
-- cursor: strict, snapshot, compound, normal/backfill separation and revision cases; no v1 Provider page recovery;
-  target↔legacy transactional dual-write, mismatch blocking, rollback reconciliation and rollback-window exit.
+- cursor: fake strict-incremental, Marketaux/Finnhub compound ordering, EIA/SEC snapshot-watermark ordering, and
+  normal/backfill separation; unsupported strategy/operation combinations fail closed. Same-period EIA and
+  same-accession SEC revision detection remain R2/R4/R5 prerequisites and are not simulated by timestamp/item ID.
+  No v1 Provider page recovery; target↔legacy transactional dual-write, mismatch blocking, rollback reconciliation
+  and rollback-window exit remain required.
 - eligibility: scheduler and worker share exact Source authorization/enabled, Account identity/enabled/source-level,
   target status/revision and registry rules; post-dispatch state change prevents network.
 - delivery: deterministic PENDING intent, atomic-or-reconcilable boundary, reconciler after intent failure,

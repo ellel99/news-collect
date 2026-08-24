@@ -5,6 +5,7 @@ PHASE1_TABLES = {
     "source_accounts",
     "collection_cursors",
     "collection_runs",
+    "collection_targets",
     "raw_items",
     "content_items",
     "notifications",

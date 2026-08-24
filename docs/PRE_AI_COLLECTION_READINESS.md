@@ -2,8 +2,8 @@
 
 Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 Active — Docs Review only；
-implementation not authorized
+Current gate：R0 Completed / Foundation v2.3 Freeze Review PASS；R1 Active — Implementation Review；
+I-A/II/III/IV bounded implementation authorized in Draft PR #43；Migration B/activation/cutover unauthorized
 
 ## 1. Purpose and release gate
 
@@ -49,12 +49,14 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 - **Impact:** documents only; no runtime/config/schema change.
 - **Verification gate:** Foundation diff, decision impact and downstream-document review.
 - **Acceptance:** PASS（2026-08-13；baseline `4df76e1f0ed9812d962369b9766bf372b102d952`）。
-  R0 is completed; R1 Docs Review is now active, but implementation remains not authorized.
+  R0 is completed; R1 Docs Review subsequently passed and the user separately authorized bounded I-A/II/III/IV
+  implementation. That later authorization does not change the scope of the R0 decision itself.
 
 ### R1 — Unified Production Collection Control Plane
 
-- **Current limitation:** generic scheduler is fake-only; real scheduler is provider-level, single-target and uses
-  unversioned `collection_options` plus a global limit.
+- **Current limitation:** Draft PR #43 implements the reviewed multi-target control plane, typed targets and
+  decoupled delivery, but it is inactive and not yet merged or activated; production authority remains `legacy`.
+  Existing bounded Provider operations and smoke evidence do not prove complete production coverage.
 - **Target:** SPEC-0041 `CollectionTarget`, target-owned state, typed config, unified factory, independent delivery,
   operation budgets and cursor/backfill/revision contracts.
 - **Safety/license:** worker-only credentials, operation/transport allowlists, legacy defaults paused, fail closed.
@@ -66,10 +68,18 @@ activation remains serial/reviewed. No readiness step may infer license, quota o
 - **Acceptance:** multiple targets independently schedule/retry/checkpoint/recover; no double collection; delivery
   failure cannot stop collection; rollback drill PASS.
 
+Canonical `RawItem.collection_run_id` records only the first canonical persistence run. Later runs observing the
+same canonical item have no durable run↔item association. Overwriting that immutable lineage or inserting duplicate
+canonical RawItems is prohibited. A separately reviewed additive observation-association schema is a prerequisite
+for observation/revision analytics and complete replay provenance, but is not a PR #43 merge blocker.
+
 ### R2 — Durable Safe Projection
 
 - **Current limitation:** parts of provider projection/handoff are in-memory or optimized for bounded runs; Event/AI
-  cannot depend on ephemeral sidecars or raw provider payload.
+  cannot depend on ephemeral sidecars or raw provider payload. R1 deliberately persists only canonical RawItem:
+  Marketaux summary fields, Finnhub numeric quote values, EIA metric/value/unit and same-period revision identity,
+  and SEC safe facts/same-accession revision identity are not durable R1 facts. Presence flags and zero placeholders
+  are never substitutes for those values.
 - **Target:** durable, versioned, provider-neutral safe projection derived from RawItem/Evidence, with content/
   numeric/official-fact allowlists, provenance and retention class.
 - **Safety/license:** no raw response, secret, unrestricted body or unauthorized full text; field-level provenance

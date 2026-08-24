@@ -1,5 +1,31 @@
 # Changelog
 
+- PR #43 second review remediation keeps R1 at the authorized RawItem/control-plane boundary: removes the added
+  durable Content/Evidence/Event path, restores rollback ownership across all target lifecycle states, adds fake
+  migration compatibility and exact Phase 2 reconciliation, narrows v1 cursor claims, and makes shadow/unified
+  authority fail closed. No Provider/Telegram/AI request, activation, cutover, replay, or Migration B was executed.
+- Fixes bounded Notification intent reconciliation starvation by applying provider/content-kind policy before LIMIT
+  and recording value-free durable scan markers for invalid candidates; later Marketaux/SEC content remains
+  reachable without generating Finnhub/EIA pseudo-news. Records duplicate RawItem observation lineage as a later
+  additive-schema prerequisite rather than a PR #43 blocker.
+
+## Unreleased — R1 Unified Production Collection Control Plane Implementation
+
+- Closes the consolidated PR #43 A1–A18 review ledger with an expand-only Migration A, explicit deterministic Phase 2,
+  recursive DB operation-config guard, safe downgrade refusal, target CAS/keyset scheduling, bounded worker retry/
+  lock/rate/cursor contracts, canonical RawItem persistence, exact Notification
+  recovery/delivery state machines and real read-only authority audits.
+- Adds PostgreSQL behavior coverage for INSERT-time Phase 2 mapping/backfill, config rejection, provenance and active
+  rollback ownership; four-provider downstream idempotency/provenance; exact persisted Notification watermark,
+  recovery linkage, credential preservation and policy isolation; and scheduler contention beyond the first page.
+- Implements the authorized I-A/II/III/IV bounded scope behind inactive control-plane boundaries: Migration A
+  `0006`, target repository/runtime contracts, target scheduler/worker, safe Notification intent reconciliation and
+  delivery-only Telegram task.
+- Keeps migrated targets paused/blocked and leaves existing production authority unchanged; no production activation,
+  cutover, historical replay, live Provider request or Telegram send was performed.
+- Migration B is intentionally absent and remains gated on separately authorized production/shadow/rollback evidence.
+- PR #39 remains Draft and untouched.
+
 ## Unreleased — R1 Unified Production Collection Control Plane Docs Review
 
 - R1 Docs Review closeout recorded `PASS — DOCS ONLY` on 2026-08-14 at reviewed head
@@ -21,7 +47,7 @@
   terminal retry/cadence semantics, and replaces an undefined per-Content override with append-only AuditLog closure.
 - Clarifies five acceptance batches: four functional batches plus Migration B finalization.
 - Makes registry-derived `legacy_cursor_type` INSERT-time only with no UPDATE exception. Migration A creates permanent target/Source identity
-  trigger plus temporary active non-null and ownership-unique constraints; Migration B removes only the temporary
+  trigger plus temporary active non-null and cross-lifecycle ownership-unique constraints; Migration B removes only the temporary
   objects after rollback ends and retains the field/trigger for audit.
 - Protects referenced `Source.access_method` as immutable Provider identity and removes fictional legacy migration
   metadata (`origin`, separate migration timestamp) from the high-level SPEC.

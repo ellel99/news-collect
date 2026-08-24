@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     FINNHUB_CADENCE_SECONDS: int = Field(default=900, ge=60, le=86400)
     EIA_CADENCE_SECONDS: int = Field(default=21600, ge=300, le=604800)
     SEC_EDGAR_CADENCE_SECONDS: int = Field(default=1800, ge=300, le=86400)
+    COLLECTION_AUTHORITY: Literal["legacy", "shadow", "unified"] = "legacy"
 
     @field_validator("DATABASE_URL")
     @classmethod
