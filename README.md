@@ -24,6 +24,8 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
   Review）。R1 control plane 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未
   activation。R2 只增加 durable RawItem observation lineage、typed safe factual projection 与独立 validation
   worker；四 Provider 的 bounded adapter/runtime/scheduler evidence 仍不代表完整 production data coverage。
+  Authority-neutral `safe_projection.validate_pending` reconciliation 在 legacy/shadow/unified schedule 下处理
+  PENDING/RETRY；它不调用 Provider、Telegram 或 AI。
 - Foundation v2.3-FROZEN 已通过 [R0 Freeze Review](docs/FOUNDATION_V2_3_FREEZE_REVIEW.md)；R0
   Completed/PASS，但不自动启动 R1，也不授权代码、migration、schema、runtime 或外部请求。完整路线见
   [Pre-AI Collection Readiness Program](docs/PRE_AI_COLLECTION_READINESS.md)。PR #39 保持 Draft。

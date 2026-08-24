@@ -22,6 +22,11 @@ from market_intelligence.providers.contracts import (
     ProviderTransportTimeout,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    eia_series_identity,
+    validate_factual_payload,
+)
 
 
 class EiaAdapter:
@@ -140,7 +145,7 @@ class EiaAdapter:
                 "provider_item_id": item_id,
                 "published_at": published_at,
                 "dataset": "electricity",
-                "series_identity": "electricity/retail-sales",
+                "series_identity": eia_series_identity(geography, sector),
                 "period": str(row.get("period")),
                 "geography": geography,
                 "sector": sector,
@@ -148,6 +153,17 @@ class EiaAdapter:
                 "value": value,
                 "unit": safe_identifier(row.get("price-units") or row.get("unit")) or "unknown",
             }
+            try:
+                factual = validate_factual_payload(
+                    self.provider_key, "electricity_retail_sales", 1, factual
+                )
+            except ProjectionContractError:
+                return failed(
+                    self.provider_key,
+                    ProviderAdapterErrorCode.CONTRACT_INVALID,
+                    "provider_factual_contract_invalid",
+                    False,
+                )
             raw_items.append(
                 raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
             )

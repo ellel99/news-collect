@@ -83,8 +83,9 @@ RawItems remains prohibited.
   and redaction/version audit required.
 - **Non-goals:** Event clustering, AI summarization, semantic normalization or provider SDK fields downstream.
 - **Dependencies:** R1 target identity/provenance; approved provider contracts.
-- **Impact:** additive Migration `0007`, ORM models, atomic collection handoff, exact v1 typed contracts and an
-  independent bounded validation worker; no existing table is removed or rewritten.
+- **Impact:** additive Migration `0007`, ORM models, atomic collection handoff, exact v1 typed contracts, independent
+  bounded validation worker and authority-neutral periodic reconciliation; no existing table is removed or
+  rewritten. Legacy placeholder mapping remains compatibility-only, not Rich Evidence input.
 - **Verification gate:** synthetic/mock fixtures, PostgreSQL persistence/idempotency/replay, redaction/source audit;
   any live verification separately authorized and structural only.
 - **Acceptance:** restart-safe projection can reproduce allowed Evidence/Content inputs, reject unsafe content and

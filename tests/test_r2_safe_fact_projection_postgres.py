@@ -20,6 +20,7 @@ from market_intelligence.db.models import (
     RawItemObservationKind,
     SafeFactProjection,
     SafeProjectionProcessingStatus,
+    SafeProjectionQualityStatus,
 )
 from market_intelligence.providers.contracts import ProviderFetchResult
 from market_intelligence.safe_projection.contracts import ProjectionContractError
@@ -31,17 +32,22 @@ POSTGRES_TEST_URL = os.environ.get(
 )
 
 
-async def _seed_target(factory: async_sessionmaker[AsyncSession]) -> dict[str, uuid.UUID]:
+async def _seed_target(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    provider: str = "marketaux",
+    operation_key: str = "news_all",
+) -> dict[str, uuid.UUID]:
     marker = uuid.uuid4().hex
     async with factory.begin() as session:
         source_id = await session.scalar(
             text("""
             INSERT INTO sources(
               code,name,source_type,access_method,authorization_status,retention_class,enabled
-            ) VALUES (:code,'R2 safe facts','api','marketaux','authorized','metadata_only',true)
+            ) VALUES (:code,'R2 safe facts','api',:provider,'authorized','metadata_only',true)
             RETURNING id
             """),
-            {"code": f"r2-{marker}"},
+            {"code": f"r2-{marker}", "provider": provider},
         )
         account_id = await session.scalar(
             text("""
@@ -59,7 +65,7 @@ async def _seed_target(factory: async_sessionmaker[AsyncSession]) -> dict[str, u
               max_runtime_seconds,cursor_strategy,collection_mode,backfill_policy,
               revision_policy,rate_limit_group,next_due_at,health_status
             ) VALUES (
-              :key,:source,:account,'news_all','provider_cursor_v1',1,1,
+              :key,:source,:account,:operation,'provider_cursor_v1',1,1,
               '{"query":"technology"}'::jsonb,'paused',300,3,1000000,10,60,
               'compound','incremental','disabled','ignore','marketaux:default',:now,'unknown'
             ) RETURNING id
@@ -68,6 +74,7 @@ async def _seed_target(factory: async_sessionmaker[AsyncSession]) -> dict[str, u
                 "key": f"r2.{marker}",
                 "source": source_id,
                 "account": account_id,
+                "operation": operation_key,
                 "now": datetime.now(UTC),
             },
         )
@@ -149,6 +156,9 @@ async def _persist(
     ids: dict[str, uuid.UUID],
     run_id: uuid.UUID,
     result: ProviderFetchResult,
+    *,
+    provider: str = "marketaux",
+    operation_key: str = "news_all",
 ) -> None:
     async with factory.begin() as session:
         await persist_fetch_result(
@@ -156,9 +166,9 @@ async def _persist(
             run_id=run_id,
             source_id=ids["source"],
             source_account_id=ids["account"],
-            provider="marketaux",
+            provider=provider,
             target_id=ids["target"],
-            operation_key="news_all",
+            operation_key=operation_key,
             config_revision=1,
             provider_contract_version=1,
             result=result,
@@ -227,9 +237,36 @@ async def test_observation_classification_idempotency_and_worker_recovery() -> N
                 == 3
             )
 
+        async with factory.begin() as session:
+            projections = tuple(
+                await session.scalars(
+                    select(SafeFactProjection)
+                    .join(
+                        RawItemObservation,
+                        RawItemObservation.id == SafeFactProjection.observation_id,
+                    )
+                    .where(RawItemObservation.source_id == ids["source"])
+                    .with_for_update()
+                )
+            )
+            for projection in projections:
+                projection.quality_status = SafeProjectionQualityStatus.BLOCKED
+
         report = await SafeFactProjectionWorker(factory).process_batch(limit=10)
         assert (report.claimed, report.ready, report.blocked) == (3, 3, 0)
         assert (await SafeFactProjectionWorker(factory).process_batch(limit=10)).claimed == 0
+        async with factory() as session:
+            qualities = set(
+                await session.scalars(
+                    select(SafeFactProjection.quality_status)
+                    .join(
+                        RawItemObservation,
+                        RawItemObservation.id == SafeFactProjection.observation_id,
+                    )
+                    .where(RawItemObservation.source_id == ids["source"])
+                )
+            )
+            assert qualities == {SafeProjectionQualityStatus.COMPLETE}
 
         async with factory.begin() as session:
             projection = await session.scalar(
@@ -399,3 +436,121 @@ async def test_worker_blocks_persisted_unsafe_payload_without_exposing_value() -
     finally:
         await _cleanup(factory, ids)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_worker_empty_and_concurrent_bounded_claims_are_idempotent() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    assert (await SafeFactProjectionWorker(factory).process_batch(limit=2)).claimed == 0
+    ids = await _seed_target(factory)
+    try:
+        for index in range(3):
+            run_id = await _new_run(factory, ids)
+            await _persist(factory, ids, run_id, _result(f"{uuid.uuid4().hex}{index}"))
+        reports = await asyncio.gather(
+            SafeFactProjectionWorker(factory).process_batch(limit=2),
+            SafeFactProjectionWorker(factory).process_batch(limit=2),
+        )
+        assert sum(report.claimed for report in reports) == 3
+        assert sum(report.ready for report in reports) == 3
+        assert sum(report.blocked for report in reports) == 0
+        assert (await SafeFactProjectionWorker(factory).process_batch(limit=2)).claimed == 0
+    finally:
+        await _cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ready_numeric_projections_preserve_real_values_without_legacy_placeholders() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    cases = (
+        (
+            "finnhub",
+            "quote",
+            {
+                "provider_item_id": "AAPL:1767225600",
+                "published_at": "2026-01-01T00:00:00+00:00",
+                "symbol": "AAPL",
+                "provider_timestamp": 1767225600,
+                "c": 101.25,
+                "d": -1.0,
+                "dp": -0.98,
+                "h": 103.0,
+                "l": 100.0,
+                "o": 102.0,
+                "pc": 102.25,
+                "currency": "unknown",
+                "exchange": "unknown",
+            },
+        ),
+        (
+            "eia",
+            "electricity_retail_sales",
+            {
+                "provider_item_id": "2026-01:US:ALL",
+                "published_at": "2026-01-01T00:00:00+00:00",
+                "period": "2026-01",
+                "dataset": "electricity",
+                "series_identity": "electricity/retail-sales/us/all/price",
+                "geography": "us",
+                "sector": "all",
+                "metric": "price",
+                "value": 12.345,
+                "unit": "unknown",
+            },
+        ),
+    )
+    for provider, operation, factual in cases:
+        ids = await _seed_target(factory, provider=provider, operation_key=operation)
+        try:
+            run_id = await _new_run(factory, ids)
+            marker = uuid.uuid4().hex
+            result = ProviderFetchResult(
+                raw_items=(
+                    RawItemEnvelope(
+                        external_id=str(factual["provider_item_id"]),
+                        fetched_at=datetime.now(UTC),
+                        http_status=200,
+                        content_type="application/json",
+                        payload_location=f"internal://provider/{provider}/{marker}",
+                        payload_hash=marker.ljust(64, "0")[:64],
+                        retention_class="metadata_only",
+                    ),
+                ),
+                sanitized_metadata=({"provider_item_id": factual["provider_item_id"]},),
+                factual_projections=(factual,),
+                next_cursor=None,
+                has_more=False,
+                safe_errors=(),
+                provider=provider,
+                contract_version=1,
+            )
+            await _persist(
+                factory,
+                ids,
+                run_id,
+                result,
+                provider=provider,
+                operation_key=operation,
+            )
+            report = await SafeFactProjectionWorker(factory).process_batch(limit=1)
+            assert report.ready == 1
+            async with factory() as session:
+                projection = await session.scalar(
+                    select(SafeFactProjection)
+                    .join(
+                        RawItemObservation,
+                        RawItemObservation.id == SafeFactProjection.observation_id,
+                    )
+                    .where(RawItemObservation.source_id == ids["source"])
+                )
+                assert projection is not None
+                assert projection.factual_payload == factual
+                assert projection.quality_status is SafeProjectionQualityStatus.PARTIAL
+                assert "numeric_field_count" not in projection.factual_payload
+                assert "has_numeric_value" not in projection.factual_payload
+        finally:
+            await _cleanup(factory, ids)
+    await engine.dispose()

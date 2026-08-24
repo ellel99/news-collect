@@ -28,6 +28,9 @@
 - R2 boundary：collection transaction 原子持久化 canonical RawItem、RawItemObservation 与 PENDING
   SafeFactProjection；不创建 Content/Evidence/Event/Fact/Impact/Notification。四个 v1 typed projection 保存
   已批准真实事实，禁止 0、presence flag 或 numeric count placeholder 冒充事实。
+  `safe_projection.validate_pending` 是 authority-neutral periodic reconciliation runtime；persistence 与 worker
+  共用 operation-specific quality contract。legacy Evidence placeholder mapping 不是 Rich Evidence source，
+  R2 worker 不得调用。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor

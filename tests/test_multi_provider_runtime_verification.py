@@ -160,7 +160,10 @@ async def test_eia_and_sec_adapters_preserve_has_more_semantics() -> None:
     sec_body = {
         "filings": {
             "recent": {
-                "accessionNumber": ["one", "two"],
+                "accessionNumber": [
+                    "0000320193-26-000001",
+                    "0000320193-26-000002",
+                ],
                 "filingDate": ["2026-08-01", "2026-07-01"],
                 "form": ["10-Q", "8-K"],
                 "primaryDocument": ["one.htm", "two.htm"],

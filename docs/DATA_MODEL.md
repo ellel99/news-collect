@@ -196,6 +196,11 @@ projection 转为 READY/BLOCKED。`RawItem.collection_run_id` 仍是首次 canon
 重复 observation 也不创建重复 canonical RawItem。任何 raw response、secret、任意 endpoint、未授权全文、
 placeholder numeric/presence fact 均不得进入该层。
 
+quality 是 deterministic operation contract：Marketaux 缺 title/URL/source、Finnhub currency/exchange unknown、
+EIA unit unknown 均为 PARTIAL；完整 SEC official metadata 为 COMPLETE。worker 必须重算而非信任持久化值。
+EIA `series_identity` 是不含 period 的 geography/sector/metric identity。legacy Evidence mapping 仅兼容旧
+链路，不是 Rich Evidence authority，也不是 SafeFactProjection worker dependency。
+
 ### 3.3 CollectionCursor
 
 - `id`

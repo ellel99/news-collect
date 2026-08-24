@@ -23,6 +23,11 @@ from market_intelligence.providers.contracts import (
     ProviderTransportTimeout,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    sec_official_url,
+    validate_factual_payload,
+)
 
 
 class SecEdgarAdapter:
@@ -120,10 +125,7 @@ class SecEdgarAdapter:
                     "provider_item_reference_invalid",
                     False,
                 )
-            official_url = (
-                "https://www.sec.gov/Archives/edgar/data/"
-                f"{int(cik)}/{accession.replace('-', '')}/{primary_document}"
-            )
+            official_url = sec_official_url(cik.zfill(10), accession, primary_document)
             projection = {
                 "provider_item_id": accession,
                 "published_at": published_at,
@@ -144,6 +146,17 @@ class SecEdgarAdapter:
                 "official_url": official_url,
                 "official_source": True,
             }
+            try:
+                factual = validate_factual_payload(
+                    self.provider_key, "submissions_recent", 1, factual
+                )
+            except ProjectionContractError:
+                return failed(
+                    self.provider_key,
+                    ProviderAdapterErrorCode.CONTRACT_INVALID,
+                    "provider_factual_contract_invalid",
+                    False,
+                )
             display = {
                 "provider_item_id": accession,
                 "published_at": published_at,

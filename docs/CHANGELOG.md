@@ -10,6 +10,9 @@
   SEC recent-submissions operations, preserving approved values without count/presence/zero placeholders.
 - Adds a bounded restart-safe validation worker and mock/PostgreSQL coverage. No production activation, cutover,
   Migration B, replay, operation expansion, external request, credential read, AI runtime, or PR #39 change.
+- Adds authority-neutral `safe_projection.validate_pending` Celery/Beat reconciliation, shared deterministic quality
+  recomputation, strict UTC/identity validation, facet-specific EIA series identity and Finnhub no-data rejection
+  before RawItem persistence.
 
 - PR #43 second review remediation keeps R1 at the authorized RawItem/control-plane boundary: removes the added
   durable Content/Evidence/Event path, restores rollback ownership across all target lifecycle states, adds fake

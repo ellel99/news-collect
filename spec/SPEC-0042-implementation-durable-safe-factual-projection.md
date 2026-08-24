@@ -51,9 +51,12 @@ Only these exact provider-neutral boundaries are accepted:
 - `sec_edgar/submissions_recent`: CIK, ticker, accession, filing date/form, primary document name and only an
   allowlisted official `https://www.sec.gov/Archives/...` reference. Filing bodies are never downloaded.
 
-Provider/operation/schema-version mismatch, arbitrary fields, non-finite numeric values, secret markers and unsafe
-URLs fail closed. The legacy sanitized metadata/display sidecars remain compatibility-only; the R2 transaction uses
-a separate typed factual projection channel and never promotes legacy presence flags, counts, or zero placeholders.
+Provider/operation/schema-version mismatch, naive/invalid timestamps, inconsistent identity, arbitrary fields,
+non-finite numeric values, secret markers and unsafe URLs fail closed. EIA series identity is stable across periods
+as `electricity/retail-sales/{geography}/{sector}/price`. Finnhub zero/no timestamp, all-zero sentinel, missing quote
+fields, bool, NaN and Infinity produce no RawItem/Observation/Projection and no cursor. The legacy sanitized
+metadata/display/Evidence sidecars remain compatibility-only and are not a Rich Evidence source; the R2 worker never
+calls them or reconstructs facts from legacy presence flags, counts, or zero placeholders.
 
 ## Validation worker
 
@@ -61,6 +64,16 @@ a separate typed factual projection channel and never promotes legacy presence f
 through VALIDATING, deterministically validates and hashes payloads, and produces READY or value-free BLOCKED
 results. Stale VALIDATING claims recover through bounded retry and eventually block. Repeated runs are idempotent.
 The worker has no Provider, collection scheduler, Telegram, Content/Evidence/Event, or AI dependency.
+
+The authority-neutral Celery task `safe_projection.validate_pending` runs the bounded worker from every legacy,
+shadow and unified Beat schedule. Periodic reconciliation recovers PENDING/RETRY work even when immediate enqueue is
+absent or lost. Interval, batch limit, stale threshold and maximum attempts have bounded process settings; the task
+reads no Provider/Telegram/AI credential and returns only claimed/ready/blocked/recovered counts.
+
+Persistence and worker revalidation share one operation-specific quality contract. Marketaux is PARTIAL when title,
+canonical URL or source identity is absent; Finnhub is PARTIAL while currency/exchange remain unknown; EIA is
+PARTIAL when unit is unknown; complete SEC metadata is COMPLETE. Invalid mandatory data fails before atomic
+persistence or becomes BLOCKED during revalidation, and the worker never trusts stored quality blindly.
 
 ## Review gates
 

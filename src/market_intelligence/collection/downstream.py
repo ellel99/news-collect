@@ -23,7 +23,7 @@ from market_intelligence.db.models import (
 from market_intelligence.providers.contracts import ProviderFetchResult
 from market_intelligence.safe_projection.contracts import (
     canonical_projection_hash,
-    validate_factual_payload,
+    normalize_and_classify_factual_payload,
 )
 
 
@@ -60,7 +60,7 @@ async def persist_fetch_result(
     if len(result.factual_projections) != len(result.raw_items):
         raise DownstreamPersistenceError("safe_fact_projection_missing")
     for envelope, metadata in zip(result.raw_items, result.factual_projections, strict=True):
-        payload = validate_factual_payload(
+        payload, quality = normalize_and_classify_factual_payload(
             provider, operation_key, 1, _factual_payload(provider, operation_key, metadata)
         )
         projection_hash = canonical_projection_hash(payload)
@@ -93,6 +93,7 @@ async def persist_fetch_result(
             operation_key=operation_key,
             payload=payload,
             projection_hash=projection_hash,
+            quality=quality,
         )
     return DownstreamCounts(
         len(result.raw_items),
@@ -238,13 +239,9 @@ async def _projection(
     operation_key: str,
     payload: dict[str, Any],
     projection_hash: str,
+    quality: str,
 ) -> int:
-    quality = (
-        SafeProjectionQualityStatus.PARTIAL
-        if provider == "marketaux"
-        and any(payload[key] is None for key in ("title", "canonical_url", "source_identity"))
-        else SafeProjectionQualityStatus.COMPLETE
-    )
+    quality_status = SafeProjectionQualityStatus(quality)
     identity = await session.scalar(
         insert(SafeFactProjection)
         .values(
@@ -255,7 +252,7 @@ async def _projection(
             projection_schema_version=1,
             factual_payload=payload,
             projection_hash=projection_hash,
-            quality_status=quality,
+            quality_status=quality_status,
             processing_status=SafeProjectionProcessingStatus.PENDING,
             attempt_count=0,
         )

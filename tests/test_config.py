@@ -28,3 +28,13 @@ def test_sqlite_database_is_rejected() -> None:
 def test_production_defaults_fail_fast() -> None:
     with pytest.raises(ValidationError, match="production service URLs"):
         Settings(APP_ENV="production", _env_file=None)
+
+
+def test_safe_projection_runtime_settings_are_bounded() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.SAFE_PROJECTION_BATCH_LIMIT == 100
+    assert settings.SAFE_PROJECTION_RECONCILE_INTERVAL_SECONDS == 60
+    with pytest.raises(ValidationError):
+        Settings(SAFE_PROJECTION_BATCH_LIMIT=501, _env_file=None)
+    with pytest.raises(ValidationError):
+        Settings(SAFE_PROJECTION_RECONCILE_INTERVAL_SECONDS=1, _env_file=None)

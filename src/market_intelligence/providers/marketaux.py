@@ -22,6 +22,10 @@ from market_intelligence.providers.contracts import (
     ProviderTransportTimeout,
 )
 from market_intelligence.providers.credentials import RuntimeCredential
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    validate_factual_payload,
+)
 
 _MAX_RECORDS: Final = 3
 _CONTRACT_VERSION: Final = 1
@@ -192,6 +196,16 @@ class MarketauxAdapter:
                 "description_coverage": "blocked",
                 "snippet_coverage": "blocked",
             }
+            try:
+                factual = validate_factual_payload(self.provider_key, "news_all", 1, factual)
+            except ProjectionContractError:
+                return _failed(
+                    ProviderAdapterError(
+                        code=ProviderAdapterErrorCode.CONTRACT_INVALID,
+                        safe_message="provider_factual_contract_invalid",
+                        retryable=False,
+                    )
+                )
             display: dict[str, Any] = {
                 "provider_item_id": item_id,
                 "published_at": published_at,

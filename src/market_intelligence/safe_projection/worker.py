@@ -17,7 +17,7 @@ from market_intelligence.db.models import (
 from market_intelligence.safe_projection.contracts import (
     ProjectionContractError,
     canonical_projection_hash,
-    validate_factual_payload,
+    normalize_and_classify_factual_payload,
 )
 
 
@@ -45,7 +45,7 @@ class SafeFactProjectionWorker:
         if not 1 <= limit <= 500:
             raise ValueError("projection_worker_limit_invalid")
         now = datetime.now(UTC)
-        recovered = await self._recover_stale(now)
+        recovered = await self._recover_stale(now, limit)
         claimed = await self._claim(limit, now)
         ready = blocked = 0
         for identity in claimed:
@@ -55,7 +55,7 @@ class SafeFactProjectionWorker:
                 blocked += 1
         return ProjectionValidationReport(len(claimed), ready, blocked, recovered)
 
-    async def _recover_stale(self, now: datetime) -> int:
+    async def _recover_stale(self, now: datetime, limit: int) -> int:
         cutoff = now - self._stale_after
         async with self._factory.begin() as session:
             rows = tuple(
@@ -66,6 +66,8 @@ class SafeFactProjectionWorker:
                         == SafeProjectionProcessingStatus.VALIDATING,
                         SafeFactProjection.updated_at < cutoff,
                     )
+                    .order_by(SafeFactProjection.updated_at, SafeFactProjection.id)
+                    .limit(limit)
                     .with_for_update(skip_locked=True)
                 )
             )
@@ -122,7 +124,7 @@ class SafeFactProjectionWorker:
             ):
                 return False
             try:
-                normalized = validate_factual_payload(
+                normalized, quality = normalize_and_classify_factual_payload(
                     row.provider,
                     row.operation_key,
                     row.projection_schema_version,
@@ -138,6 +140,7 @@ class SafeFactProjectionWorker:
                 row.updated_at = now
                 return False
             row.factual_payload = normalized
+            row.quality_status = SafeProjectionQualityStatus(quality)
             row.processing_status = SafeProjectionProcessingStatus.READY
             row.safe_error_code = None
             row.processed_at = now
