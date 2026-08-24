@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — R8-A SafeFactProjection → Evidence Durable Handoff
+
+- Adds Alembic `0008` and `evidence_projection_links` for per-projection handoff state, canonical Evidence linkage,
+  revision lineage, bounded retry and stale recovery with PostgreSQL provenance/provider guards.
+- Adds an authority-neutral bounded Celery reconciliation worker. Marketaux may create safe article Content; SEC
+  may create official link-only Content; Finnhub/EIA create no Content or Notification.
+- Keeps rich factual values only in SafeFactProjection and forbids the legacy placeholder mapper. Production
+  authority remains legacy; no activation, external request, Event/Fact/Impact/AI, replay, or PR #39 change.
+
 ## Unreleased — R2 Durable Safe Factual Projection
 
 - Adds additive Alembic revision `0007` with durable `raw_item_observations` and `safe_fact_projections`, strict

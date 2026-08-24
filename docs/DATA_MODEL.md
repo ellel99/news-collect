@@ -515,3 +515,11 @@ Entity 与 Asset 通过稳定映射关联，避免仅靠文本代码识别。
 - AI 输出不得覆盖来源事实；
 - 删除使用状态与审计，避免物理删除破坏追溯；
 - 所有敏感字段进入备份前加密或由加密存储保护。
+## R8-A Evidence projection handoff
+
+`evidence_projection_links` is the durable state and lineage boundary from one READY SafeFactProjection to one
+canonical EvidenceItem. `safe_fact_projection_id` is unique; revision projections for the same RawItem/provider
+may share an EvidenceItem while retaining their distinct projection hashes and factual payloads. The link may also
+reference the allowlisted Marketaux or SEC ContentItem created/adopted in the same transaction. PostgreSQL guards
+enforce null-safe raw/source/account/provider provenance. The link never copies factual payload and Finnhub/EIA do
+not create ContentItem or Notification.

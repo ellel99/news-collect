@@ -2,7 +2,7 @@
 
 Foundation：v2.3-FROZEN
 Current Phase：Event Intelligence foundation
-Active SPEC：SPEC-0042 Implementation — Durable Safe Factual Projection（Active — Implementation Review）
+Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Active — Implementation Review）
 Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 
 | SPEC | 名称 | 状态 | 依赖 |
@@ -42,7 +42,8 @@ Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 | SPEC-0039 | Phase 1 Acceptance + Event Candidate Foundation | Completed — Implementation Review approved | SPEC-0018–0021/0023–0038 |
 | SPEC-0041 | Unified Production Collection Control Plane | Completed — Docs Review approved | SPEC-0003/0030–0038；R0 PASS；PR #39 frozen |
 | SPEC-0041 implementation | Unified Production Collection Control Plane Implementation Contract | Completed — Implementation Review approved | SPEC-0041 architecture；Foundation v2.3 R0 PASS；R1 |
-| SPEC-0042 implementation | Durable Safe Factual Projection | Active — Implementation Review | SPEC-0041 implementation merged；Pre-AI R2 |
+| SPEC-0042 implementation | Durable Safe Factual Projection | Completed — Implementation Review approved | SPEC-0041 implementation merged；Pre-AI R2 |
+| SPEC-0043 | R8-A SafeFactProjection → Evidence Durable Handoff | Active — Implementation Review | SPEC-0042 implementation；Pre-AI R8 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -108,10 +109,11 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
 SPEC-0030–0039 已完成；SPEC-0041 Architecture/Implementation 已完成批准范围并进入 main。当前 Active
-SPEC 为 SPEC-0042 Implementation Review；Foundation v2.3-FROZEN 生效，R0 Completed/PASS；production
+SPEC 为 SPEC-0043 Implementation Review；Foundation v2.3-FROZEN 生效，R0 Completed/PASS；production
 authority 仍为 `legacy`，Migration B、production activation、cutover 与 historical replay 未授权、未开始。
-R2 仅新增 canonical RawItem observation lineage 和 durable safe factual projection；Content/Evidence/Event
-handoff、Provider operation expansion与真实 AI 仍属于后续独立审核范围。
+R2 已新增 canonical RawItem observation lineage 和 durable safe factual projection；R8-A 仅实现 READY
+projection 到 canonical Evidence/allowlisted Content 的 durable handoff。Event/Fact/Impact/AI、Provider
+operation expansion仍属于后续独立审核范围。
 PR #39 的 SPEC-0040 是未合并 Draft，在 Pre-AI R0–R8 完成前不得合并；之后须基于最新 main
 重新审计/rebase。SPEC-0005 及其他 Planned/candidate 不代表批准；SPEC-0022 已被 SPEC-0039
 absorb/supersede。

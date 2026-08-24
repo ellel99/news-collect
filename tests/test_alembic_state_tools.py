@@ -113,8 +113,9 @@ def test_repository_inventory_is_linear_and_contains_0003() -> None:
         "0005",
         "0006",
         "0007",
+        "0008",
     )
-    assert report.code_heads == ("0007",)
+    assert report.code_heads == ("0008",)
 
 
 @pytest.mark.asyncio
@@ -193,6 +194,7 @@ async def test_incompatible_schema_blocks_execute_without_update(
     compatible_database: AsyncEngine,
 ) -> None:
     async with compatible_database.begin() as connection:
+        await connection.execute(text("DROP TABLE evidence_projection_links"))
         await connection.execute(text("DROP TABLE event_candidate_evidence"))
         await connection.execute(text("DROP TABLE event_candidates"))
         await connection.execute(text("DROP TABLE evidence_items"))

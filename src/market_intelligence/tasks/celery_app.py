@@ -15,12 +15,19 @@ celery_app = Celery(
         "market_intelligence.tasks.notification_intent_reconcile",
         "market_intelligence.tasks.notification_delivery",
         "market_intelligence.tasks.safe_projection",
+        "market_intelligence.tasks.evidence_handoff",
     ],
 )
 safe_projection_schedule = {
     "safe-projection-reconciliation": {
         "task": "safe_projection.validate_pending",
         "schedule": settings.SAFE_PROJECTION_RECONCILE_INTERVAL_SECONDS,
+    },
+}
+evidence_handoff_schedule = {
+    "evidence-projection-handoff-reconciliation": {
+        "task": "evidence_projection.handoff_ready",
+        "schedule": settings.EVIDENCE_HANDOFF_RECONCILE_INTERVAL_SECONDS,
     },
 }
 legacy_schedule = {
@@ -37,6 +44,7 @@ legacy_schedule = {
         "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
     },
     **safe_projection_schedule,
+    **evidence_handoff_schedule,
 }
 unified_schedule = {
     "r1-control-plane-dispatch": {
@@ -56,6 +64,7 @@ unified_schedule = {
         "schedule": settings.MULTI_PROVIDER_SCHEDULER_TICK_SECONDS,
     },
     **safe_projection_schedule,
+    **evidence_handoff_schedule,
 }
 shadow_schedule = {
     **legacy_schedule,
