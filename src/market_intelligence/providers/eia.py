@@ -101,7 +101,7 @@ class EiaAdapter:
                 "provider_response_shape_invalid",
                 False,
             )
-        raw_items, projections, displays, cursor_candidates = [], [], [], []
+        raw_items, projections, factuals, displays, cursor_candidates = [], [], [], [], []
         for row in rows[: request.limit]:
             if not isinstance(row, dict):
                 return failed(
@@ -113,7 +113,14 @@ class EiaAdapter:
             published_at = iso_timestamp(row.get("period"))
             geography = safe_identifier(row.get("stateid") or row.get("stateDescription"))
             sector = safe_identifier(row.get("sectorid") or row.get("sectorName"))
-            if published_at is None or geography is None or sector is None:
+            value = row.get("price")
+            if (
+                published_at is None
+                or geography is None
+                or sector is None
+                or not isinstance(value, (int, float))
+                or isinstance(value, bool)
+            ):
                 return failed(
                     self.provider_key,
                     ProviderAdapterErrorCode.CONTRACT_INVALID,
@@ -127,12 +134,25 @@ class EiaAdapter:
                 "field_names": safe_field_names(row),
                 "geography": geography,
                 "sector": sector,
-                "has_numeric_value": isinstance(row.get("price"), (int, float)),
+                "has_numeric_value": True,
+            }
+            factual = {
+                "provider_item_id": item_id,
+                "published_at": published_at,
+                "dataset": "electricity",
+                "series_identity": "electricity/retail-sales",
+                "period": str(row.get("period")),
+                "geography": geography,
+                "sector": sector,
+                "metric": "price",
+                "value": value,
+                "unit": safe_identifier(row.get("price-units") or row.get("unit")) or "unknown",
             }
             raw_items.append(
                 raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
             )
             projections.append(projection)
+            factuals.append(factual)
             displays.append(
                 {
                     "provider_item_id": item_id,
@@ -155,4 +175,5 @@ class EiaAdapter:
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,
+            factual_projections=tuple(factuals),
         )

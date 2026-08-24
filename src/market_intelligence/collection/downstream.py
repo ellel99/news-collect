@@ -1,7 +1,8 @@
-"""R1 provider-neutral RawItem persistence after a target fetch."""
+"""Atomic canonical RawItem and R2 durable safe projection persistence."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -10,8 +11,20 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from market_intelligence.db.models import ParseStatus, RawItem
+from market_intelligence.db.models import (
+    ParseStatus,
+    RawItem,
+    RawItemObservation,
+    RawItemObservationKind,
+    SafeFactProjection,
+    SafeProjectionProcessingStatus,
+    SafeProjectionQualityStatus,
+)
 from market_intelligence.providers.contracts import ProviderFetchResult
+from market_intelligence.safe_projection.contracts import (
+    canonical_projection_hash,
+    validate_factual_payload,
+)
 
 
 class DownstreamPersistenceError(RuntimeError):
@@ -23,6 +36,8 @@ class DownstreamCounts:
     fetched: int
     new: int
     duplicates: int
+    observations: int = 0
+    projections: int = 0
 
 
 async def persist_fetch_result(
@@ -32,23 +47,237 @@ async def persist_fetch_result(
     source_id: UUID,
     source_account_id: UUID | None,
     provider: str,
+    target_id: UUID | None,
+    operation_key: str,
+    config_revision: int | None,
+    provider_contract_version: int,
     result: ProviderFetchResult,
 ) -> DownstreamCounts:
-    """Persist canonical RawItems only; R2/R8 own durable projection and evidence."""
+    """Atomically persist RawItem + observation + PENDING safe factual projection."""
 
-    del provider
     new_count = duplicate_count = 0
-    for envelope in result.raw_items:
-        _, inserted = await _raw_item(session, run_id, source_id, source_account_id, envelope)
+    observation_count = projection_count = 0
+    if len(result.factual_projections) != len(result.raw_items):
+        raise DownstreamPersistenceError("safe_fact_projection_missing")
+    for envelope, metadata in zip(result.raw_items, result.factual_projections, strict=True):
+        payload = validate_factual_payload(
+            provider, operation_key, 1, _factual_payload(provider, operation_key, metadata)
+        )
+        projection_hash = canonical_projection_hash(payload)
+        raw_id, inserted = await _raw_item(session, run_id, source_id, source_account_id, envelope)
         if inserted:
             new_count += 1
         else:
             duplicate_count += 1
+        observation_id = await _observation(
+            session,
+            run_id=run_id,
+            raw_item_id=raw_id,
+            target_id=target_id,
+            source_id=source_id,
+            source_account_id=source_account_id,
+            provider=provider,
+            operation_key=operation_key,
+            config_revision=config_revision,
+            provider_contract_version=provider_contract_version,
+            observed_at=envelope.fetched_at,
+            projection_hash=projection_hash,
+            inserted=inserted,
+        )
+        observation_count += 1
+        projection_count += await _projection(
+            session,
+            observation_id=observation_id,
+            raw_item_id=raw_id,
+            provider=provider,
+            operation_key=operation_key,
+            payload=payload,
+            projection_hash=projection_hash,
+        )
     return DownstreamCounts(
         len(result.raw_items),
         new_count,
         duplicate_count,
+        observation_count,
+        projection_count,
     )
+
+
+def _factual_payload(provider: str, operation_key: str, metadata: Any) -> dict[str, Any]:
+    fields = {
+        ("marketaux", "news_all"): (
+            "provider_item_id",
+            "published_at",
+            "title",
+            "canonical_url",
+            "source_identity",
+            "query",
+            "language",
+            "symbols",
+            "description_coverage",
+            "snippet_coverage",
+        ),
+        ("finnhub", "quote"): (
+            "provider_item_id",
+            "published_at",
+            "symbol",
+            "provider_timestamp",
+            "c",
+            "d",
+            "dp",
+            "h",
+            "l",
+            "o",
+            "pc",
+            "currency",
+            "exchange",
+        ),
+        ("eia", "electricity_retail_sales"): (
+            "provider_item_id",
+            "published_at",
+            "period",
+            "dataset",
+            "series_identity",
+            "geography",
+            "sector",
+            "metric",
+            "value",
+            "unit",
+        ),
+        ("sec_edgar", "submissions_recent"): (
+            "provider_item_id",
+            "published_at",
+            "cik",
+            "ticker",
+            "accession_number",
+            "filing_date",
+            "form",
+            "primary_document",
+            "official_url",
+            "official_source",
+        ),
+    }.get((provider, operation_key))
+    if fields is None or not isinstance(metadata, Mapping):
+        raise DownstreamPersistenceError("safe_fact_projection_contract_unknown")
+    return {field: metadata.get(field) for field in fields}
+
+
+async def _observation(
+    session: AsyncSession,
+    *,
+    run_id: UUID,
+    raw_item_id: UUID,
+    target_id: UUID | None,
+    source_id: UUID,
+    source_account_id: UUID | None,
+    provider: str,
+    operation_key: str,
+    config_revision: int | None,
+    provider_contract_version: int,
+    observed_at: Any,
+    projection_hash: str,
+    inserted: bool,
+) -> UUID:
+    previous_hash = await session.scalar(
+        select(RawItemObservation.projection_hash)
+        .where(RawItemObservation.raw_item_id == raw_item_id)
+        .order_by(RawItemObservation.created_at.desc(), RawItemObservation.id.desc())
+        .limit(1)
+    )
+    kind = (
+        RawItemObservationKind.FIRST_SEEN
+        if inserted
+        else RawItemObservationKind.DUPLICATE_SAME_PROJECTION
+        if previous_hash == projection_hash
+        else RawItemObservationKind.REVISION_CANDIDATE
+    )
+    values = {
+        "collection_run_id": run_id,
+        "raw_item_id": raw_item_id,
+        "target_id": target_id,
+        "source_id": source_id,
+        "source_account_id": source_account_id,
+        "provider": provider,
+        "operation_key": operation_key,
+        "config_revision": config_revision,
+        "provider_contract_version": provider_contract_version,
+        "observed_at": observed_at,
+        "projection_hash": projection_hash,
+        "observation_kind": kind,
+    }
+    identity = await session.scalar(
+        insert(RawItemObservation)
+        .values(**values)
+        .on_conflict_do_nothing(
+            index_elements=[
+                RawItemObservation.collection_run_id,
+                RawItemObservation.raw_item_id,
+            ]
+        )
+        .returning(RawItemObservation.id)
+    )
+    if identity is not None:
+        return identity
+    existing = await session.scalar(
+        select(RawItemObservation).where(
+            RawItemObservation.collection_run_id == run_id,
+            RawItemObservation.raw_item_id == raw_item_id,
+        )
+    )
+    if existing is None or existing.projection_hash != projection_hash:
+        raise DownstreamPersistenceError("raw_item_observation_idempotency_failed")
+    return existing.id
+
+
+async def _projection(
+    session: AsyncSession,
+    *,
+    observation_id: UUID,
+    raw_item_id: UUID,
+    provider: str,
+    operation_key: str,
+    payload: dict[str, Any],
+    projection_hash: str,
+) -> int:
+    quality = (
+        SafeProjectionQualityStatus.PARTIAL
+        if provider == "marketaux"
+        and any(payload[key] is None for key in ("title", "canonical_url", "source_identity"))
+        else SafeProjectionQualityStatus.COMPLETE
+    )
+    identity = await session.scalar(
+        insert(SafeFactProjection)
+        .values(
+            observation_id=observation_id,
+            raw_item_id=raw_item_id,
+            provider=provider,
+            operation_key=operation_key,
+            projection_schema_version=1,
+            factual_payload=payload,
+            projection_hash=projection_hash,
+            quality_status=quality,
+            processing_status=SafeProjectionProcessingStatus.PENDING,
+            attempt_count=0,
+        )
+        .on_conflict_do_nothing(
+            index_elements=[
+                SafeFactProjection.observation_id,
+                SafeFactProjection.projection_schema_version,
+            ]
+        )
+        .returning(SafeFactProjection.id)
+    )
+    if identity is not None:
+        return 1
+    existing = await session.scalar(
+        select(SafeFactProjection).where(
+            SafeFactProjection.observation_id == observation_id,
+            SafeFactProjection.projection_schema_version == 1,
+        )
+    )
+    if existing is None or existing.projection_hash != projection_hash:
+        raise DownstreamPersistenceError("safe_fact_projection_idempotency_failed")
+    return 0
 
 
 async def _raw_item(

@@ -412,6 +412,10 @@ class CollectionControlPlaneWorker:
                 source_id=target.source_id,
                 source_account_id=target.source_account_id,
                 provider=loaded.source.access_method,
+                target_id=target.id,
+                operation_key=target.operation_key,
+                config_revision=target.config_revision,
+                provider_contract_version=target.provider_contract_version,
                 result=result,
             )
             run.fetched_count = counts.fetched

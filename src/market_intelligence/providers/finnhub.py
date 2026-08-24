@@ -91,10 +91,13 @@ class FinnhubAdapter:
                 False,
             )
         published_at = iso_timestamp(response.body.get("t"))
-        numeric_count = sum(
-            isinstance(response.body.get(key), (int, float)) for key in _QUOTE_FIELDS
-        )
-        if published_at is None or numeric_count == 0:
+        quote = {
+            key: response.body.get(key)
+            for key in _QUOTE_FIELDS
+            if isinstance(response.body.get(key), (int, float))
+            and not isinstance(response.body.get(key), bool)
+        }
+        if published_at is None or set(quote) != set(_QUOTE_FIELDS):
             return failed(
                 self.provider_key,
                 ProviderAdapterErrorCode.CONTRACT_INVALID,
@@ -107,7 +110,16 @@ class FinnhubAdapter:
             "published_at": published_at,
             "field_names": safe_field_names(response.body),
             "symbol": symbol.upper(),
-            "numeric_field_count": numeric_count,
+            "numeric_field_count": len(quote),
+        }
+        factual = {
+            "provider_item_id": item_id,
+            "published_at": published_at,
+            "symbol": symbol.upper(),
+            "provider_timestamp": response.body["t"],
+            **quote,
+            "currency": "unknown",
+            "exchange": "unknown",
         }
         raw = raw_envelope(self.provider_key, item_id, projection, response, "metadata_only")
         return ProviderFetchResult(
@@ -125,6 +137,7 @@ class FinnhubAdapter:
             safe_errors=(),
             provider=self.provider_key,
             contract_version=1,
+            factual_projections=(factual,),
         )
 
 

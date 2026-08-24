@@ -122,7 +122,16 @@ async def _target(factory, provider: str, options: dict[str, object]) -> Collect
 
 def _response(provider: str, status: int = 200) -> ProviderTransportResponse:
     bodies = {
-        "finnhub": {"c": 100.0, "d": 1.0, "h": 102.0, "l": 98.0, "t": 1786300000},
+        "finnhub": {
+            "c": 100.0,
+            "d": 1.0,
+            "dp": 1.01,
+            "h": 102.0,
+            "l": 98.0,
+            "o": 99.0,
+            "pc": 99.0,
+            "t": 1786300000,
+        },
         "eia": {
             "response": {
                 "data": [

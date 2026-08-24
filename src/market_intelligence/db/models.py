@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -165,6 +166,26 @@ class CollectionRevisionPolicy(enum.StrEnum):
 class CollectionRunMode(enum.StrEnum):
     NORMAL = "normal"
     BACKFILL = "backfill"
+
+
+class RawItemObservationKind(enum.StrEnum):
+    FIRST_SEEN = "first_seen"
+    DUPLICATE_SAME_PROJECTION = "duplicate_same_projection"
+    REVISION_CANDIDATE = "revision_candidate"
+
+
+class SafeProjectionQualityStatus(enum.StrEnum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    BLOCKED = "blocked"
+
+
+class SafeProjectionProcessingStatus(enum.StrEnum):
+    PENDING = "pending"
+    VALIDATING = "validating"
+    READY = "ready"
+    RETRY = "retry"
+    BLOCKED = "blocked"
 
 
 def enum_values(enum_class: type[enum.StrEnum]) -> list[str]:
@@ -373,7 +394,7 @@ class CollectionTarget(Base):
     operation_key: Mapped[str] = mapped_column(String(100))
     legacy_cursor_type: Mapped[str | None] = mapped_column(String(100))
     operation_config_version: Mapped[int] = mapped_column(Integer)
-    provider_contract_version: Mapped[int] = mapped_column(Integer)
+    provider_contract_version: Mapped[int] = mapped_column(SmallInteger)
     config_revision: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
     operation_config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb")
@@ -556,6 +577,9 @@ class CollectionRun(Base):
     source: Mapped[Source] = relationship(back_populates="collection_runs")
     source_account: Mapped[SourceAccount | None] = relationship(back_populates="collection_runs")
     raw_items: Mapped[list[RawItem]] = relationship(back_populates="collection_run")
+    raw_item_observations: Mapped[list[RawItemObservation]] = relationship(
+        back_populates="collection_run"
+    )
     target: Mapped[CollectionTarget | None] = relationship(back_populates="collection_runs")
 
 
@@ -626,6 +650,145 @@ class RawItem(Base):
     evidence_items: Mapped[list[EvidenceItem]] = relationship(
         back_populates="raw_item", overlaps="evidence_items"
     )
+    observations: Mapped[list[RawItemObservation]] = relationship(back_populates="raw_item")
+    safe_fact_projections: Mapped[list[SafeFactProjection]] = relationship(
+        back_populates="raw_item"
+    )
+
+
+class RawItemObservation(Base):
+    __tablename__ = "raw_item_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_run_id", "raw_item_id", name="uq_raw_item_observations_run_item"
+        ),
+        CheckConstraint(
+            "char_length(projection_hash)=64",
+            name="ck_raw_item_observations_projection_hash",
+        ),
+        CheckConstraint(
+            "target_id IS NOT NULL OR config_revision IS NULL",
+            name="ck_raw_item_observations_legacy_revision",
+        ),
+        Index("ix_raw_item_observations_raw_created", "raw_item_id", "created_at"),
+        Index("ix_raw_item_observations_target_observed", "target_id", "observed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    collection_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_runs.id", ondelete="RESTRICT")
+    )
+    raw_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raw_items.id", ondelete="RESTRICT")
+    )
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_targets.id", ondelete="RESTRICT")
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT")
+    )
+    source_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_accounts.id", ondelete="RESTRICT")
+    )
+    provider: Mapped[str] = mapped_column(String(50))
+    operation_key: Mapped[str] = mapped_column(String(100))
+    config_revision: Mapped[int | None] = mapped_column(BigInteger)
+    provider_contract_version: Mapped[int] = mapped_column(SmallInteger)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    projection_hash: Mapped[str] = mapped_column(String(64))
+    observation_kind: Mapped[RawItemObservationKind] = mapped_column(
+        Enum(
+            RawItemObservationKind,
+            name="raw_item_observation_kind",
+            values_callable=enum_values,
+        )
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    collection_run: Mapped[CollectionRun] = relationship(back_populates="raw_item_observations")
+    raw_item: Mapped[RawItem] = relationship(back_populates="observations")
+    projections: Mapped[list[SafeFactProjection]] = relationship(back_populates="observation")
+
+
+class SafeFactProjection(Base):
+    __tablename__ = "safe_fact_projections"
+    __table_args__ = (
+        UniqueConstraint(
+            "observation_id",
+            "projection_schema_version",
+            name="uq_safe_fact_projections_observation_version",
+        ),
+        CheckConstraint(
+            "projection_schema_version > 0",
+            name="ck_safe_fact_projections_schema_version",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(factual_payload)='object'",
+            name="ck_safe_fact_projections_payload_object",
+        ),
+        CheckConstraint("char_length(projection_hash)=64", name="ck_safe_fact_projections_hash"),
+        CheckConstraint("attempt_count >= 0", name="ck_safe_fact_projections_attempt_nonnegative"),
+        CheckConstraint(
+            "processing_status <> 'ready' OR "
+            "(safe_error_code IS NULL AND processed_at IS NOT NULL)",
+            name="ck_safe_fact_projections_ready_valid",
+        ),
+        Index(
+            "ix_safe_fact_projections_claim",
+            "processing_status",
+            "next_retry_at",
+            "created_at",
+        ),
+        Index("ix_safe_fact_projections_raw_created", "raw_item_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    observation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raw_item_observations.id", ondelete="RESTRICT")
+    )
+    raw_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raw_items.id", ondelete="RESTRICT")
+    )
+    provider: Mapped[str] = mapped_column(String(50))
+    operation_key: Mapped[str] = mapped_column(String(100))
+    projection_schema_version: Mapped[int] = mapped_column(SmallInteger)
+    factual_payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    projection_hash: Mapped[str] = mapped_column(String(64))
+    quality_status: Mapped[SafeProjectionQualityStatus] = mapped_column(
+        Enum(
+            SafeProjectionQualityStatus,
+            name="safe_projection_quality_status",
+            values_callable=enum_values,
+        )
+    )
+    processing_status: Mapped[SafeProjectionProcessingStatus] = mapped_column(
+        Enum(
+            SafeProjectionProcessingStatus,
+            name="safe_projection_processing_status",
+            values_callable=enum_values,
+        )
+    )
+    safe_error_code: Mapped[str | None] = mapped_column(String(100))
+    attempt_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+    observation: Mapped[RawItemObservation] = relationship(back_populates="projections")
+    raw_item: Mapped[RawItem] = relationship(back_populates="safe_fact_projections")
 
 
 class ContentItem(Base):

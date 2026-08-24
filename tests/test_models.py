@@ -19,6 +19,11 @@ EVENT_INTELLIGENCE_FOUNDATION_TABLES = {
     "event_candidate_evidence",
 }
 
+R2_SAFE_PROJECTION_TABLES = {
+    "raw_item_observations",
+    "safe_fact_projections",
+}
+
 FUTURE_TABLE_NAMES = {
     "events",
     "event_versions",
@@ -36,7 +41,10 @@ FUTURE_TABLE_NAMES = {
 
 def test_metadata_contains_only_phase1_business_tables() -> None:
     assert set(Base.metadata.tables) == (
-        PHASE1_TABLES | EVENT_INTELLIGENCE_FOUNDATION_TABLES | {"system_metadata"}
+        PHASE1_TABLES
+        | EVENT_INTELLIGENCE_FOUNDATION_TABLES
+        | R2_SAFE_PROJECTION_TABLES
+        | {"system_metadata"}
     )
     assert set(Base.metadata.tables).isdisjoint(FUTURE_TABLE_NAMES)
 

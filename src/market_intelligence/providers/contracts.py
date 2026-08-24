@@ -103,6 +103,7 @@ class ProviderFetchResult:
     provider: str
     contract_version: int
     display_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
+    factual_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -115,10 +116,17 @@ class ProviderFetchResult:
             "display_projections",
             tuple(_immutable_mapping(item) for item in self.display_projections),
         )
+        object.__setattr__(
+            self,
+            "factual_projections",
+            tuple(_immutable_mapping(item) for item in self.factual_projections),
+        )
         if len(self.raw_items) != len(self.sanitized_metadata):
             raise ValueError("provider_result_metadata_count_mismatch")
         if self.display_projections and len(self.raw_items) != len(self.display_projections):
             raise ValueError("provider_result_display_count_mismatch")
+        if self.factual_projections and len(self.raw_items) != len(self.factual_projections):
+            raise ValueError("provider_result_factual_count_mismatch")
 
 
 class ProviderTransportTimeout(TimeoutError):

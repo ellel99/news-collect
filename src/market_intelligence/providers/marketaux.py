@@ -157,6 +157,7 @@ class MarketauxAdapter:
         raw_items: list[RawItemEnvelope] = []
         metadata: list[Mapping[str, Any]] = []
         display_projections: list[Mapping[str, Any]] = []
+        factual_projections: list[Mapping[str, Any]] = []
         cursor_candidates: list[tuple[str, str]] = []
         for item in items[: request.limit]:
             sanitized = _sanitize_item(item)
@@ -174,10 +175,22 @@ class MarketauxAdapter:
                 "provider_item_id": item_id,
                 "published_at": published_at,
                 "field_names": sanitized["field_names"],
-                "has_title": sanitized["has_title"],
-                "has_description": sanitized["has_description"],
-                "has_snippet": sanitized["has_snippet"],
-                "has_source_url": sanitized["has_source_url"],
+                "has_title": sanitized["display_title"] is not None,
+                "has_description": False,
+                "has_snippet": False,
+                "has_source_url": sanitized["display_url"] is not None,
+            }
+            factual = {
+                "provider_item_id": item_id,
+                "published_at": published_at,
+                "title": sanitized["display_title"],
+                "canonical_url": sanitized["display_url"],
+                "source_identity": sanitized["source_identity"],
+                "query": request.config.get("query"),
+                "language": request.config.get("language"),
+                "symbols": request.config.get("symbols"),
+                "description_coverage": "blocked",
+                "snippet_coverage": "blocked",
             }
             display: dict[str, Any] = {
                 "provider_item_id": item_id,
@@ -200,6 +213,7 @@ class MarketauxAdapter:
                 )
             )
             metadata.append(projection)
+            factual_projections.append(factual)
             display_projections.append(display)
             cursor_candidates.append((published_at, item_id))
 
@@ -221,6 +235,7 @@ class MarketauxAdapter:
             provider=self.provider_key,
             contract_version=self.contract_version,
             display_projections=tuple(display_projections),
+            factual_projections=tuple(factual_projections),
         )
 
 
@@ -302,17 +317,17 @@ def _sanitize_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     title = _safe_title(item.get("title"))
     source_url = _safe_public_url(item.get("url"))
+    source = item.get("source")
+    if isinstance(source, Mapping):
+        source = source.get("name") or source.get("domain")
+    source_identity = _safe_title(source)
     return {
         "provider_item_id": item_id,
         "published_at": published_at,
         "field_names": tuple(
             sorted(key for key in item if isinstance(key, str) and not _SECRET_MARKER.search(key))
         ),
-        "has_title": title is not None,
-        "has_description": isinstance(item.get("description"), str)
-        and bool(item.get("description")),
-        "has_snippet": isinstance(item.get("snippet"), str) and bool(item.get("snippet")),
-        "has_source_url": source_url is not None,
+        "source_identity": source_identity,
         "display_title": title,
         "display_url": source_url,
     }

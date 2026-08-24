@@ -19,6 +19,8 @@ from market_intelligence.db.models import (
     EvidenceItem,
     IdentityStatus,
     RawItem,
+    RawItemObservation,
+    SafeFactProjection,
     Source,
     SourceAccount,
     SourceType,
@@ -32,7 +34,7 @@ POSTGRES_TEST_URL = os.environ.get(
 
 
 @pytest.mark.asyncio
-async def test_r1_fetch_persists_raw_only_without_projection_evidence_or_event() -> None:
+async def test_r2_fetch_persists_safe_projection_without_content_or_evidence() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     marker = uuid.uuid4().hex
@@ -84,7 +86,24 @@ async def test_r1_fetch_persists_raw_only_without_projection_evidence_or_event()
                         "provider_item_id": f"item-{marker}",
                         "published_at": datetime.now(UTC).isoformat(),
                         "field_names": ["title"],
-                        "presence_flags": {"title": True},
+                        "has_title": True,
+                        "has_description": False,
+                        "has_snippet": False,
+                        "has_source_url": True,
+                    },
+                ),
+                factual_projections=(
+                    {
+                        "provider_item_id": f"item-{marker}",
+                        "published_at": datetime.now(UTC).isoformat(),
+                        "title": "safe title",
+                        "canonical_url": "https://example.invalid/item",
+                        "source_identity": "synthetic source",
+                        "query": "technology",
+                        "language": None,
+                        "symbols": None,
+                        "description_coverage": "blocked",
+                        "snippet_coverage": "blocked",
                     },
                 ),
                 display_projections=(
@@ -106,11 +125,36 @@ async def test_r1_fetch_persists_raw_only_without_projection_evidence_or_event()
                 source_id=source.id,
                 source_account_id=account.id,
                 provider="marketaux",
+                target_id=None,
+                operation_key="news_all",
+                config_revision=None,
+                provider_contract_version=1,
                 result=result,
             )
             assert (counts.fetched, counts.new, counts.duplicates) == (1, 1, 0)
+            assert (counts.observations, counts.projections) == (1, 1)
 
         async with factory() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(RawItemObservation)
+                    .where(RawItemObservation.source_id == source_id)
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(SafeFactProjection)
+                    .join(
+                        RawItemObservation,
+                        RawItemObservation.id == SafeFactProjection.observation_id,
+                    )
+                    .where(RawItemObservation.source_id == source_id)
+                )
+                == 1
+            )
             assert (
                 await session.scalar(
                     select(func.count()).select_from(RawItem).where(RawItem.source_id == source_id)
@@ -145,6 +189,16 @@ async def test_r1_fetch_persists_raw_only_without_projection_evidence_or_event()
     finally:
         if source_id is not None:
             async with factory.begin() as session:
+                await session.execute(
+                    delete(SafeFactProjection).where(
+                        SafeFactProjection.raw_item_id.in_(
+                            select(RawItem.id).where(RawItem.source_id == source_id)
+                        )
+                    )
+                )
+                await session.execute(
+                    delete(RawItemObservation).where(RawItemObservation.source_id == source_id)
+                )
                 await session.execute(delete(RawItem).where(RawItem.source_id == source_id))
                 await session.execute(delete(CollectionRun).where(CollectionRun.id == run_id))
                 await session.execute(delete(SourceAccount).where(SourceAccount.id == account_id))

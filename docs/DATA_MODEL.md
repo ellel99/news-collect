@@ -183,11 +183,18 @@ watermark 后的精确 policy；失败用 append-only AuditLog recovery/resolved
 Provider 必须创建新 Source 和新 target。enabled、authorization、schedule、health 等非 identity 字段仍按
 既有 Source 合同更新；PostgreSQL trigger 是最终权威。
 
-### 3.2.2 Durable Safe Projection（Pre-AI candidate；未实现）
+### 3.2.2 Durable Safe Projection（R2 Implementation Review）
 
-现有 bounded pipeline 的安全 projection 不能被描述为已完成的通用 durable contract。R2 将独立审核
-versioned/provider-neutral projection persistence、field provenance、retention/redaction 与 restart-safe
-replay；不得传播 raw provider payload。是否新增表/字段必须在 R1 后单独设计和迁移审核。
+R2 additive Migration `0007` 新增 `raw_item_observations` 和 `safe_fact_projections`。前者以
+`(collection_run_id,raw_item_id)` 保留每次 observation，并由 PostgreSQL trigger 保证 Run/Raw/Target/
+Source/Account/Provider/operation provenance；后者以 `(observation_id,projection_schema_version)` 保存
+canonical-JSON hash、typed allowlisted factual object、quality 与 restart-safe processing state。
+
+collection transaction 只原子增加 RawItem + Observation + PENDING Projection，不创建 ContentItem、
+EvidenceItem、EventCandidate、FactSnapshot、ImpactAnalysis 或 Notification。独立 worker bounded claim 并将
+projection 转为 READY/BLOCKED。`RawItem.collection_run_id` 仍是首次 canonical persistence run，不覆盖；
+重复 observation 也不创建重复 canonical RawItem。任何 raw response、secret、任意 endpoint、未授权全文、
+placeholder numeric/presence fact 均不得进入该层。
 
 ### 3.3 CollectionCursor
 

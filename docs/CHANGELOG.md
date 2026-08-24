@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — R2 Durable Safe Factual Projection
+
+- Adds additive Alembic revision `0007` with durable `raw_item_observations` and `safe_fact_projections`, strict
+  provenance/idempotency constraints, canonical projection hashes and safe processing state.
+- Extends the collection transaction atomically through canonical RawItem + Observation + PENDING Projection while
+  leaving Content/Evidence/Event/Fact/Impact/Notification outside that transaction.
+- Adds exact typed v1 factual contracts for existing Marketaux news, Finnhub quote, EIA electricity retail-sales and
+  SEC recent-submissions operations, preserving approved values without count/presence/zero placeholders.
+- Adds a bounded restart-safe validation worker and mock/PostgreSQL coverage. No production activation, cutover,
+  Migration B, replay, operation expansion, external request, credential read, AI runtime, or PR #39 change.
+
 - PR #43 second review remediation keeps R1 at the authorized RawItem/control-plane boundary: removes the added
   durable Content/Evidence/Event path, restores rollback ownership across all target lifecycle states, adds fake
   migration compatibility and exact Phase 2 reconciliation, narrows v1 cursor claims, and makes shadow/unified
