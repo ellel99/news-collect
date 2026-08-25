@@ -32,9 +32,10 @@
   `safe_projection.validate_pending` 是 authority-neutral periodic reconciliation runtime；persistence 与 worker
   共用 operation-specific quality contract。legacy Evidence placeholder mapping 不是 Rich Evidence source，
   R2 worker 不得调用。
-- R8-A boundary：只处理 READY SafeFactProjection，创建/采用 canonical Evidence 与允许的 Marketaux/SEC
-  Content，并通过 durable link 保留 revision lineage；不复制 factual payload，不创建 Event/Fact/Impact/
-  Notification，不调用旧 placeholder mapper。
+- R8-A boundary：只处理并重验 R2 typed contract/hash 的 READY SafeFactProjection，创建/采用 canonical
+  Evidence 与允许的 Marketaux/SEC Content，并通过 durable link 保留 revision lineage；access policy 固定为
+  Marketaux/SEC `link_only`、Finnhub `licensed`、EIA `public_summary`。不复制 factual payload，不创建
+  Event/Fact/Impact/Notification，不调用旧 placeholder mapper生成新 Evidence。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor

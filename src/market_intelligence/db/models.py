@@ -1093,7 +1093,8 @@ class EvidenceProjectionLink(Base):
         ),
         CheckConstraint(
             "(status = 'linked' AND evidence_item_id IS NOT NULL AND linked_at IS NOT NULL) "
-            "OR (status <> 'linked' AND linked_at IS NULL)",
+            "OR (status <> 'linked' AND evidence_item_id IS NULL "
+            "AND content_item_id IS NULL AND linked_at IS NULL)",
             name="ck_evidence_projection_links_linked_state",
         ),
         Index(

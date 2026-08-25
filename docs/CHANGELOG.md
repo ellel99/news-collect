@@ -2,6 +2,9 @@
 
 ## Unreleased — R8-A SafeFactProjection → Evidence Durable Handoff
 
+- Revalidates every READY projection through the R2 typed contract and canonical hash before handoff; adds exact
+  legacy opaque identity adoption, explicit provider access policy, revision-safe first Content semantics,
+  database provider/content/state guards, and isolated per-item retry.
 - Adds Alembic `0008` and `evidence_projection_links` for per-projection handoff state, canonical Evidence linkage,
   revision lineage, bounded retry and stale recovery with PostgreSQL provenance/provider guards.
 - Adds an authority-neutral bounded Celery reconciliation worker. Marketaux may create safe article Content; SEC

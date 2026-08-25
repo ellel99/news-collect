@@ -24,6 +24,12 @@ from market_intelligence.db.models import (
     SafeFactProjection,
     SafeProjectionProcessingStatus,
 )
+from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
+from market_intelligence.safe_projection.contracts import (
+    ProjectionContractError,
+    canonical_projection_hash,
+    normalize_and_classify_factual_payload,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +50,13 @@ _ITEM_TYPE = {
     "finnhub": ("finnhub_quote", "market_data", "market_data"),
     "eia": ("eia_energy_timeseries", "energy_official", "official_energy"),
     "sec_edgar": ("sec_filing", "disclosure", "disclosure"),
+}
+
+_ACCESS_POLICY = {
+    "marketaux": "link_only",
+    "finnhub": "licensed",
+    "eia": "public_summary",
+    "sec_edgar": "link_only",
 }
 
 
@@ -70,7 +83,10 @@ class EvidenceProjectionHandoffWorker:
         claimed = await self._claim(limit, now)
         linked = blocked = retried = 0
         for identity in claimed:
-            result = await self._link_one(identity, now)
+            try:
+                result = await self._link_one(identity, now)
+            except Exception:
+                result = await self._retry(identity, "evidence_handoff_unexpected", now)
             linked += result == "linked"
             blocked += result == "blocked"
             retried += result == "retry"
@@ -166,6 +182,19 @@ class EvidenceProjectionHandoffWorker:
                     or projection.processing_status is not SafeProjectionProcessingStatus.READY
                 ):
                     raise HandoffConflict("evidence_projection_not_ready")
+                try:
+                    normalized, _quality = normalize_and_classify_factual_payload(
+                        projection.provider,
+                        projection.operation_key,
+                        projection.projection_schema_version,
+                        projection.factual_payload,
+                    )
+                    if normalized != projection.factual_payload:
+                        raise ProjectionContractError("projection_not_canonical")
+                    if canonical_projection_hash(normalized) != projection.projection_hash:
+                        raise ProjectionContractError("projection_hash_mismatch")
+                except ProjectionContractError as exc:
+                    raise HandoffConflict("evidence_projection_contract_invalid") from exc
                 raw = await session.get(RawItem, projection.raw_item_id)
                 observation = await session.get(RawItemObservation, projection.observation_id)
                 if raw is None or observation is None:
@@ -240,7 +269,6 @@ async def _content(
             or existing.source_account_id != raw.source_account_id
             or existing.content_kind is not kind
             or existing.external_id != payload["provider_item_id"]
-            or existing.canonical_url != url
         ):
             raise HandoffConflict("evidence_content_identity_conflict")
         return existing
@@ -287,6 +315,7 @@ async def _evidence(
     if item_type is None:
         raise HandoffConflict("evidence_provider_unsupported")
     provider_item_id = str(projection.factual_payload["provider_item_id"])
+    legacy_item_id = legacy_provider_item_identity(projection.provider, projection.factual_payload)
     existing = tuple(
         await session.scalars(
             select(EvidenceItem).where(
@@ -303,7 +332,7 @@ async def _evidence(
             item.provider_item_type != item_type
             or item.source_id != raw.source_id
             or item.source_account_id != raw.source_account_id
-            or item.provider_item_id != provider_item_id
+            or item.provider_item_id not in {provider_item_id, legacy_item_id}
             or (content is not None and item.content_item_id not in (None, content.id))
             or (content is None and item.content_item_id is not None)
         ):
@@ -339,7 +368,7 @@ async def _evidence(
         provider_item_hash=projection.projection_hash,
         event_time=datetime.fromisoformat(payload["published_at"]),
         observed_at=observation.observed_at,
-        access_level="link_only" if is_disclosure else "public_summary",
+        access_level=_ACCESS_POLICY[projection.provider],
         processing_status="validated",
         official_source_flag=is_official,
         market_data_flag=is_market,
