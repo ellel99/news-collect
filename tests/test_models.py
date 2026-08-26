@@ -24,6 +24,8 @@ R2_SAFE_PROJECTION_TABLES = {
     "safe_fact_projections",
 }
 
+R8A_EVIDENCE_HANDOFF_TABLES = {"evidence_projection_links"}
+
 FUTURE_TABLE_NAMES = {
     "events",
     "event_versions",
@@ -44,6 +46,7 @@ def test_metadata_contains_only_phase1_business_tables() -> None:
         PHASE1_TABLES
         | EVENT_INTELLIGENCE_FOUNDATION_TABLES
         | R2_SAFE_PROJECTION_TABLES
+        | R8A_EVIDENCE_HANDOFF_TABLES
         | {"system_metadata"}
     )
     assert set(Base.metadata.tables).isdisjoint(FUTURE_TABLE_NAMES)

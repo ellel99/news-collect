@@ -20,10 +20,12 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：SPEC-0042 Implementation — Durable Safe Factual Projection（R2 Implementation
-  Review）。R1 control plane 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未
-  activation。R2 只增加 durable RawItem observation lineage、typed safe factual projection 与独立 validation
-  worker；四 Provider 的 bounded adapter/runtime/scheduler evidence 仍不代表完整 production data coverage。
+- 当前 Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Implementation
+  Review）。R1/R2 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
+  R8-A 增加 canonical Evidence identity 与 durable projection lineage；handoff 会重跑 R2 contract/hash
+  校验，并采用显式 access policy（Marketaux/SEC `link_only`、Finnhub `licensed`、EIA
+  `public_summary`）。它不复制 factual payload，也不触发
+  Event/Fact/Impact/AI；四 Provider 的 bounded evidence 仍不代表完整 production data coverage。
   Authority-neutral `safe_projection.validate_pending` reconciliation 在 legacy/shadow/unified schedule 下处理
   PENDING/RETRY；它不调用 Provider、Telegram 或 AI。
 - Foundation v2.3-FROZEN 已通过 [R0 Freeze Review](docs/FOUNDATION_V2_3_FREEZE_REVIEW.md)；R0
@@ -80,8 +82,8 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0042 Implementation（R2 Durable Safe Factual Projection Implementation Review）。
-  R1 已完成批准的 I-A/II/III/IV 范围；Migration B/production activation/cutover 仍未授权。
+- Active SPEC：SPEC-0043（R8-A SafeFactProjection → Evidence Durable Handoff Implementation Review）。
+  R1/R2 已完成批准范围；Migration B/production activation/cutover 仍未授权。
 
 统一 runtime verification：
 

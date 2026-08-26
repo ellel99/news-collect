@@ -2,7 +2,7 @@
 
 Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：R0/R1 Completed；R2 Active — Implementation Review；production authority remains `legacy`；
+Current gate：R0/R1/R2 Completed；R8-A Active — Implementation Review；production authority remains `legacy`；
 Migration B/activation/cutover unauthorized
 
 ## 1. Purpose and release gate
@@ -72,7 +72,7 @@ Canonical `RawItem.collection_run_id` records only the first canonical persisten
 run↔item observation association; overwriting that immutable first-run lineage or inserting duplicate canonical
 RawItems remains prohibited.
 
-### R2 — Durable Safe Projection（Active — Implementation Review）
+### R2 — Durable Safe Projection（Completed — Implementation Review approved）
 
 - **Current limitation:** R1 persisted only canonical RawItem; legacy display/evidence sidecars are not the R2 factual
   authority. R2 implementation now introduces durable observation lineage and typed factual projection for the four
@@ -90,6 +90,17 @@ RawItems remains prohibited.
   any live verification separately authorized and structural only.
 - **Acceptance:** restart-safe projection can reproduce allowed Evidence/Content inputs, reject unsafe content and
   trace every field to target/run/raw/evidence without provider SDK dependency.
+
+### R8-A — SafeFactProjection → Evidence Durable Handoff（Active — Implementation Review）
+
+- **Current limitation:** READY factual projections are durable, but canonical Evidence has no durable per-revision
+  handoff state or link to the factual source.
+- **Target:** additive `evidence_projection_links`, canonical Evidence adoption/creation, allowlisted Marketaux/SEC
+  Content, bounded retry/stale recovery, and authority-neutral reconciliation.
+- **Safety:** factual payload is not copied to Evidence; Finnhub/EIA values remain available through the projection
+  link; no placeholder mapper, Notification, Event, Fact, ImpactAnalysis, AI, or external request.
+- **Acceptance:** four Provider projections link idempotently; revisions preserve projection hashes while sharing
+  canonical Evidence; provenance conflicts fail closed; production authority remains legacy.
 
 ### R3 — Marketaux Query, Topic, Entity, Pagination and Time-window Readiness
 

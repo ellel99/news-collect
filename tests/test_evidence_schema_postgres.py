@@ -115,6 +115,7 @@ async def test_evidence_migration_upgrade_downgrade_reupgrade() -> None:
     def run_round_trip(sync_connection: Any) -> None:
         excluded_tables = {
             "evidence_items",
+            "evidence_projection_links",
             "event_candidates",
             "event_candidate_evidence",
         }

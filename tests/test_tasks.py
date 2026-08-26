@@ -4,6 +4,7 @@ import pytest
 
 from market_intelligence.tasks import (
     collection,
+    evidence_handoff,
     marketaux_telegram,
     multi_provider_scheduler,
     safe_projection,
@@ -31,12 +32,14 @@ def test_collection_tasks_and_beat_entries_are_registered() -> None:
         "marketaux.telegram.run",
         "multi_provider.telegram.run",
         "safe_projection.validate_pending",
+        "evidence_projection.handoff_ready",
     } <= set(celery_app.tasks)
     assert {entry["task"] for entry in celery_app.conf.beat_schedule.values()} == {
         "collection.dispatch_due_targets",
         "collection.recover_stale_runs",
         "multi_provider.telegram.run",
         "safe_projection.validate_pending",
+        "evidence_projection.handoff_ready",
     }
 
 
@@ -46,6 +49,7 @@ def test_authority_schedules_keep_shadow_read_only_and_default_legacy() -> None:
     unified_tasks = {entry["task"] for entry in unified_schedule.values()}
     assert shadow_tasks == legacy_tasks | {"collection.control_plane.shadow_audit"}
     assert "safe_projection.validate_pending" in legacy_tasks & shadow_tasks & unified_tasks
+    assert "evidence_projection.handoff_ready" in legacy_tasks & shadow_tasks & unified_tasks
     assert "collection.control_plane.dispatch" not in shadow_tasks
     assert "multi_provider.telegram.run" not in unified_tasks
     assert celery_app.conf.beat_schedule == legacy_schedule
@@ -63,6 +67,23 @@ def test_safe_projection_task_returns_value_free_counts(
         "claimed": 2,
         "ready": 1,
         "blocked": 1,
+        "recovered": 0,
+    }
+
+
+def test_evidence_handoff_task_returns_value_free_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_process(settings: object) -> dict[str, int]:
+        del settings
+        return {"claimed": 2, "linked": 1, "blocked": 0, "retried": 1, "recovered": 0}
+
+    monkeypatch.setattr(evidence_handoff, "_process", fake_process)
+    assert evidence_handoff.handoff_ready_safe_projections.run() == {
+        "claimed": 2,
+        "linked": 1,
+        "blocked": 0,
+        "retried": 1,
         "recovered": 0,
     }
 

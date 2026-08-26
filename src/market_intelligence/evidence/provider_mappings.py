@@ -91,6 +91,25 @@ def _provider_id(value: object) -> tuple[str | None, tuple[EvidenceError, ...]]:
     )
 
 
+def legacy_provider_item_identity(provider: str, payload: Mapping[str, object]) -> str:
+    """Return the exact opaque identity emitted by the legacy mapper, without mapping facts."""
+    if provider == "marketaux":
+        value: object = payload.get("provider_item_id")
+    elif provider == "finnhub":
+        value = (payload.get("symbol"), payload.get("provider_timestamp"))
+    elif provider == "eia":
+        value = (payload.get("period"), payload.get("geography"), payload.get("sector"))
+    elif provider == "sec_edgar":
+        value = payload.get("accession_number")
+    else:
+        raise ValueError("legacy_provider_identity_unsupported")
+    if not _present(value) or (
+        isinstance(value, tuple) and any(not _present(part) for part in value)
+    ):
+        raise ValueError("legacy_provider_identity_missing")
+    return _opaque_ref("provider-item", value)
+
+
 def _source_priority(context: Mapping[str, object]) -> int | None:
     value = context.get("source_priority")
     return value if isinstance(value, int) and not isinstance(value, bool) else None

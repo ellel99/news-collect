@@ -188,6 +188,14 @@ class SafeProjectionProcessingStatus(enum.StrEnum):
     BLOCKED = "blocked"
 
 
+class EvidenceProjectionLinkStatus(enum.StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    LINKED = "linked"
+    RETRY = "retry"
+    BLOCKED = "blocked"
+
+
 def enum_values(enum_class: type[enum.StrEnum]) -> list[str]:
     return [member.value for member in enum_class]
 
@@ -789,6 +797,9 @@ class SafeFactProjection(Base):
 
     observation: Mapped[RawItemObservation] = relationship(back_populates="projections")
     raw_item: Mapped[RawItem] = relationship(back_populates="safe_fact_projections")
+    evidence_link: Mapped[EvidenceProjectionLink | None] = relationship(
+        back_populates="safe_fact_projection"
+    )
 
 
 class ContentItem(Base):
@@ -1068,6 +1079,69 @@ class EvidenceItem(Base):
     event_candidate_links: Mapped[list[EventCandidateEvidence]] = relationship(
         back_populates="evidence_item"
     )
+    projection_links: Mapped[list[EvidenceProjectionLink]] = relationship(
+        back_populates="evidence_item"
+    )
+
+
+class EvidenceProjectionLink(Base):
+    __tablename__ = "evidence_projection_links"
+    __table_args__ = (
+        UniqueConstraint("safe_fact_projection_id", name="uq_evidence_projection_links_projection"),
+        CheckConstraint(
+            "attempt_count >= 0", name="ck_evidence_projection_links_attempt_nonnegative"
+        ),
+        CheckConstraint(
+            "(status = 'linked' AND evidence_item_id IS NOT NULL AND linked_at IS NOT NULL) "
+            "OR (status <> 'linked' AND evidence_item_id IS NULL "
+            "AND content_item_id IS NULL AND linked_at IS NULL)",
+            name="ck_evidence_projection_links_linked_state",
+        ),
+        Index(
+            "ix_evidence_projection_links_claim",
+            "status",
+            "next_retry_at",
+            "created_at",
+        ),
+        Index("ix_evidence_projection_links_evidence", "evidence_item_id"),
+        Index("ix_evidence_projection_links_content", "content_item_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    safe_fact_projection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("safe_fact_projections.id", ondelete="RESTRICT")
+    )
+    evidence_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("evidence_items.id", ondelete="RESTRICT")
+    )
+    content_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("content_items.id", ondelete="RESTRICT")
+    )
+    status: Mapped[EvidenceProjectionLinkStatus] = mapped_column(
+        Enum(
+            EvidenceProjectionLinkStatus,
+            name="evidence_projection_link_status",
+            values_callable=enum_values,
+        )
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    safe_error_code: Mapped[str | None] = mapped_column(String(100))
+    linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+    safe_fact_projection: Mapped[SafeFactProjection] = relationship(back_populates="evidence_link")
+    evidence_item: Mapped[EvidenceItem | None] = relationship(back_populates="projection_links")
+    content_item: Mapped[ContentItem | None] = relationship()
 
 
 class EventCandidate(Base):

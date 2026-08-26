@@ -12,18 +12,19 @@
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：SPEC-0042 Implementation — Durable Safe Factual Projection（Implementation Review）
+- 当前 Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Implementation Review）
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
   SPEC-0041 architecture 与 implementation contract Docs Review 均已 PASS；用户于 2026-08-14 明确授权
   docs closeout 合并后开始 I-A、II、III、IV bounded implementation。
   R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 I-A/II/III/IV implementation 已进入 main，
-  尚未获得 production activation/cutover 授权。R2 正在实现 durable safe factual projection。
+  尚未获得 production activation/cutover 授权。R2 已进入 main；R8-A 正在实现 READY safe factual
+  projection 到 canonical Evidence 的 durable handoff，factual payload 仍只保存在 projection。
   PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
 - Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 为
-  `spec/SPEC-0042-implementation-durable-safe-factual-projection.md`；Migration B、production activation、
+  `spec/SPEC-0043-r8a-safe-projection-evidence-handoff.md`；Migration B、production activation、
   cutover 与 historical replay 仍禁止。
 - R2 boundary：collection transaction 原子持久化 canonical RawItem、RawItemObservation 与 PENDING
   SafeFactProjection；不创建 Content/Evidence/Event/Fact/Impact/Notification。四个 v1 typed projection 保存
@@ -31,6 +32,10 @@
   `safe_projection.validate_pending` 是 authority-neutral periodic reconciliation runtime；persistence 与 worker
   共用 operation-specific quality contract。legacy Evidence placeholder mapping 不是 Rich Evidence source，
   R2 worker 不得调用。
+- R8-A boundary：只处理并重验 R2 typed contract/hash 的 READY SafeFactProjection，创建/采用 canonical
+  Evidence 与允许的 Marketaux/SEC Content，并通过 durable link 保留 revision lineage；access policy 固定为
+  Marketaux/SEC `link_only`、Finnhub `licensed`、EIA `public_summary`。不复制 factual payload，不创建
+  Event/Fact/Impact/Notification，不调用旧 placeholder mapper生成新 Evidence。
 - R1 review fixes：typed schema/adapter version 与单调 target config revision 分离；初始四 operation
   pagination capability=none；RawItem→Run provenance 需 DB null-safe enforcement；Notification intent 与
   delivery-only task 解耦；scheduler/worker 共用 exact eligibility；Migration A/B expand-contract、cursor
@@ -80,7 +85,8 @@
   已实现并有审核 evidence；但当前 scheduler 仍是 provider-level special orchestration，不等同于
   multi-target unified production control plane。SPEC-0041 implementation 已增加 expand-only Migration A、
   explicit Phase 2、target runtime 与解耦 delivery，但 production authority 仍保持 legacy。SPEC-0042 的
-  additive Migration `0007` 仅建立 observation 与 durable safe factual projection，不激活 unified authority。
+  additive Migration `0007` 建立 observation 与 durable safe factual projection；R8-A Migration `0008`
+  仅增加 projection→Evidence durable link/state，不激活 unified authority。
 - SPEC-0005 继续保留 X Source and Account Collection Planned 范围；不得由 SPEC-0006 改写
 - `local_evaluation/` 必须 gitignored；raw response 只保存在本地，不得进入 Git/PR/chat；
   candidate 输出只能包含 counts、booleans、field coverage 与 hash
