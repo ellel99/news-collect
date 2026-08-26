@@ -5,6 +5,12 @@
 
 ## 1. 建模原则
 
+M2-A pending Implementation Review: additive migration 0009 adds CollectionRun request/page budget counters,
+RawItemObservation.observation_key (legacy default `run`, v2 page continuation hash) and operation-specific
+Evidence policy including finnhub_company_news. Observation uniqueness becomes run/raw/page-key; canonical
+RawItem.collection_run_id and Evidence/Content remain first-persistence identity, never overwritten. Downgrade
+rejects incompatible breadth state. See [M2-A contract](../spec/SPEC-0045-m2a-four-provider-data-breadth.md).
+
 - 表名和字段名使用 `snake_case`；
 - 主键使用 UUID；
 - 所有时间存 UTC，展示时转换用户时区；

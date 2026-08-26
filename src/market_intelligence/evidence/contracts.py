@@ -49,6 +49,7 @@ class Provider(StrEnum):
 class ProviderItemType(StrEnum):
     MARKETAUX_NEWS = "marketaux_news"
     FINNHUB_QUOTE = "finnhub_quote"
+    FINNHUB_COMPANY_NEWS = "finnhub_company_news"
     EIA_ENERGY_TIMESERIES = "eia_energy_timeseries"
     SEC_FILING = "sec_filing"
 
@@ -146,24 +147,28 @@ class CommonEvidenceEnvelope:
 
 
 _KIND_BY_ITEM_TYPE = {
+    ProviderItemType.FINNHUB_COMPANY_NEWS: EvidenceKind.NEWS,
     ProviderItemType.MARKETAUX_NEWS: EvidenceKind.NEWS,
     ProviderItemType.FINNHUB_QUOTE: EvidenceKind.MARKET_DATA,
     ProviderItemType.EIA_ENERGY_TIMESERIES: EvidenceKind.ENERGY_OFFICIAL,
     ProviderItemType.SEC_FILING: EvidenceKind.DISCLOSURE,
 }
 _PROVIDER_BY_ITEM_TYPE = {
+    ProviderItemType.FINNHUB_COMPANY_NEWS: Provider.FINNHUB,
     ProviderItemType.MARKETAUX_NEWS: Provider.MARKETAUX,
     ProviderItemType.FINNHUB_QUOTE: Provider.FINNHUB,
     ProviderItemType.EIA_ENERGY_TIMESERIES: Provider.EIA,
     ProviderItemType.SEC_FILING: Provider.SEC_EDGAR,
 }
 _SOURCE_BY_ITEM_TYPE = {
+    ProviderItemType.FINNHUB_COMPANY_NEWS: SourceType.NEWS,
     ProviderItemType.MARKETAUX_NEWS: SourceType.NEWS,
     ProviderItemType.FINNHUB_QUOTE: SourceType.MARKET_DATA,
     ProviderItemType.EIA_ENERGY_TIMESERIES: SourceType.OFFICIAL_ENERGY,
     ProviderItemType.SEC_FILING: SourceType.DISCLOSURE,
 }
 _FLAGS_BY_ITEM_TYPE = {
+    ProviderItemType.FINNHUB_COMPANY_NEWS: EvidenceFlags(news_signal_flag=True),
     ProviderItemType.MARKETAUX_NEWS: EvidenceFlags(news_signal_flag=True),
     ProviderItemType.FINNHUB_QUOTE: EvidenceFlags(market_data_flag=True),
     ProviderItemType.EIA_ENERGY_TIMESERIES: EvidenceFlags(official_source_flag=True),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Final
@@ -53,17 +54,25 @@ class HttpxProviderTransport:
             wire_params["api_token"] = credential.reveal_for_transport()
         elif (
             request.provider == "finnhub"
-            and request.operation == "quote"
+            and request.operation in {"quote", "company_news"}
             and credential.name == "FINNHUB_API_KEY"
         ):
-            endpoint = _FINNHUB_ENDPOINT
+            endpoint = (
+                _FINNHUB_ENDPOINT
+                if request.operation == "quote"
+                else "https://finnhub.io/api/v1/company-news"
+            )
             headers["X-Finnhub-Token"] = credential.reveal_for_transport()
         elif (
             request.provider == "eia"
-            and request.operation == "electricity_retail_sales"
+            and request.operation in {"electricity_retail_sales", "electricity_rto_region_data"}
             and credential.name == "EIA_API_KEY"
         ):
-            endpoint = _EIA_ENDPOINT
+            endpoint = (
+                _EIA_ENDPOINT
+                if request.operation == "electricity_retail_sales"
+                else "https://api.eia.gov/v2/electricity/rto/region-data/data/"
+            )
             wire_params["api_key"] = credential.reveal_for_transport()
         elif (
             request.provider == "sec_edgar"
@@ -74,6 +83,18 @@ class HttpxProviderTransport:
             if not isinstance(cik, str) or not cik.isdigit() or len(cik) != 10:
                 raise RuntimeError("provider_http_config_invalid")
             endpoint = f"{_SEC_ENDPOINT_PREFIX}{cik}.json"
+            headers["User-Agent"] = credential.reveal_for_transport()
+        elif (
+            request.provider == "sec_edgar"
+            and request.operation == "submissions_history"
+            and credential.name == "SEC_USER_AGENT"
+        ):
+            filename = wire_params.pop("file", None)
+            if not isinstance(filename, str) or not re.fullmatch(
+                r"CIK\d{10}-submissions-\d{3}\.json", filename
+            ):
+                raise RuntimeError("provider_http_config_invalid")
+            endpoint = f"https://data.sec.gov/submissions/{filename}"
             headers["User-Agent"] = credential.reveal_for_transport()
         else:
             raise RuntimeError("provider_http_operation_unsupported")

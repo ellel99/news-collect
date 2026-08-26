@@ -5,10 +5,12 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from types import MappingProxyType
 from typing import Any
 
 from market_intelligence.db.models import CollectionCursorStrategy, CollectionMode
+from market_intelligence.providers.breadth_config import breadth_config
 
 _SECRET = re.compile(r"(?i)(api[_-]?key|api[_-]?token|authorization|password|secret|token)")
 _URL = re.compile(r"(?i)https?://")
@@ -153,16 +155,39 @@ class OperationRegistry:
         if (
             batch_limit < 1
             or batch_limit > contract.batch_ceiling
-            or max_requests != 1
-            or max_pages != 1
+            or not 1 <= max_requests <= (20 if contract.pagination_capability != "none" else 1)
+            or not 1 <= max_pages <= (20 if contract.pagination_capability != "none" else 1)
         ):
             raise TargetConfigError("operation_budget_invalid")
+        _reject_unsafe(config)
         return contract.validator(config)
 
 
 def build_operation_registry() -> OperationRegistry:
     return OperationRegistry(
         (
+            *(
+                OperationContract(
+                    provider,
+                    operation,
+                    2,
+                    2,
+                    CollectionCursorStrategy.COMPOUND,
+                    CollectionMode.INCREMENTAL,
+                    100,
+                    credentials,
+                    None,
+                    "bounded_window_v1",
+                    partial(breadth_config, provider, operation),
+                )
+                for provider, operation, credentials in (
+                    ("marketaux", "news_all", ("MARKETAUX_API_TOKEN",)),
+                    ("finnhub", "company_news", ("FINNHUB_API_KEY",)),
+                    ("eia", "electricity_retail_sales", ("EIA_API_KEY",)),
+                    ("eia", "electricity_rto_region_data", ("EIA_API_KEY",)),
+                    ("sec_edgar", "submissions_recent", ("SEC_USER_AGENT", "SEC_CONTACT_EMAIL")),
+                )
+            ),
             OperationContract(
                 "fake",
                 "fake_sequence",

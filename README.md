@@ -20,8 +20,9 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Implementation
-  Review）。R1/R2 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
+- 当前 Active SPEC：SPEC-0045 — M2-A Four-Provider Data Breadth（Implementation Review）；
+  [M2 milestone](spec/SPEC-0044-m2-ai-ready-evidence-data-plane.md) 定义后续 Packet/Bundle/Readiness 门禁。
+  R1/R2/R8-A 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
   R8-A 增加 canonical Evidence identity 与 durable projection lineage；handoff 会重跑 R2 contract/hash
   校验，并采用显式 access policy（Marketaux/SEC `link_only`、Finnhub `licensed`、EIA
   `public_summary`）。它不复制 factual payload，也不触发
@@ -82,7 +83,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0043（R8-A SafeFactProjection → Evidence Durable Handoff Implementation Review）。
+- Active SPEC：SPEC-0045（M2-A Four-Provider Data Breadth Implementation Review）。
   R1/R2 已完成批准范围；Migration B/production activation/cutover 仍未授权。
 
 统一 runtime verification：

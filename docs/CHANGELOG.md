@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — M2-A Four-Provider Data Breadth
+
+- Adds versioned bounded Marketaux pages, Finnhub company_news windows, EIA RTO hourly regional observations
+  and facet-selected retail sales, and SEC form/window/history reconciliation with safe file references.
+- Adds operation-scoped factual/Evidence/Content policy, atomic page checkpoints and durable request budgets.
+- Migration 0009 adds page observation identity and finnhub_company_news checks without overwriting canonical
+  RawItem/Evidence/Content. Existing v1 compatibility operations remain available; production stays legacy.
+- M2-B/C/D, live requests, activation/cutover, Migration B and AI remain outside this implementation.
+
 ## Unreleased — R8-A SafeFactProjection → Evidence Durable Handoff
 
 - Revalidates every READY projection through the R2 typed contract and canonical hash before handoff; adds exact

@@ -2,8 +2,14 @@
 
 Status：AUTHORIZED PROGRAM — each step still requires independent SPEC/Review
 
-Current gate：R0/R1/R2 Completed；R8-A Active — Implementation Review；production authority remains `legacy`；
+Current gate：R0/R1/R2/R8-A Completed；M2-A Active — Implementation Review；production authority remains `legacy`；
 Migration B/activation/cutover unauthorized
+
+M2 execution command 1/5 consolidates the selected four-provider breadth operations into
+[SPEC-0045](../spec/SPEC-0045-m2a-four-provider-data-breadth.md), under the
+[M2 milestone](../spec/SPEC-0044-m2-ai-ready-evidence-data-plane.md). M2-B Packet, M2-C Bundle and M2-D Readiness
+remain unimplemented and separately authorized. This does not imply all R3–R8 coverage or provider license terms
+are complete; bounded mock coverage is not production data acceptance.
 
 ## 1. Purpose and release gate
 

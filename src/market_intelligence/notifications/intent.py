@@ -32,6 +32,7 @@ SCAN_ACTION = f"notification_intent_candidate_scanned_v{POLICY_VERSION}"
 WATERMARK_KEY = "notification.intent.cutover.v1"
 _PROVIDERS = frozenset({"marketaux", "finnhub", "eia", "sec_edgar"})
 _POLICY_KINDS = {
+    "finnhub": frozenset({ContentKind.ARTICLE}),
     "marketaux": frozenset({ContentKind.ARTICLE, ContentKind.FEED_ENTRY}),
     "sec_edgar": frozenset({ContentKind.OFFICIAL_RELEASE}),
 }
@@ -217,6 +218,11 @@ class NotificationIntentReconciler:
                             ),
                             or_(
                                 and_(
+                                    Source.access_method == "finnhub",
+                                    ContentItem.content_kind == ContentKind.ARTICLE,
+                                    ContentItem.metadata_["operation_key"].astext == "company_news",
+                                ),
+                                and_(
                                     Source.access_method == "marketaux",
                                     ContentItem.content_kind.in_(
                                         (
@@ -271,6 +277,7 @@ async def _candidate(
         or source.authorization_status
         not in {AuthorizationStatus.AUTHORIZED, AuthorizationStatus.IMPLEMENTED}
         or content.content_kind not in _POLICY_KINDS.get(provider, frozenset())
+        or (provider == "finnhub" and content.metadata_.get("operation_key") != "company_news")
         or content.source_published_at is None
         or not _safe_text(content.title)
         or not _safe_url(content.canonical_url)

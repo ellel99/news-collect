@@ -53,6 +53,7 @@ class ProviderFetchRequest:
     correlation_id: str
     max_response_bytes: int = 1_000_000
     request_timeout_seconds: float = 10.0
+    continuation: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not 1024 <= self.max_response_bytes <= 10_000_000:
@@ -104,6 +105,7 @@ class ProviderFetchResult:
     contract_version: int
     display_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
     factual_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
+    continuation: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(

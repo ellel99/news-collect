@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import os
 import uuid
 from collections.abc import Awaitable, Mapping
@@ -14,6 +16,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.collection.adapter_factory import UnifiedAdapterFactory
@@ -223,7 +226,14 @@ class CollectionControlPlaneWorker:
             )
             run_id, cursor = await self._start_run(loaded, dispatch, run_mode)
             adapter = self._adapters.build(
-                loaded.source.access_method, loaded.target.operation_key, credential
+                loaded.source.access_method,
+                loaded.target.operation_key,
+                credential,
+                *(
+                    [loaded.target.provider_contract_version]
+                    if loaded.target.provider_contract_version != 1
+                    else []
+                ),
             )
             request = ProviderFetchRequest(
                 source_id=loaded.target.source_id,
@@ -236,7 +246,21 @@ class CollectionControlPlaneWorker:
                 correlation_id=dispatch.dispatch_id,
                 max_response_bytes=loaded.target.max_response_bytes,
                 request_timeout_seconds=loaded.target.request_timeout_seconds,
+                continuation=cursor.continuation if cursor else None,
             )
+            if loaded.contract.pagination_capability == "bounded_window_v1":
+                return await self._execute_pages(
+                    loaded,
+                    dispatch,
+                    run_id,
+                    cursor,
+                    request,
+                    adapter,
+                    lock_lost,
+                    lock_key,
+                    owner,
+                    run_mode,
+                )
             try:
                 result = await self._fetch_with_lock(
                     adapter.fetch(request, self._transport),
@@ -316,6 +340,24 @@ class CollectionControlPlaneWorker:
                 run_id,
                 "coverage_incomplete" if result.has_more else None,
             )
+        except TargetLockLost:
+            if run_id is not None:
+                await self._finish_lock_lost(loaded, dispatch, run_id)
+            return TargetRunOutcome(dispatch.target_id, "retry", run_id, "target_lock_lost")
+        except SQLAlchemyError:
+            if run_id is not None:
+                retry = await self._finish_error(
+                    loaded, dispatch, run_id, "collection_database_failed", True, None
+                )
+                return TargetRunOutcome(
+                    dispatch.target_id,
+                    "retry" if retry else "failed",
+                    run_id,
+                    "collection_database_failed",
+                )
+            return TargetRunOutcome(
+                dispatch.target_id, "failed", safe_error="collection_database_failed"
+            )
         except (TargetRepositoryError, ValueError, RuntimeError):
             if run_id is not None:
                 await self._finish_error(
@@ -392,6 +434,131 @@ class CollectionControlPlaneWorker:
             )
             return run.id, cursor
 
+    async def _execute_pages(
+        self,
+        loaded: LoadedTarget,
+        dispatch: TargetDispatch,
+        run_id: UUID,
+        cursor: CollectionCursor | None,
+        request: ProviderFetchRequest,
+        adapter: Any,
+        lock_lost: asyncio.Event,
+        lock_key: str,
+        owner: str,
+        run_mode: CollectionRunMode,
+    ) -> TargetRunOutcome:
+        pages = min(loaded.target.max_pages_per_run, loaded.target.max_requests_per_run)
+        for index in range(pages):
+            await self._repository.load_for_execution(dispatch.target_id, dispatch.config_revision)
+            async with self._factory.begin() as session:
+                run = await session.get(CollectionRun, run_id, with_for_update=True)
+                assert run is not None
+                if (
+                    run.request_count >= loaded.target.max_requests_per_run
+                    or run.page_count >= loaded.target.max_pages_per_run
+                ):
+                    run.status = CollectionRunStatus.PARTIAL
+                    run.finished_at = datetime.now(UTC)
+                    run.error_code = "coverage_incomplete"
+                    target = await session.get(
+                        CollectionTarget, dispatch.target_id, with_for_update=True
+                    )
+                    assert target is not None
+                    target.next_retry_at = None
+                    target.next_due_at = datetime.now(UTC) + timedelta(
+                        seconds=target.cadence_seconds
+                    )
+                    target.health_status = CollectionTargetHealthStatus.DEGRADED
+                    target.last_error_code = "coverage_incomplete"
+                    return TargetRunOutcome(
+                        dispatch.target_id, "partial", run_id, "coverage_incomplete"
+                    )
+                run.request_count += 1
+                run_deadline = run.started_at + timedelta(seconds=loaded.target.max_runtime_seconds)
+            remaining = (min(request.deadline_at, run_deadline) - datetime.now(UTC)).total_seconds()
+            if remaining <= 0:
+                await self._finish_error(
+                    loaded, dispatch, run_id, "provider_runtime_deadline_exceeded", False, None
+                )
+                return TargetRunOutcome(
+                    dispatch.target_id, "failed", run_id, "provider_runtime_deadline_exceeded"
+                )
+            try:
+                result = await self._fetch_with_lock(
+                    adapter.fetch(request, self._transport), lock_lost, max(1, int(remaining))
+                )
+            except TargetLockLost:
+                await self._finish_lock_lost(loaded, dispatch, run_id)
+                return TargetRunOutcome(dispatch.target_id, "retry", run_id, "target_lock_lost")
+            except TimeoutError:
+                await self._finish_error(
+                    loaded, dispatch, run_id, "provider_runtime_deadline_exceeded", False, None
+                )
+                return TargetRunOutcome(
+                    dispatch.target_id, "failed", run_id, "provider_runtime_deadline_exceeded"
+                )
+            if result.safe_errors:
+                error = result.safe_errors[0]
+                if error.code.value == "provider_rate_limited":
+                    await self._redis.set(
+                        f"r1:rate-limit:{loaded.target.rate_limit_group}",
+                        "cooldown",
+                        ex=min(max(int(error.retry_after_seconds or 30), 1), 900),
+                    )
+                retry = await self._finish_error(
+                    loaded,
+                    dispatch,
+                    run_id,
+                    error.safe_message,
+                    error.retryable,
+                    error.retry_after_seconds,
+                )
+                return TargetRunOutcome(
+                    dispatch.target_id, "retry" if retry else "failed", run_id, error.safe_message
+                )
+            if (
+                result.contract_version != loaded.target.provider_contract_version
+                or result.provider != loaded.source.access_method
+            ):
+                raise ValueError("provider_contract_mismatch")
+            if await self._redis.get(lock_key) not in (owner, owner.encode()):
+                raise TargetLockLost("target_lock_lost")
+            if result.has_more and (
+                not result.continuation or result.continuation == request.continuation
+            ):
+                raise ValueError("provider_continuation_invalid")
+            final = not result.has_more or index + 1 == pages
+            await self._persist_result(
+                loaded,
+                dispatch,
+                run_id,
+                cursor,
+                result,
+                run_mode,
+                page_mode=True,
+                final=final,
+                observation_key=hashlib.sha256(
+                    json.dumps(dict(request.continuation or {}), sort_keys=True).encode()
+                ).hexdigest(),
+            )
+            if final:
+                return TargetRunOutcome(
+                    dispatch.target_id,
+                    "partial" if result.has_more else "succeeded",
+                    run_id,
+                    "coverage_incomplete" if result.has_more else None,
+                )
+            async with self._factory() as session:
+                cursor = await session.scalar(
+                    select(CollectionCursor).where(
+                        CollectionCursor.target_id == dispatch.target_id,
+                        CollectionCursor.cursor_type == loaded.target.operation_key,
+                        CollectionCursor.run_mode == run_mode,
+                    )
+                )
+            request = replace(request, cursor=result.next_cursor, continuation=result.continuation)
+        raise ValueError("operation_budget_invalid")
+
     async def _persist_result(
         self,
         loaded: LoadedTarget,
@@ -400,6 +567,10 @@ class CollectionControlPlaneWorker:
         snapshot: CollectionCursor | None,
         result: Any,
         run_mode: CollectionRunMode,
+        *,
+        page_mode: bool = False,
+        final: bool = True,
+        observation_key: str = "run",
     ) -> None:
         async with self._factory.begin() as session:
             target = await session.get(CollectionTarget, loaded.target.id, with_for_update=True)
@@ -417,17 +588,24 @@ class CollectionControlPlaneWorker:
                 config_revision=target.config_revision,
                 provider_contract_version=target.provider_contract_version,
                 result=result,
+                observation_key=observation_key,
             )
-            run.fetched_count = counts.fetched
-            run.new_count = counts.new
-            run.duplicate_count = counts.duplicates
+            run.fetched_count = (run.fetched_count if page_mode else 0) + counts.fetched
+            run.new_count = (run.new_count if page_mode else 0) + counts.new
+            run.duplicate_count = (run.duplicate_count if page_mode else 0) + counts.duplicates
+            if page_mode:
+                run.page_count += 1
             now = datetime.now(UTC)
-            run.finished_at = now
-            if result.has_more:
+            run.finished_at = now if final else None
+            if not final:
+                run.status = CollectionRunStatus.RUNNING
+            elif result.has_more:
                 run.status = CollectionRunStatus.PARTIAL
                 run.error_code = "coverage_incomplete"
                 run.error_message_redacted = (
-                    "provider continuation is unsupported for this operation"
+                    "bounded run budget exhausted"
+                    if page_mode
+                    else "provider continuation is unsupported for this operation"
                 )
                 target.health_status = CollectionTargetHealthStatus.DEGRADED
                 target.last_error_code = "coverage_incomplete"
@@ -464,7 +642,16 @@ class CollectionControlPlaneWorker:
                     session.add(cursor)
                 elif snapshot is not None and cursor.cursor_value != snapshot.cursor_value:
                     raise ValueError("target_cursor_stale")
-                if result.has_more:
+                if page_mode:
+                    position = decide_cursor(
+                        target.cursor_strategy, cursor.cursor_value, result.next_cursor
+                    ).candidate
+                    cursor.cursor_value = result.next_cursor
+                    cursor.continuation = dict(result.continuation) if result.continuation else None
+                    if position is not None:
+                        cursor.last_published_at = position.published_at
+                        cursor.watermark_at = position.published_at
+                elif result.has_more:
                     cursor.continuation = {
                         "coverage_incomplete": True,
                         "continuation_unsupported": True,
