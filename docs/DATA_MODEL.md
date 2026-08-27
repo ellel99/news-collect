@@ -1,5 +1,12 @@
 # Data Model
 
+M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
+date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows
+across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery. v2 targets have
+NULL legacy_cursor_type and exact registry comparison, never legacy dual-write. Existing temporary activation
+constraints remain; 0009 is stopped-writer deployment only. Rejected rows use deterministic hash-only AuditLog
+markers, not payload storage. No new rejection table or downstream ownership change.
+
 版本：2.1-FROZEN  
 状态：Phase 1 entities frozen; later-phase contracts living
 

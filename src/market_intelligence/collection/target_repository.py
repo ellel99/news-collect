@@ -122,6 +122,8 @@ class TargetRepository:
                 target.operation_config_version,
                 target.provider_contract_version,
             )
+            if target.legacy_cursor_type != contract.legacy_cursor_type:
+                raise TargetRepositoryError("target_legacy_identity_mismatch")
             config = self._registry.validate(
                 contract,
                 target.operation_config,
@@ -211,6 +213,8 @@ class TargetRepository:
                 int(safe.get("operation_config_version", current.operation_config_version)),
                 int(safe.get("provider_contract_version", current.provider_contract_version)),
             )
+            if current.legacy_cursor_type != contract.legacy_cursor_type:
+                raise TargetRepositoryError("target_legacy_identity_mismatch")
             self._registry.validate(
                 contract,
                 safe.get("operation_config", current.operation_config),

@@ -1,5 +1,14 @@
 # Changelog
 
+## M2-A PR #46 directed blocker fixes
+
+- Use shared test database configuration; original CI FAIL is recorded accurately.
+- Enforce exact legacy mapping at load/revise/preflight; v2 is NULL and cannot reuse v1 identity.
+- Replace snapshot-offset blocking with Finnhub/SEC per-file stable keysets and bounded overlap.
+- Add explicit fixed/rolling windows and immutable safe run-resolved window in unpublished migration 0009.
+- Reject missing-ID/no-URL fallback collisions; persist hash-only rejected-row audit with valid page items.
+- Keep stopped-writer deployment, legacy production authority and all no-live/activation boundaries.
+
 ## Unreleased — M2-A Four-Provider Data Breadth
 
 - Adds versioned bounded Marketaux pages, Finnhub company_news windows, EIA RTO hourly regional observations

@@ -1,5 +1,10 @@
 # Market Intelligence Collector
 
+M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze per run;
+Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers.
+Production authority remains legacy and v2 activation is not authorized. Original c4c1313 CI failed;
+the PR body records the revised HEAD's actual checks, not an assumed PASS.
+
 用户已确认本项目的长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
 提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。
 

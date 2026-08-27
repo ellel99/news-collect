@@ -530,6 +530,10 @@ class CollectionRun(Base):
         CheckConstraint("fetched_count >= 0", name="ck_collection_runs_fetched_nonnegative"),
         CheckConstraint("request_count >= 0", name="ck_collection_runs_request_count_nonnegative"),
         CheckConstraint("page_count >= 0", name="ck_collection_runs_page_count_nonnegative"),
+        CheckConstraint(
+            "resolved_window IS NULL OR (jsonb_typeof(resolved_window)='object' AND resolved_window ?& ARRAY['start','end'] AND (resolved_window - 'start' - 'end')='{}'::jsonb AND jsonb_typeof(resolved_window->'start')='string' AND jsonb_typeof(resolved_window->'end')='string' AND (resolved_window->>'start') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$' AND (resolved_window->>'end') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$')",  # noqa: E501
+            name="ck_collection_runs_resolved_window",
+        ),
         CheckConstraint("new_count >= 0", name="ck_collection_runs_new_nonnegative"),
         CheckConstraint(
             "duplicate_count >= 0",
@@ -579,6 +583,7 @@ class CollectionRun(Base):
     fetched_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     request_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     page_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    resolved_window: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     new_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     duplicate_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     error_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))

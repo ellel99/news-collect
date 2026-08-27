@@ -1,5 +1,10 @@
 # AI Context
 
+PR #46 M2-A directed fixes: explicit fixed/rolling windows, durable run-frozen bounds, keyset continuation,
+NULL v2 legacy identity and traceable rejected-row audit. v2 cannot inherit a v1 legacy cursor. Production
+rollback-window guard remains installed; tests simulate future eligibility only in a disposable database.
+Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/C/D or activation authorization.
+
 本文件是 AI 编码工具进入项目时的首要入口。
 
 所有架构、SPEC、PR、migration、Provider、数据完整性和 AI readiness 审核，开始前必须完整读取并遵守

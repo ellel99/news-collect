@@ -115,6 +115,7 @@ class ControlPlaneAuditService:
                     if (
                         contract.cursor_strategy is not target.cursor_strategy
                         or contract.collection_mode is not target.collection_mode
+                        or contract.legacy_cursor_type != target.legacy_cursor_type
                     ):
                         raise TargetConfigError("target_operation_semantics_invalid")
                 except TargetConfigError:

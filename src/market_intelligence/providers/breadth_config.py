@@ -2,8 +2,9 @@
 
 import re
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Any
+
+from market_intelligence.providers.windows import validate_window
 
 FORMS = frozenset({"8-K", "10-Q", "10-K", "6-K"})
 
@@ -29,20 +30,20 @@ def breadth_config(provider: str, operation: str, config: Mapping[str, Any]) -> 
             "max_history_files",
         },
     }.get((provider, operation))
-    if keys is None or set(config) - keys:
+    window_keys = {
+        "window_mode",
+        "lookback_seconds",
+        "overlap_seconds",
+        "ingestion_lag_seconds",
+        "granularity",
+        "lookback_months",
+        "overlap_months",
+        "ingestion_lag_months",
+    }
+    if keys is None or set(config) - (keys | window_keys):
         raise ValueError("breadth_operation_config_invalid")
     result = dict(config)
-    for name in ("start", "end"):
-        if not isinstance(result.get(name), str):
-            raise ValueError("breadth_window_required")
-    try:
-        start, end = (datetime.fromisoformat(result[k]) for k in ("start", "end"))
-        seconds = (end - start).total_seconds()
-    except (ValueError, TypeError):
-        raise ValueError("breadth_window_invalid") from None
-    ceiling = 7 if operation == "electricity_rto_region_data" else 31
-    if not 0 < seconds <= ceiling * 86400:
-        raise ValueError("breadth_window_invalid")
+    validate_window(operation, result)
     if provider in {"finnhub", "sec_edgar"}:
         for name in ("symbol",) if provider == "finnhub" else ("ticker",):
             if not isinstance(result.get(name), str) or not re.fullmatch(

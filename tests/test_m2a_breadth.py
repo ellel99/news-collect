@@ -8,28 +8,35 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from market_intelligence.collection.adapter_factory import UnifiedAdapterFactory
 from market_intelligence.collection.control_plane import (
     CollectionControlPlaneWorker,
     TargetDispatch,
+    TargetScheduler,
     dispatch_identity,
 )
+from market_intelligence.collection.control_plane_tools import ControlPlaneAuditService
 from market_intelligence.collection.target_configs import build_operation_registry
-from market_intelligence.collection.target_repository import TargetRepository
+from market_intelligence.collection.target_repository import TargetRepository, TargetRepositoryError
 from market_intelligence.db.models import (
+    AuditLog,
     CollectionCursor,
     CollectionRun,
+    CollectionTarget,
     ContentItem,
     EvidenceItem,
     RawItem,
     RawItemObservation,
+    SafeFactProjection,
 )
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
 from market_intelligence.providers.breadth import BreadthAdapter
@@ -37,11 +44,27 @@ from market_intelligence.providers.breadth_config import breadth_config
 from market_intelligence.providers.contracts import ProviderFetchRequest, ProviderTransportResponse
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.transport import MockProviderTransport
+from market_intelligence.providers.windows import resolve_window
 from market_intelligence.safe_projection.worker import SafeFactProjectionWorker
+
+
+def rolling_config(operation="news_all"):
+    base = dict(CONFIGS["marketaux", operation])
+    base.pop("start")
+    base.pop("end")
+    return {
+        **base,
+        "window_mode": "rolling_window",
+        "lookback_seconds": 2 * 86400,
+        "overlap_seconds": 86400,
+        "ingestion_lag_seconds": 0,
+        "granularity": "day",
+    }
+
 
 DB = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/m2a_test_20260826",
+    "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
 )
 NOW = datetime(2026, 1, 3, tzinfo=UTC)
 CONFIGS = {
@@ -76,12 +99,40 @@ CONFIGS = {
         "max_history_files": 2,
     },
 }
+for _config in CONFIGS.values():
+    _config["window_mode"] = "fixed_window"
 CREDENTIALS = {
     "marketaux": "MARKETAUX_API_TOKEN",
     "finnhub": "FINNHUB_API_KEY",
     "eia": "EIA_API_KEY",
     "sec_edgar": "SEC_USER_AGENT",
 }
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def future_v2_activation_test_boundary():
+    """Local fixture only: exercise v2 worker after the separately gated rollback window.
+
+    Production Migration A guard remains installed/enabled; no Migration B is implemented.
+    CI runs serially on its disposable database. Restore the guard even on test failure.
+    """
+    engine = create_async_engine(DB)
+    async with engine.begin() as session:
+        await session.execute(
+            text(
+                "ALTER TABLE collection_targets DISABLE TRIGGER trg_r1_active_legacy_identity_guard"
+            )
+        )
+    try:
+        yield
+    finally:
+        async with engine.begin() as session:
+            await session.execute(
+                text(
+                    "ALTER TABLE collection_targets ENABLE TRIGGER trg_r1_active_legacy_identity_guard"
+                )
+            )
+        await engine.dispose()
 
 
 def response(body, status=200):
@@ -252,7 +303,7 @@ async def seed(factory, provider, operation, pages=3):
         )
         target = await session.scalar(
             text("""INSERT INTO collection_targets(target_key,source_id,source_account_id,operation_key,legacy_cursor_type,operation_config_version,provider_contract_version,operation_config,status,cadence_seconds,batch_limit,max_requests_per_run,max_pages_per_run,max_response_bytes,request_timeout_seconds,max_runtime_seconds,cursor_strategy,collection_mode,backfill_policy,revision_policy,rate_limit_group,next_due_at,health_status)
-          VALUES (:key,:source,:account,:operation,'provider_cursor_v1',2,2,CAST(:config AS jsonb),'active',300,2,:pages,:pages,1000000,10,60,'compound','incremental','disabled','ignore',:key,:now,'unknown') RETURNING id"""),
+          VALUES (:key,:source,:account,:operation,NULL,2,2,CAST(:config AS jsonb),'active',300,2,:pages,:pages,1000000,10,60,'compound','incremental','disabled','ignore',:key,:now,'unknown') RETURNING id"""),
             {
                 "key": "m2." + marker,
                 "source": source,
@@ -269,6 +320,9 @@ async def seed(factory, provider, operation, pages=3):
 async def cleanup(factory, ids):
     source, account, target = ids
     async with factory.begin() as session:
+        await session.execute(
+            text("DELETE FROM audit_logs WHERE target_id=:target"), {"target": target}
+        )
         await session.execute(
             text(
                 "DELETE FROM evidence_projection_links WHERE safe_fact_projection_id IN (SELECT p.id FROM safe_fact_projections p JOIN raw_items r ON r.id=p.raw_item_id WHERE r.source_id=:source)"
@@ -455,7 +509,7 @@ async def test_sec_unsafe_history_reference_is_rejected(filename):
     result = await adapter.fetch(
         request("sec_edgar", "submissions_recent"), MockProviderTransport([response(body)])
     )
-    assert result.safe_errors and not result.raw_items
+    assert (result.safe_errors or result.rejected_row_hashes) and not result.raw_items
 
 
 @pytest.mark.asyncio
@@ -519,7 +573,7 @@ def test_operation_budget_caps(limit, pages, requests):
 
 
 @pytest.mark.asyncio
-async def test_company_news_array_continuation_refuses_changed_snapshot():
+async def test_company_news_keyset_survives_revision():
     adapter = BreadthAdapter(
         "finnhub", "company_news", RuntimeCredential("FINNHUB_API_KEY", "synthetic")
     )
@@ -534,7 +588,7 @@ async def test_company_news_array_continuation_refuses_changed_snapshot():
         replace(request("finnhub", "company_news", 1), continuation=first.continuation),
         MockProviderTransport([response(changed)]),
     )
-    assert second.safe_errors and not second.raw_items
+    assert not second.safe_errors and second.raw_items and not second.has_more
 
 
 @pytest.mark.asyncio
@@ -574,7 +628,11 @@ async def test_rto_rejects_nonfinite_and_boolean_facts(value):
     result = await BreadthAdapter(
         "eia", "electricity_rto_region_data", RuntimeCredential("EIA_API_KEY", "synthetic")
     ).fetch(request("eia", "electricity_rto_region_data"), MockProviderTransport([response(body)]))
-    assert result.safe_errors and not result.raw_items
+    assert len(result.rejected_row_hashes) == 1
+    assert len(result.raw_items) == 1  # unrelated valid series survives with a traceable rejection
+    assert all(
+        p["region"] != body["response"]["data"][0]["respondent"] for p in result.factual_projections
+    )
 
 
 @pytest.mark.asyncio
@@ -608,3 +666,429 @@ async def test_0009_roundtrip_and_incompatible_target_guard():
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["append", "earlier", "revision", "reorder"])
+async def test_company_news_keyset_mutation_and_overlap(change):
+    adapter = BreadthAdapter(
+        "finnhub", "company_news", RuntimeCredential("FINNHUB_API_KEY", "synthetic")
+    )
+    body = rows("finnhub", "company_news")
+    first = await adapter.fetch(
+        request("finnhub", "company_news", 1), MockProviderTransport([response(body)])
+    )
+    changed = [dict(r) for r in body]
+    if change == "append":
+        changed.append({**body[-1], "id": 99})
+    elif change == "earlier":
+        changed.insert(0, {**body[0], "id": 0, "datetime": body[0]["datetime"] - 60})
+    elif change == "revision":
+        changed[0]["headline"] = "Revised synthetic"
+    else:
+        changed.reverse()
+    continuation = first.continuation
+    emitted = []
+    for _ in range(5):
+        result = await adapter.fetch(
+            replace(request("finnhub", "company_news", 1), continuation=continuation),
+            MockProviderTransport([response(changed)]),
+        )
+        assert not result.safe_errors
+        emitted.extend(p["provider_item_id"] for p in result.factual_projections)
+        if not result.has_more:
+            break
+        continuation = result.continuation
+    else:
+        pytest.fail("bounded keyset did not complete")
+    assert first.factual_projections[0]["provider_item_id"] not in emitted
+    overlap = await adapter.fetch(
+        request("finnhub", "company_news", 10), MockProviderTransport([response(changed)])
+    )
+    assert len(overlap.raw_items) == len(changed)
+    assert not overlap.safe_errors
+
+
+@pytest.mark.asyncio
+async def test_finnhub_fallback_requires_url_and_is_collision_safe():
+    adapter = BreadthAdapter(
+        "finnhub", "company_news", RuntimeCredential("FINNHUB_API_KEY", "synthetic")
+    )
+    body = rows("finnhub", "company_news")
+    for row in body:
+        row.pop("id")
+    result = await adapter.fetch(
+        request("finnhub", "company_news"), MockProviderTransport([response(body)])
+    )
+    assert len({p["provider_item_id"] for p in result.factual_projections}) == 2
+    for row in body:
+        row.pop("url")
+    invalid = await adapter.fetch(
+        request("finnhub", "company_news"), MockProviderTransport([response(body)])
+    )
+    assert invalid.safe_errors and not invalid.raw_items
+
+
+@pytest.mark.asyncio
+async def test_v2_legacy_identity_load_revise_rejected():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        async with factory.begin() as session:
+            # Test tampered persisted identity without changing the production immutability trigger.
+            await session.execute(
+                text("ALTER TABLE collection_targets DISABLE TRIGGER trg_r1_target_identity_guard")
+            )
+            await session.execute(
+                text(
+                    "UPDATE collection_targets SET legacy_cursor_type='provider_cursor_v1' WHERE id=:id"
+                ),
+                {"id": ids[2]},
+            )
+            await session.execute(
+                text("ALTER TABLE collection_targets ENABLE TRIGGER trg_r1_target_identity_guard")
+            )
+        repo = TargetRepository(factory, build_operation_registry())
+        with pytest.raises(TargetRepositoryError, match="legacy_identity_mismatch"):
+            await repo.load_for_execution(ids[2], 1)
+        with pytest.raises(TargetRepositoryError, match="legacy_identity_mismatch"):
+            await repo.revise(ids[2], 1, {"cadence_seconds": 600})
+        assert (
+            await ControlPlaneAuditService(factory, build_operation_registry()).shadow()
+        ).config_mismatches >= 1
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_mixed_page_audit_is_durable_idempotent_and_no_legacy_cursor():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    bad = {**news("bad-stable-id"), "published_at": "invalid-date"}
+    transport = MockProviderTransport(
+        [response({"data": [bad, news("valid-id")], "meta": {"found": 2}})] * 2
+    )
+    worker = CollectionControlPlaneWorker(
+        factory,
+        TargetRepository(factory, build_operation_registry()),
+        RedisDouble(),
+        transport,
+        environ={"MARKETAUX_API_TOKEN": "synthetic"},
+    )
+    try:
+        for slot in (1, 2):
+            report = await worker.execute(
+                TargetDispatch(
+                    ids[2], 1, slot, "normal", dispatch_identity(ids[2], 1, slot, "normal")
+                )
+            )
+            assert report.status == "succeeded", report
+        async with factory() as session:
+            raw = tuple(await session.scalars(select(RawItem).where(RawItem.source_id == ids[0])))
+            assert len(raw) == 1
+            audits = tuple(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.target_id == ids[2], AuditLog.action == "provider_row_rejected"
+                    )
+                )
+            )
+            assert len(audits) == 1
+            assert "bad-stable-id" not in json.dumps(audits[0].after)
+            assert not tuple(
+                await session.scalars(
+                    select(CollectionCursor).where(
+                        CollectionCursor.source_account_id == ids[1],
+                        CollectionCursor.target_id.is_(None),
+                    )
+                )
+            )
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("lookback_seconds", 32 * 86400),
+        ("overlap_seconds", 3 * 86400),
+        ("ingestion_lag_seconds", -1),
+        ("granularity", "minute"),
+    ],
+)
+def test_rolling_window_ceiling(key, value):
+    with pytest.raises(ValueError):
+        breadth_config("marketaux", "news_all", {**rolling_config(), key: value})
+
+
+def test_fixed_and_rolling_window_resolution():
+    assert resolve_window("news_all", CONFIGS["marketaux", "news_all"], NOW) == {
+        "start": "2026-01-01",
+        "end": "2026-01-03",
+    }
+    a = resolve_window("news_all", rolling_config(), NOW)
+    b = resolve_window(
+        "news_all", rolling_config(), NOW + timedelta(days=1), NOW - timedelta(days=1)
+    )
+    assert b["end"] > a["end"] and b["start"] <= a["end"]
+    monthly = {
+        k: v
+        for k, v in CONFIGS["eia", "electricity_retail_sales"].items()
+        if k not in {"start", "end"}
+    }
+    monthly.update(
+        window_mode="rolling_window",
+        lookback_months=1,
+        overlap_months=0,
+        ingestion_lag_months=0,
+        granularity="month",
+    )
+    assert resolve_window("electricity_retail_sales", monthly, NOW) == {
+        "start": "2025-12-01",
+        "end": "2026-01-01",
+    }
+
+
+@pytest.mark.asyncio
+async def test_rolling_runs_freeze_retry_and_overlap_revision(monkeypatch):
+    import market_intelligence.collection.control_plane as cp
+
+    class Clock(datetime):
+        current = NOW
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    monkeypatch.setattr(cp, "datetime", Clock)
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_config()
+            target.config_revision += 1
+        a = news("stable-a")
+        b = {**news("stable-b"), "published_at": "2026-01-03T12:00:00+00:00"}
+        transport = MockProviderTransport(
+            [
+                response({"data": [a], "meta": {"found": 1}}),
+                response({"data": [{**a, "title": "Revised synthetic"}, b], "meta": {"found": 2}}),
+            ]
+        )
+        worker = CollectionControlPlaneWorker(
+            factory,
+            TargetRepository(factory, build_operation_registry()),
+            RedisDouble(),
+            transport,
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        for slot in (1, 2):
+            Clock.current = NOW + timedelta(days=slot - 1)
+            report = await worker.execute(
+                TargetDispatch(
+                    ids[2], 2, slot, "normal", dispatch_identity(ids[2], 2, slot, "normal")
+                )
+            )
+            assert report.status == "succeeded", report
+        assert transport.calls[0].params["published_before"] == "2026-01-03"
+        assert transport.calls[1].params["published_before"] == "2026-01-04"
+        async with factory() as session:
+            runs = tuple(
+                await session.scalars(
+                    select(CollectionRun)
+                    .where(CollectionRun.target_id == ids[2])
+                    .order_by(CollectionRun.started_at)
+                )
+            )
+            assert runs[0].resolved_window != runs[1].resolved_window
+            assert (
+                len(
+                    tuple(await session.scalars(select(RawItem).where(RawItem.source_id == ids[0])))
+                )
+                == 2
+            )
+            assert (
+                len(
+                    tuple(
+                        await session.scalars(
+                            select(RawItemObservation).where(RawItemObservation.source_id == ids[0])
+                        )
+                    )
+                )
+                == 3
+            )
+            assert (
+                len(
+                    tuple(
+                        await session.scalars(
+                            select(SafeFactProjection)
+                            .join(RawItem)
+                            .where(RawItem.source_id == ids[0])
+                        )
+                    )
+                )
+                == 3
+            )
+        loaded = await TargetRepository(factory, build_operation_registry()).load_for_execution(
+            ids[2], 2
+        )
+        frozen = await worker._resolved_run_config(runs[0].id, loaded, None)
+        assert frozen["end"] == "2026-01-03"
+        with pytest.raises(DBAPIError, match="collection_run_window_immutable"):
+            async with factory.begin() as session:
+                await session.execute(
+                    text(
+                        "UPDATE collection_runs SET resolved_window=jsonb_build_object('start','2026-01-02','end','2026-01-04') WHERE id=:id"
+                    ),
+                    {"id": runs[0].id},
+                )
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_fixed_window_not_automatically_dispatched():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        scheduler = TargetScheduler(
+            TargetRepository(factory, build_operation_registry()), RedisDouble()
+        )
+        assert not await scheduler.claim_due(datetime.now(UTC) + timedelta(seconds=1))
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_config()
+            target.config_revision += 1
+        assert len(await scheduler.claim_due(datetime.now(UTC) + timedelta(seconds=1))) == 1
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale", [False, True])
+async def test_rolling_retry_restart_reuses_frozen_window(monkeypatch, stale):
+    import market_intelligence.collection.control_plane as cp
+
+    class Clock(datetime):
+        current = NOW.replace(hour=23, minute=59, second=30)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    monkeypatch.setattr(cp, "datetime", Clock)
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_config()
+            target.config_revision += 1
+        transport = MockProviderTransport(
+            [
+                response({"data": [news("a"), news("b")], "meta": {"found": 3}}),
+                response({}, 500),
+                response({"data": [news("c")], "meta": {"found": 3}}),
+            ]
+        )
+        worker = CollectionControlPlaneWorker(
+            factory,
+            TargetRepository(factory, build_operation_registry()),
+            RedisDouble(),
+            transport,
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        dispatch = TargetDispatch(ids[2], 2, 1, "normal", dispatch_identity(ids[2], 2, 1, "normal"))
+        result = await worker.execute(dispatch)
+        assert result.status == "retry"
+        Clock.current += timedelta(seconds=31)
+        if stale:
+            async with factory.begin() as session:
+                run = await session.get(CollectionRun, result.run_id)
+                run.status = cp.CollectionRunStatus.FAILED
+                run.finished_at = Clock.current
+            dispatch = TargetDispatch(
+                ids[2], 2, 2, "normal", dispatch_identity(ids[2], 2, 2, "normal")
+            )
+        final = await worker.execute(dispatch)
+        assert final.status == "succeeded", final
+        assert {call.params["published_before"] for call in transport.calls} == {"2026-01-03"}
+        assert [call.params["page"] for call in transport.calls] == [1, 2, 2]
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["append", "earlier", "revision", "reorder"])
+async def test_sec_file_keyset_mutations_and_completion(change):
+    adapter = BreadthAdapter(
+        "sec_edgar", "submissions_recent", RuntimeCredential("SEC_USER_AGENT", "synthetic")
+    )
+    base = {
+        "accessionNumber": "0001045810-26-000001",
+        "filingDate": "2026-01-02",
+        "form": "8-K",
+        "primaryDocument": "a.htm",
+    }
+    original = [base, {**base, "accessionNumber": "0001045810-26-000002"}]
+
+    def body(items):
+        return {
+            "filings": {
+                "recent": {k: [r[k] for r in items] for k in base},
+                "files": [
+                    {
+                        "name": "CIK0001045810-submissions-001.json",
+                        "filingFrom": "2026-01-01",
+                        "filingTo": "2026-01-03",
+                    }
+                ],
+            }
+        }
+
+    first = await adapter.fetch(
+        request("sec_edgar", "submissions_recent", 1),
+        MockProviderTransport([response(body(original))]),
+    )
+    changed = [dict(r) for r in original]
+    if change == "append":
+        changed.append({**base, "accessionNumber": "0001045810-26-000003"})
+    elif change == "earlier":
+        changed.insert(
+            0, {**base, "accessionNumber": "0001045810-26-000000", "filingDate": "2026-01-01"}
+        )
+    elif change == "revision":
+        changed[0]["primaryDocument"] = "revision.htm"
+    else:
+        changed.reverse()
+    continuation = first.continuation
+    for _ in range(6):
+        history = bool(continuation.get("file"))
+        payload = body(original)["filings"]["recent"] if history else body(changed)
+        result = await adapter.fetch(
+            replace(request("sec_edgar", "submissions_recent", 1), continuation=continuation),
+            MockProviderTransport([response(payload)]),
+        )
+        assert not result.safe_errors
+        if not result.has_more:
+            assert history
+            break
+        continuation = result.continuation
+    else:
+        pytest.fail("SEC keyset failed to complete")
+    overlap = await adapter.fetch(
+        request("sec_edgar", "submissions_recent", 10),
+        MockProviderTransport([response(body(changed))]),
+    )
+    assert len(overlap.raw_items) == len(changed)

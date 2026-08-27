@@ -11,8 +11,8 @@ Acceptance must trace request budgets → page/array continuation → transactio
 page observation → SafeFactProjection → revalidation → canonical Evidence link. No numeric count or presence flag
 is substituted for stored numeric facts. Canonical Evidence/Content are never overwritten by revisions.
 
-Known boundaries: v1 remains compatibility-only; windows are explicit rather than automatically rolling; API
-pagination cannot promise an immutable upstream snapshot; array resume fails closed on changed response content.
+Known boundaries: v1 remains compatibility-only; fixed/manual or rolling windows are explicitly configured;
+upstream pagination is not a transactional snapshot; keysets plus bounded overlap handle changing arrays.
 Production deployment requires separate stopped-writer review because the observation uniqueness conflict target
 changes. No activation is possible merely by selecting an environment setting. No M2-B/C/D output is implemented.
 
@@ -24,7 +24,7 @@ Validation results and exact reviewed commit/changed-file count are recorded in 
   own news type and RTO has its own typed factual contract.
 - VERIFIED_FIXED: continuation checkpoints commit with each page; request/page counters survive retry; overlap
   retains separate page observations without rewriting canonical RawItem/Evidence/Content.
-- VERIFIED_FIXED: SEC history references are same-CIK allowlisted names; changed array snapshots fail closed;
+- VERIFIED_FIXED: SEC history references are same-CIK allowlisted names; per-file keysets survive array changes;
   downgrade refuses incompatible operation/observation state.
 - INTENTIONAL_BOUNDARY: explicit frozen windows, bounded responses/requests, blocked body/summary fields,
   v1 compatibility paths, legacy authority and no production activation.
@@ -35,3 +35,14 @@ Coverage follows the repository review protocol: contracts/config → request/co
 constraints → handoff/content/notification policy → retry/restart/downgrade → regression and docs. Existing
 R1/R2/R8-A concurrency, stale recovery and scheduler/Telegram tests remain required alongside new M2-A tests.
 Real provider entitlement, live coverage and activation are not demonstrated by synthetic tests.
+
+## Directed blocker revision
+
+Original c4c1313 push/PR quality checks both FAILED: developer-only database fallback. This is historical FAIL,
+not pending/PASS. Revised tests use shared TEST_DATABASE_URL or the CI-created database.
+
+The revision adds exact legacy mapping checks at load/revise/shadow, NULL v2 identities, append/reorder/revision
+keysets, fixed/rolling run-frozen windows, URL-required fallback and atomic/idempotent rejected-row AuditLogs.
+Test-only future-v2 eligibility temporarily disables and restores the activation trigger in the disposable DB;
+production constraints remain intact. Migration 0009 remains a stopped-writer boundary, not rolling-upgrade
+compatible. Independent review is PENDING; exact final test count/HEAD/CI are recorded in the PR body.

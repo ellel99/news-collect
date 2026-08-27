@@ -106,6 +106,7 @@ class ProviderFetchResult:
     display_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
     factual_projections: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
     continuation: Mapping[str, Any] | None = field(default=None, repr=False)
+    rejected_row_hashes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(

@@ -4,6 +4,7 @@
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 
 from alembic import op
 
@@ -110,6 +111,18 @@ def _guards(expanded: bool) -> None:
 
 
 def upgrade() -> None:
+    op.add_column("collection_runs", sa.Column("resolved_window", JSONB(), nullable=True))
+    op.create_check_constraint(
+        "ck_collection_runs_resolved_window",
+        "collection_runs",
+        "resolved_window IS NULL OR (jsonb_typeof(resolved_window)='object' AND resolved_window ?& ARRAY['start','end'] AND (resolved_window - 'start' - 'end')='{}'::jsonb AND jsonb_typeof(resolved_window->'start')='string' AND jsonb_typeof(resolved_window->'end')='string' AND (resolved_window->>'start') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$' AND (resolved_window->>'end') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$')",
+    )
+    op.execute("""CREATE FUNCTION m2_run_window_guard() RETURNS trigger AS $$ BEGIN
+      IF OLD.resolved_window IS NOT NULL AND NEW.resolved_window IS DISTINCT FROM OLD.resolved_window
+      THEN RAISE EXCEPTION 'collection_run_window_immutable'; END IF; RETURN NEW;
+      END; $$ LANGUAGE plpgsql""")
+    op.execute("""CREATE TRIGGER trg_m2_run_window_guard BEFORE UPDATE ON collection_runs
+      FOR EACH ROW EXECUTE FUNCTION m2_run_window_guard();""")
     for name in ("request_count", "page_count"):
         op.add_column(
             "collection_runs", sa.Column(name, sa.Integer(), nullable=False, server_default="0")
@@ -140,11 +153,16 @@ def downgrade() -> None:
     if bind.execute(
         sa.text("""SELECT EXISTS(SELECT 1 FROM evidence_items WHERE provider_item_type='finnhub_company_news')
       OR EXISTS(SELECT 1 FROM safe_fact_projections WHERE operation_key IN ('company_news','electricity_rto_region_data'))
-      OR EXISTS(SELECT 1 FROM collection_targets WHERE provider_contract_version=2)""")
+      OR EXISTS(SELECT 1 FROM collection_targets WHERE provider_contract_version=2)
+      OR EXISTS(SELECT 1 FROM collection_runs WHERE resolved_window IS NOT NULL)""")
     ).scalar_one():
         raise RuntimeError("migration_0009_incompatible_operation_state")
     _guards(False)
     _checks(False)
+    op.execute("DROP TRIGGER trg_m2_run_window_guard ON collection_runs")
+    op.execute("DROP FUNCTION m2_run_window_guard()")
+    op.drop_constraint("ck_collection_runs_resolved_window", "collection_runs", type_="check")
+    op.drop_column("collection_runs", "resolved_window")
     for name in ("request_count", "page_count"):
         op.drop_constraint(
             f"ck_collection_runs_{name}_nonnegative", "collection_runs", type_="check"

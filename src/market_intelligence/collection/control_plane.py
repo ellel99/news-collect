@@ -16,6 +16,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,6 +31,7 @@ from market_intelligence.collection.target_repository import (
     TargetRepositoryError,
 )
 from market_intelligence.db.models import (
+    AuditLog,
     CollectionCursor,
     CollectionRun,
     CollectionRunMode,
@@ -42,6 +44,7 @@ from market_intelligence.providers.credential_resolver import (
     CredentialResolutionError,
     resolve_runtime_credential,
 )
+from market_intelligence.providers.windows import resolve_window, resolved_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +109,11 @@ class TargetScheduler:
                 except TargetRepositoryError:
                     continue
                 target = loaded.target
+                if (
+                    getattr(target, "provider_contract_version", 1) == 2
+                    and loaded.config.get("window_mode") == "fixed_window"
+                ):
+                    continue  # explicit/manual bounded collection only, not automatic cadence
                 cadence = max(target.cadence_seconds, 1)
                 slot = (
                     int(due.effective_due_at.timestamp())
@@ -225,6 +233,9 @@ class CollectionControlPlaneWorker:
                 dispatch.target_id, dispatch.config_revision
             )
             run_id, cursor = await self._start_run(loaded, dispatch, run_mode)
+            config = loaded.config
+            if loaded.contract.pagination_capability == "bounded_window_v1":
+                config = await self._resolved_run_config(run_id, loaded, cursor)
             adapter = self._adapters.build(
                 loaded.source.access_method,
                 loaded.target.operation_key,
@@ -239,7 +250,7 @@ class CollectionControlPlaneWorker:
                 source_id=loaded.target.source_id,
                 source_account_id=loaded.target.source_account_id,
                 cursor=cursor.cursor_value if cursor else None,
-                config=loaded.config,
+                config=config,
                 limit=loaded.target.batch_limit,
                 deadline_at=datetime.now(UTC)
                 + timedelta(seconds=loaded.target.max_runtime_seconds),
@@ -434,6 +445,31 @@ class CollectionControlPlaneWorker:
             )
             return run.id, cursor
 
+    async def _resolved_run_config(
+        self, run_id: UUID, loaded: LoadedTarget, cursor: CollectionCursor | None
+    ) -> dict[str, Any]:
+        async with self._factory.begin() as session:
+            run = await session.get(CollectionRun, run_id, with_for_update=True)
+            assert run is not None
+            if run.resolved_window is None:
+                saved = (cursor.continuation or {}).get("resolved_window") if cursor else None
+                window = saved or resolve_window(
+                    loaded.target.operation_key,
+                    dict(loaded.config),
+                    run.started_at,
+                    cursor.watermark_at if cursor else None,
+                )
+                # Revalidate saved bounds before any request; never resolve an in-flight run again.
+                from market_intelligence.providers.breadth_config import breadth_config
+
+                breadth_config(
+                    loaded.source.access_method,
+                    loaded.target.operation_key,
+                    resolved_config(dict(loaded.config), window),
+                )
+                run.resolved_window = window
+            return resolved_config(dict(loaded.config), run.resolved_window)
+
     async def _execute_pages(
         self,
         loaded: LoadedTarget,
@@ -527,6 +563,14 @@ class CollectionControlPlaneWorker:
                 not result.continuation or result.continuation == request.continuation
             ):
                 raise ValueError("provider_continuation_invalid")
+            if result.continuation:
+                result = replace(
+                    result,
+                    continuation={
+                        **result.continuation,
+                        "resolved_window": {k: request.config[k] for k in ("start", "end")},
+                    },
+                )
             final = not result.has_more or index + 1 == pages
             await self._persist_result(
                 loaded,
@@ -590,6 +634,24 @@ class CollectionControlPlaneWorker:
                 result=result,
                 observation_key=observation_key,
             )
+            for row_hash in result.rejected_row_hashes:
+                if len(row_hash) != 64 or any(c not in "0123456789abcdef" for c in row_hash):
+                    raise ValueError("rejected_row_identity_invalid")
+                await session.execute(
+                    insert(AuditLog)
+                    .values(
+                        id=uuid5(NAMESPACE_URL, f"m2-rejected:{target.id}:{row_hash}"),
+                        actor_type="system",
+                        action="provider_row_rejected",
+                        target_type="collection_target",
+                        target_id=target.id,
+                        after={
+                            "row_identity_hash": row_hash,
+                            "safe_error": "provider_row_contract_invalid",
+                        },
+                    )
+                    .on_conflict_do_nothing(index_elements=[AuditLog.id])
+                )
             run.fetched_count = (run.fetched_count if page_mode else 0) + counts.fetched
             run.new_count = (run.new_count if page_mode else 0) + counts.new
             run.duplicate_count = (run.duplicate_count if page_mode else 0) + counts.duplicates

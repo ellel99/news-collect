@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import replace
 from typing import Any
+from urllib.parse import urlsplit
 
 from market_intelligence.providers.adapter_support import (
     failed as _failed,
@@ -63,6 +64,8 @@ class BreadthAdapter:
             if self._credential is None or self._credential.name != credential_name:
                 raise ValueError("breadth_credential_missing")
             config = breadth_config(self.provider_key, self.operation_key, request.config)
+            if config["window_mode"] != "fixed_window":
+                raise ValueError("breadth_window_not_resolved")
             if not 1 <= request.limit <= 100:
                 raise ValueError("breadth_limit_invalid")
             digest = canonical_projection_hash(config)
@@ -127,13 +130,28 @@ class BreadthAdapter:
             )
             return replace(error, contract_version=2, safe_errors=(error_item,))
         try:
+            rejected: list[str] = []
             payloads, more, progress = self._payloads(
-                response.body, config, request.limit, page, offset, state
+                response.body, config, request.limit, page, offset, state, rejected
             )
-            factuals = tuple(
-                validate_factual_payload(self.provider_key, self.operation_key, 1, p)
-                for p in payloads
-            )
+            valid = []
+            for payload in payloads:
+                try:
+                    valid.append(
+                        validate_factual_payload(self.provider_key, self.operation_key, 1, payload)
+                    )
+                except ValueError:
+                    identity = payload.get("provider_item_id")
+                    if not isinstance(identity, str) or not re.fullmatch(
+                        r"[A-Za-z0-9:_.-]{1,200}", identity
+                    ):
+                        raise ValueError("breadth_item_untraceable") from None
+                    rejected.append(
+                        hashlib.sha256(
+                            f"{self.provider_key}:{self.operation_key}:{identity}".encode()
+                        ).hexdigest()
+                    )
+            factuals = tuple(valid)
             metadata = tuple(
                 {"provider_item_id": p["provider_item_id"], "published_at": p["published_at"]}
                 for p in factuals
@@ -172,6 +190,7 @@ class BreadthAdapter:
                 contract_version=2,
                 factual_projections=factuals,
                 continuation=continuation,
+                rejected_row_hashes=tuple(rejected),
             )
         except (ValueError, TypeError, KeyError, IndexError, OverflowError):
             return failed(
@@ -254,6 +273,7 @@ class BreadthAdapter:
         page: int,
         offset: int,
         state: dict[str, Any],
+        rejected: list[str],
     ) -> tuple[list[dict[str, Any]], bool, dict[str, Any]]:
         if self.provider_key == "marketaux":
             rows = body["data"]
@@ -261,9 +281,19 @@ class BreadthAdapter:
                 raise ValueError("breadth_response_invalid")
             payloads = []
             for row in rows:
+                if not isinstance(row, dict):
+                    raise ValueError("breadth_response_invalid")
                 item = _sanitize_item(row)
                 if item is None:
-                    raise ValueError("breadth_item_invalid")
+                    identity = row.get("uuid") if isinstance(row, dict) else None
+                    if not isinstance(identity, str) or not re.fullmatch(
+                        r"[A-Za-z0-9_-]{1,160}", identity
+                    ):
+                        raise ValueError("breadth_item_untraceable")
+                    rejected.append(
+                        hashlib.sha256(f"marketaux:news_all:{identity}".encode()).hexdigest()
+                    )
+                    continue
                 payloads.append(
                     {
                         "provider_item_id": item["provider_item_id"],
@@ -288,15 +318,33 @@ class BreadthAdapter:
                 raise ValueError("breadth_response_invalid")
             payloads = []
             for row in body:
+                if not isinstance(row, dict):
+                    raise ValueError("breadth_response_invalid")
                 published = iso_timestamp(row["datetime"])
                 if published is None or not c["start"] <= published[:10] <= c["end"]:
                     continue
                 identity = row.get("id")
-                if isinstance(identity, bool) or identity is None:
+                if identity is not None and (
+                    isinstance(identity, bool)
+                    or not isinstance(identity, (int, str))
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", str(identity))
+                ):
+                    raise ValueError("breadth_item_untraceable")
+                if identity is None:
+                    url = row.get("url")
+                    if not isinstance(url, str):
+                        raise ValueError("breadth_item_untraceable")
+                    parsed = urlsplit(url)
+                    if (
+                        parsed.scheme not in {"http", "https"}
+                        or not parsed.hostname
+                        or parsed.username
+                        or parsed.password
+                        or re.search(r"(?i)token|api[_-]?key|authorization|secret", url)
+                    ):
+                        raise ValueError("breadth_item_untraceable")
                     identity = hashlib.sha256(
-                        json.dumps(
-                            [c["symbol"], published, row.get("url")], sort_keys=True
-                        ).encode()
+                        json.dumps([c["symbol"], published, url], sort_keys=True).encode()
                     ).hexdigest()
                 payloads.append(
                     {
@@ -311,13 +359,17 @@ class BreadthAdapter:
                     }
                 )
             payloads.sort(key=lambda p: (p["published_at"], p["provider_item_id"]))
-            digest = canonical_projection_hash({"items": payloads})
-            if state.get("snapshot_hash", digest) != digest:
-                raise ValueError("breadth_window_changed")
+            last_key = self._key(state)
+            payloads = [
+                p for p in payloads if (p["published_at"], p["provider_item_id"]) > last_key
+            ]
+            emitted = payloads[:limit]
             return (
-                payloads[offset : offset + limit],
-                offset + limit < len(payloads),
-                {"offset": offset + limit, "snapshot_hash": digest},
+                emitted,
+                len(payloads) > limit,
+                {"last_key": [emitted[-1]["published_at"], emitted[-1]["provider_item_id"]]}
+                if emitted
+                else {},
             )
         if self.provider_key == "eia":
             rows = body["response"]["data"]
@@ -386,6 +438,10 @@ class BreadthAdapter:
             _recent_rows({"filings": {"recent": body}}) if state.get("file") else _recent_rows(body)
         )
         files = list(state.get("files", []))
+        if len(files) > c["max_history_files"]:
+            raise ValueError("breadth_history_budget_exceeded")
+        for name in files:
+            self._file(c["cik"], name)
         if not state:
             references = body.get("filings", {}).get("files", [])
             for reference in references:
@@ -402,22 +458,12 @@ class BreadthAdapter:
             for r in rows
             if r.get("form") in c["forms"] and c["start"] <= r.get("filingDate", "") <= c["end"]
         ]
-        snapshot_hash = canonical_projection_hash(
-            {
-                "rows": [
-                    {
-                        k: r.get(k)
-                        for k in ("accessionNumber", "filingDate", "form", "primaryDocument")
-                    }
-                    for r in eligible
-                ]
-            }
-        )
-        if offset and state.get("snapshot_hash") != snapshot_hash:
-            raise ValueError("breadth_window_changed")
+        eligible.sort(key=lambda r: (r["filingDate"], r["accessionNumber"]))
+        last_key = self._key(state)
+        eligible = [r for r in eligible if (r["filingDate"], r["accessionNumber"]) > last_key]
         payloads = []
         filename = state.get("file", f"CIK{c['cik']}.json")
-        for row in eligible[offset : offset + limit]:
+        for row in eligible[:limit]:
             accession, document = row["accessionNumber"], row["primaryDocument"]
             payloads.append(
                 {
@@ -434,17 +480,30 @@ class BreadthAdapter:
                     "submissions_file": filename,
                 }
             )
-        if offset + limit < len(eligible):
+        if limit < len(eligible):
             return (
                 payloads,
                 True,
                 {
-                    "offset": offset + limit,
+                    "last_key": [
+                        eligible[limit - 1]["filingDate"],
+                        eligible[limit - 1]["accessionNumber"],
+                    ],
                     "file": state.get("file"),
                     "files": files,
-                    "snapshot_hash": snapshot_hash,
                 },
             )
         if files:
-            return payloads, True, {"offset": 0, "file": files[0], "files": files[1:]}
+            return payloads, True, {"file": files[0], "files": files[1:]}
         return payloads, False, {}
+
+    @staticmethod
+    def _key(state: dict[str, Any]) -> tuple[str, str]:
+        key = state.get("last_key", ["", ""])
+        if (
+            not isinstance(key, list)
+            or len(key) != 2
+            or any(not isinstance(v, str) or len(v) > 200 for v in key)
+        ):
+            raise ValueError("breadth_continuation_invalid")
+        return key[0], key[1]
