@@ -31,7 +31,12 @@ def validate_window(operation: str, config: dict[str, Any]) -> None:
             seconds = (end - start).total_seconds()
         except (KeyError, ValueError, TypeError):
             raise ValueError("breadth_window_invalid") from None
-        if not 0 < seconds <= ceiling:
+        if monthly:
+            start_index = start.year * 12 + start.month
+            end_index = end.year * 12 + end.month
+            if not 0 <= end_index - start_index <= 11:
+                raise ValueError("breadth_window_invalid")
+        elif not 0 < seconds <= ceiling:
             raise ValueError("breadth_window_invalid")
     elif mode == "rolling_window":
         if "start" in config or "end" in config:
@@ -85,15 +90,16 @@ def resolve_window(
         return {"start": config["start"], "end": config["end"]}
     if operation == "electricity_retail_sales":
         now = now.astimezone(UTC)
-        end_month = now.year * 12 + now.month - 1 - config["ingestion_lag_months"]
-        start_month = end_month - config["lookback_months"]
+        # Monthly data is complete only through the month before ``now``.
+        end_month = now.year * 12 + now.month - 2 - config["ingestion_lag_months"]
+        start_month = end_month - config["lookback_months"] + 1
         if watermark is not None:
             watermark = watermark.astimezone(UTC)
             start_month = max(
                 start_month,
                 min(
                     watermark.year * 12 + watermark.month - 1 - config["overlap_months"],
-                    end_month - 1,
+                    end_month,
                 ),
             )
 

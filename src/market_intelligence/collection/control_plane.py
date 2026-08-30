@@ -39,6 +39,11 @@ from market_intelligence.db.models import (
     CollectionTarget,
     CollectionTargetHealthStatus,
 )
+from market_intelligence.providers.continuation import (
+    ContinuationLineage,
+    decode_continuation,
+    encode_continuation,
+)
 from market_intelligence.providers.contracts import ProviderFetchRequest, ProviderTransport
 from market_intelligence.providers.credential_resolver import (
     CredentialResolutionError,
@@ -96,10 +101,14 @@ class TargetScheduler:
             raise ValueError("dispatch_budget_invalid")
         claimed: list[TargetDispatch] = []
         after: tuple[datetime, int, UUID] | None = None
-        while len(claimed) < limit:
-            page = await self._repository.due_page(now, min(100, limit), after)
+        scanned = 0
+        scan_budget = min(500, max(100, limit * 8))
+        while len(claimed) < limit and scanned < scan_budget:
+            page_limit = min(100, scan_budget - scanned)
+            page = await self._repository.due_page(now, page_limit, after)
             if not page:
                 break
+            scanned += len(page)
             for due in page:
                 after = (due.effective_due_at, due.priority, due.target_id)
                 try:
@@ -133,7 +142,7 @@ class TargetScheduler:
                     )
                     if len(claimed) >= limit:
                         break
-            if len(page) < min(100, limit):
+            if len(page) < page_limit:
                 break
         return tuple(claimed)
 
@@ -234,8 +243,11 @@ class CollectionControlPlaneWorker:
             )
             run_id, cursor = await self._start_run(loaded, dispatch, run_mode)
             config = loaded.config
+            continuation = cursor.continuation if cursor else None
             if loaded.contract.pagination_capability == "bounded_window_v1":
-                config = await self._resolved_run_config(run_id, loaded, cursor)
+                config, continuation = await self._resolved_run_config(
+                    run_id, loaded, cursor, run_mode
+                )
             adapter = self._adapters.build(
                 loaded.source.access_method,
                 loaded.target.operation_key,
@@ -257,7 +269,13 @@ class CollectionControlPlaneWorker:
                 correlation_id=dispatch.dispatch_id,
                 max_response_bytes=loaded.target.max_response_bytes,
                 request_timeout_seconds=loaded.target.request_timeout_seconds,
-                continuation=cursor.continuation if cursor else None,
+                continuation=continuation,
+                target_id=loaded.target.id,
+                config_revision=loaded.target.config_revision,
+                operation_config_version=loaded.target.operation_config_version,
+                provider_contract_version=loaded.target.provider_contract_version,
+                cursor_version=loaded.target.cursor_version,
+                run_mode=run_mode.value,
             )
             if loaded.contract.pagination_capability == "bounded_window_v1":
                 return await self._execute_pages(
@@ -446,13 +464,51 @@ class CollectionControlPlaneWorker:
             return run.id, cursor
 
     async def _resolved_run_config(
-        self, run_id: UUID, loaded: LoadedTarget, cursor: CollectionCursor | None
-    ) -> dict[str, Any]:
+        self,
+        run_id: UUID,
+        loaded: LoadedTarget,
+        cursor: CollectionCursor | None,
+        run_mode: CollectionRunMode,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         async with self._factory.begin() as session:
             run = await session.get(CollectionRun, run_id, with_for_update=True)
             assert run is not None
+            persisted = await session.scalar(
+                select(CollectionCursor)
+                .where(
+                    CollectionCursor.target_id == loaded.target.id,
+                    CollectionCursor.cursor_type == loaded.target.operation_key,
+                    CollectionCursor.cursor_version == loaded.target.cursor_version,
+                    CollectionCursor.run_mode == run_mode,
+                )
+                .with_for_update()
+            )
+            if persisted is None:
+                if loaded.target.source_account_id is None:
+                    raise TargetRepositoryError("target_cursor_requires_account_during_rollback")
+                persisted = CollectionCursor(
+                    source_account_id=loaded.target.source_account_id,
+                    target_id=loaded.target.id,
+                    cursor_type=loaded.target.operation_key,
+                    cursor_version=loaded.target.cursor_version,
+                    run_mode=run_mode,
+                )
+                session.add(persisted)
+            lineage = self._lineage(loaded, run_mode)
             if run.resolved_window is None:
-                saved = (cursor.continuation or {}).get("resolved_window") if cursor else None
+                saved = None
+                if persisted.continuation:
+                    raw = persisted.continuation.get("resolved_window")
+                    if isinstance(raw, Mapping):
+                        candidate = resolved_config(dict(loaded.config), dict(raw))
+                        decode_continuation(
+                            persisted.continuation,
+                            loaded.source.access_method,
+                            loaded.target.operation_key,
+                            candidate,
+                            lineage,
+                        )
+                        saved = dict(raw)
                 window = saved or resolve_window(
                     loaded.target.operation_key,
                     dict(loaded.config),
@@ -468,7 +524,37 @@ class CollectionControlPlaneWorker:
                     resolved_config(dict(loaded.config), window),
                 )
                 run.resolved_window = window
-            return resolved_config(dict(loaded.config), run.resolved_window)
+            config = resolved_config(dict(loaded.config), run.resolved_window)
+            if persisted.continuation:
+                decode_continuation(
+                    persisted.continuation,
+                    loaded.source.access_method,
+                    loaded.target.operation_key,
+                    config,
+                    lineage,
+                )
+            else:
+                persisted.continuation = encode_continuation(
+                    loaded.source.access_method,
+                    loaded.target.operation_key,
+                    config,
+                    lineage,
+                    {},
+                )
+            await session.flush()
+            return config, dict(persisted.continuation)
+
+    @staticmethod
+    def _lineage(loaded: LoadedTarget, run_mode: CollectionRunMode) -> ContinuationLineage:
+        return ContinuationLineage(
+            loaded.target.id,
+            loaded.target.config_revision,
+            loaded.target.operation_key,
+            loaded.target.operation_config_version,
+            loaded.target.provider_contract_version,
+            loaded.target.cursor_version,
+            run_mode.value,
+        )
 
     async def _execute_pages(
         self,
@@ -564,12 +650,12 @@ class CollectionControlPlaneWorker:
             ):
                 raise ValueError("provider_continuation_invalid")
             if result.continuation:
-                result = replace(
-                    result,
-                    continuation={
-                        **result.continuation,
-                        "resolved_window": {k: request.config[k] for k in ("start", "end")},
-                    },
+                decode_continuation(
+                    result.continuation,
+                    loaded.source.access_method,
+                    loaded.target.operation_key,
+                    request.config,
+                    self._lineage(loaded, run_mode),
                 )
             final = not result.has_more or index + 1 == pages
             await self._persist_result(

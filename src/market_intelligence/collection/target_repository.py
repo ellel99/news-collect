@@ -328,6 +328,13 @@ class TargetRepository:
                 .where(
                     CollectionTarget.status == CollectionTargetStatus.ACTIVE,
                     effective_due <= now,
+                    ~(
+                        (CollectionTarget.provider_contract_version == 2)
+                        & (
+                            CollectionTarget.operation_config["window_mode"].astext
+                            == "fixed_window"
+                        )
+                    ),
                 )
                 .order_by(effective_due, CollectionTarget.priority, CollectionTarget.id)
                 .limit(limit)

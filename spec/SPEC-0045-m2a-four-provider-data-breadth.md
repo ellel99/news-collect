@@ -4,7 +4,9 @@ Status: Active — Implementation Review
 
 ## Approved scope
 
-The user's 2026-08-26 execution contract authorizes code, additive migration, synthetic tests and one Draft PR.
+The user's 2026-08-26 execution contract authorizes code, a forward schema migration with an explicit
+stopped-writer deployment boundary, synthetic tests and one Draft PR. Migration 0009 is not rolling-upgrade
+compatible and is not classified as additive/expand-only.
 It does not authorize deployment or external requests. R8-A completed in merged PR #45. Current production
 authority remains legacy; new v2 targets are not automatically created or activated.
 
@@ -25,15 +27,19 @@ Every v2 config requires window_mode: fixed_window with explicit start/end for m
 or rolling_window with lookback_seconds, overlap_seconds, ingestion_lag_seconds and operation-specific
 granularity (news/SEC day, RTO hour, retail month). Dynamic start/end never enter target config. News/SEC
 ceiling is 31 days, RTO 7 days. Retail uses lookback_months (1–12), overlap_months (less than lookback),
-ingestion_lag_months (0–12), month granularity and durable monthly watermark; fixed retail bounds are ≤366 days.
-Monthly config cannot substitute second-based parameters. Month boundary inclusion gives period-level overlap.
+ingestion_lag_months (0–12), month granularity and durable monthly watermark; fixed retail bounds are at most 12
+inclusive calendar periods. Monthly config cannot substitute second-based parameters. `lookback_months=N` yields
+exactly N complete periods; lag zero ends at the previous complete month. Overlap subtracts the configured period
+count from an in-window watermark. A future/after-window watermark clamps to the last complete period and never
+reverses the window.
 Automatic target scheduling skips v2 fixed_window targets; only rolling_window participates in normal cadence.
 The same bounded worker remains usable for explicitly dispatched manual fixed-window collection.
 
-The worker freezes start/end once in CollectionRun.resolved_window (safe JSONB with exactly two date/hour
-strings); a DB trigger prohibits replacing an initialized window. Retry reuses it. An unfinished continuation
-carries that window into stale/new-run recovery. Only after completion does a new run resolve from run start,
-lag and durable watermark with bounded overlap. Config changes still require config_revision CAS/review.
+Before the first Provider request, the worker atomically freezes start/end in CollectionRun.resolved_window and
+persists a pending continuation recovery record. Exact lineage binds target/config revision, operation,
+operation-config/provider-contract versions, cursor version and run mode. Retry, crash, lock-loss and stale/new-run
+recovery reuse it; mismatched lineage fails before network. Database guards enforce immutable run bounds and exact
+v2 continuation identity. Successful completion clears recovery state so the next cadence resolves a new window.
 
 Provider pagination is not a transactional upstream snapshot. Reconciliation repeats the configured bounded
 window to discover late revisions. Finnhub continuation stores last (published_at, provider_item_id); SEC
@@ -43,7 +49,10 @@ earlier arrivals and revisions to emitted keys are rediscovered by the next over
 No mandatory array fingerprint, fabricated provider page API or saved response supports continuation.
 
 Missing Finnhub ID requires a validated public URL for fallback; no ID plus no URL fails closed, never hashes
-None. Traceable invalid rows get a hash-only provider_row_rejected AuditLog, deterministic per target/operation/
+None. Provider ID and normalized-URL fallback identities are provider-global and exclude target symbol. URL
+normalization lowercases scheme/host, removes default ports/fragments/tracking parameters, sorts safe parameters,
+and rejects userinfo or secret-bearing keys. Traceable invalid rows get a hash-only provider_row_rejected AuditLog,
+deterministic per target/operation/
 row identity. Marker, valid items and checkpoint commit together; repeats do not duplicate markers. Unknown
 identity or untrusted page structure fails the whole page closed without silently skipping facts.
 
@@ -53,6 +62,8 @@ identity or untrusted page structure fails the whole page closed without silentl
 - Adds `finnhub_company_news` Evidence type and its news flags; database guards use provider + operation.
 - Adds durable CollectionRun request_count/page_count for cumulative budgets across retry/restart.
 - Adds CollectionRun.resolved_window with safe JSON constraint and once-initialized immutable-window trigger.
+- Adds an exact v2 continuation database guard; operation codecs reject unknown/cross-operation fields, wrong
+  config/window/lineage, invalid numeric/key state and cross-CIK SEC queues.
 - Adds RawItemObservation.observation_key (default `run` for legacy), changing uniqueness to
   `(collection_run_id, raw_item_id, observation_key)`. v2 key is a hash of the incoming continuation, so page replay
   is idempotent and the same canonical item observed on another page retains a separate observation/projection.
@@ -63,7 +74,8 @@ identity or untrusted page structure fails the whole page closed without silentl
   no push or cutover is executed in this PR.
 - Downgrade rejects v2 targets, new operation facts or page observation state. The revised observation conflict
   key requires matched application deployment; old pre-M2 binaries must not write through migration 0009.
-  Production rollout remains unauthorized and requires a stopped-writer deployment review, not a rolling upgrade.
+  Revision 0009 is a forward schema migration with an explicit stopped-writer deployment boundary; it is not
+  rolling-upgrade compatible. Production rollout remains unauthorized.
 
 ## Rollback compatibility and production gates
 

@@ -4,7 +4,8 @@ M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable sa
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows
 across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery. v2 targets have
 NULL legacy_cursor_type and exact registry comparison, never legacy dual-write. Existing temporary activation
-constraints remain; 0009 is stopped-writer deployment only. Rejected rows use deterministic hash-only AuditLog
+constraints remain; 0009 is a forward schema migration with an explicit stopped-writer deployment boundary and
+is not rolling-upgrade compatible. Rejected rows use deterministic hash-only AuditLog
 markers, not payload storage. No new rejection table or downstream ownership change.
 
 版本：2.1-FROZEN  
@@ -12,7 +13,7 @@ markers, not payload storage. No new rejection table or downstream ownership cha
 
 ## 1. 建模原则
 
-M2-A pending Implementation Review: additive migration 0009 adds CollectionRun request/page budget counters,
+M2-A pending Implementation Review: forward migration 0009 adds CollectionRun request/page budget counters,
 RawItemObservation.observation_key (legacy default `run`, v2 page continuation hash) and operation-specific
 Evidence policy including finnhub_company_news. Observation uniqueness becomes run/raw/page-key; canonical
 RawItem.collection_run_id and Evidence/Content remain first-persistence identity, never overwritten. Downgrade

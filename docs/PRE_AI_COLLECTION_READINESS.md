@@ -110,8 +110,8 @@ RawItems remains prohibited.
 
 ### R3 — Marketaux Query, Topic, Entity, Pagination and Time-window Readiness
 
-- **Current limitation:** implemented bounded `news/all` operation and historical `technology`, limit=1 evidence do
-  not prove broad-scan query portfolio, entities/topics, pagination or window recovery.
+- **Current limitation:** v2 implements synthetic bounded Marketaux pages and fixed/rolling windows, but the
+  production target catalog, live entitlement and broad-scan query/topic/entity completeness are not approved.
 - **Target:** typed/versioned operations for reviewed broad-scan query sets, watch topics/entities, page/
   continuation and bounded time windows with target-specific budgets.
 - **Safety/license:** plan/quota/retention/internal-AI/redistribution remain Pending until user contract evidence;
@@ -127,8 +127,8 @@ RawItems remains prohibited.
 
 ### R4 — EIA Dataset/Route/Frequency/Facet Catalog
 
-- **Current limitation:** current operation is bounded electricity retail-sales monthly price and does not represent
-  EIA datasets, routes, frequencies or facet combinations generally.
+- **Current limitation:** v2 implements synthetic bounded retail-sales monthly and RTO regional operations, but the
+  wider dataset/route/frequency/facet catalog and live coverage are not approved.
 - **Target:** reviewed typed catalog for selected electricity RTO/grid, generation, petroleum/inventory or other
   in-scope official series; route, frequency, data columns, facets, units and revisions explicit per target.
 - **Safety/license:** official API terms/attribution, key secrecy, row/period budgets, nullable numeric semantics and
@@ -143,8 +143,8 @@ RawItems remains prohibited.
 
 ### R5 — SEC Multi-company, Historical Submissions and Company Facts/XBRL
 
-- **Current limitation:** bounded AAPL/CIK submissions-recent metadata does not cover multiple companies,
-  submissions history files, companyfacts/XBRL taxonomy or revisions.
+- **Current limitation:** v2 implements synthetic bounded recent plus allowlisted history-file traversal for one
+  configured CIK, but multi-company targets, XBRL/companyfacts and live coverage are not approved.
 - **Target:** typed target catalog for multiple approved CIKs, recent/historical submission metadata and separately
   reviewed companyfacts/XBRL facts with accession/form/period/unit/taxonomy provenance.
 - **Safety/license:** SEC Fair Access/User-Agent runtime boundary; no filing body or primary-document download;
@@ -160,8 +160,9 @@ RawItems remains prohibited.
 
 ### R6 — Finnhub Multi-symbol Typed Market Observations
 
-- **Current limitation:** bounded AAPL quote and small smoke limits do not establish multi-symbol schedules, typed
-  observation history or market-validation semantics.
+- **Current limitation:** quote remains content/notification-ineligible; v2 company_news adds a synthetic bounded
+  operation-specific ARTICLE exception. A reviewed multi-symbol production target catalog, license/live
+  completeness and Market Validation semantics remain absent.
 - **Target:** one target per approved symbol/operation, typed quote/company observation contract, timestamp/snapshot
   policy and target/rate-group budgets.
 - **Safety/license:** process-only token, plan/quota/retention review, numeric values confined to authorized typed

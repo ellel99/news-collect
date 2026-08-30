@@ -1,4 +1,4 @@
-"""M2-A operation-specific Evidence policy (expand only)."""
+"""M2-A forward schema migration; requires an explicit stopped-writer boundary."""
 # ruff: noqa: E501
 
 from collections.abc import Sequence
@@ -123,6 +123,49 @@ def upgrade() -> None:
       END; $$ LANGUAGE plpgsql""")
     op.execute("""CREATE TRIGGER trg_m2_run_window_guard BEFORE UPDATE ON collection_runs
       FOR EACH ROW EXECUTE FUNCTION m2_run_window_guard();""")
+    op.execute("""
+    CREATE FUNCTION m2_continuation_guard() RETURNS trigger AS $$
+    DECLARE t collection_targets%ROWTYPE; provider_key text; state_keys text[];
+    BEGIN
+      IF NEW.target_id IS NULL OR NEW.continuation IS NULL
+        OR NEW.continuation = 'null'::jsonb THEN RETURN NEW; END IF;
+      SELECT * INTO t FROM collection_targets WHERE id=NEW.target_id;
+      IF NOT FOUND OR t.provider_contract_version <> 2 THEN RETURN NEW; END IF;
+      SELECT access_method INTO provider_key FROM sources WHERE id=t.source_id;
+      IF jsonb_typeof(NEW.continuation) <> 'object'
+        OR ARRAY(SELECT jsonb_object_keys(NEW.continuation) ORDER BY 1)
+          <> ARRAY['config_hash','lineage','operation','provider','resolved_window','state','version']
+        OR NEW.continuation->>'version' <> '1'
+        OR NEW.continuation->>'provider' IS DISTINCT FROM provider_key
+        OR NEW.continuation->>'operation' IS DISTINCT FROM t.operation_key
+        OR COALESCE(NEW.continuation->>'config_hash','') !~ '^[0-9a-f]{64}$'
+        OR jsonb_typeof(NEW.continuation->'resolved_window') <> 'object'
+        OR ARRAY(SELECT jsonb_object_keys(NEW.continuation->'resolved_window') ORDER BY 1)
+          <> ARRAY['end','start']
+        OR NEW.continuation->'lineage' IS DISTINCT FROM jsonb_build_object(
+          'target_id',t.id::text,
+          'config_revision',t.config_revision,
+          'operation_key',t.operation_key,
+          'operation_config_version',t.operation_config_version,
+          'provider_contract_version',t.provider_contract_version,
+          'cursor_version',t.cursor_version,
+          'run_mode',NEW.run_mode::text)
+        OR jsonb_typeof(NEW.continuation->'state') <> 'object'
+      THEN RAISE EXCEPTION 'collection_continuation_contract_invalid'; END IF;
+      state_keys := ARRAY(SELECT jsonb_object_keys(NEW.continuation->'state') ORDER BY 1);
+      IF (provider_key='marketaux' AND t.operation_key='news_all' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['page']))
+        OR (provider_key='finnhub' AND t.operation_key='company_news' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['last_key']))
+        OR (provider_key='eia' AND t.operation_key IN ('electricity_retail_sales','electricity_rto_region_data') AND state_keys NOT IN (ARRAY[]::text[],ARRAY['offset']))
+        OR (provider_key='sec_edgar' AND t.operation_key='submissions_recent'
+            AND state_keys NOT IN (ARRAY[]::text[],ARRAY['file'],ARRAY['file','files'],
+              ARRAY['file','files','last_key'],ARRAY['file','last_key']))
+      THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      RETURN NEW;
+    END; $$ LANGUAGE plpgsql
+    """)
+    op.execute("""CREATE TRIGGER trg_m2_continuation_guard
+      BEFORE INSERT OR UPDATE OF continuation,target_id,run_mode,cursor_version,cursor_type
+      ON collection_cursors FOR EACH ROW EXECUTE FUNCTION m2_continuation_guard();""")
     for name in ("request_count", "page_count"):
         op.add_column(
             "collection_runs", sa.Column(name, sa.Integer(), nullable=False, server_default="0")
@@ -159,6 +202,8 @@ def downgrade() -> None:
         raise RuntimeError("migration_0009_incompatible_operation_state")
     _guards(False)
     _checks(False)
+    op.execute("DROP TRIGGER trg_m2_continuation_guard ON collection_cursors")
+    op.execute("DROP FUNCTION m2_continuation_guard()")
     op.execute("DROP TRIGGER trg_m2_run_window_guard ON collection_runs")
     op.execute("DROP FUNCTION m2_run_window_guard()")
     op.drop_constraint("ck_collection_runs_resolved_window", "collection_runs", type_="check")

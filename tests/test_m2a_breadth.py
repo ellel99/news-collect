@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 import pytest_asyncio
@@ -31,6 +31,7 @@ from market_intelligence.db.models import (
     AuditLog,
     CollectionCursor,
     CollectionRun,
+    CollectionRunMode,
     CollectionTarget,
     ContentItem,
     EvidenceItem,
@@ -41,6 +42,12 @@ from market_intelligence.db.models import (
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
 from market_intelligence.providers.breadth import BreadthAdapter
 from market_intelligence.providers.breadth_config import breadth_config
+from market_intelligence.providers.continuation import (
+    ContinuationContractError,
+    decode_continuation,
+    encode_continuation,
+    request_lineage,
+)
 from market_intelligence.providers.contracts import ProviderFetchRequest, ProviderTransportResponse
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.transport import MockProviderTransport
@@ -217,6 +224,12 @@ def request(provider, operation, limit=2):
         limit=limit,
         deadline_at=datetime.now(UTC) + timedelta(seconds=60),
         correlation_id="synthetic",
+        target_id=uuid5(NAMESPACE_URL, f"m2a-test:{provider}:{operation}"),
+        config_revision=1,
+        operation_config_version=2,
+        provider_contract_version=2,
+        cursor_version=1,
+        run_mode="normal",
     )
 
 
@@ -243,7 +256,7 @@ async def test_marketaux_page_and_failure_preserve_continuation():
         "marketaux", "news_all", RuntimeCredential("MARKETAUX_API_TOKEN", "synthetic")
     )
     first = await adapter.fetch(request("marketaux", "news_all"), transport)
-    assert first.has_more and first.continuation["page"] == 2
+    assert first.has_more and first.continuation["state"]["page"] == 2
     second = await adapter.fetch(
         replace(request("marketaux", "news_all"), continuation=first.continuation), transport
     )
@@ -424,7 +437,7 @@ async def test_marketaux_multipage_observation_and_retry_checkpoint(failure):
                 cursor = await session.scalar(
                     select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
                 )
-                assert cursor.continuation["page"] == 2
+                assert cursor.continuation["state"]["page"] == 2
             result = await worker.execute(dispatch)
         assert result.status == "succeeded", result
         assert [c.params["page"] for c in transport.calls] == ([1, 2, 2] if failure else [1, 2])
@@ -536,7 +549,7 @@ async def test_budget_exhaustion_durably_preserves_next_page():
             cursor = await session.scalar(
                 select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
             )
-            assert cursor.continuation["page"] == 2
+            assert cursor.continuation["state"]["page"] == 2
             run = await session.get(CollectionRun, report.run_id)
             assert run.request_count == run.page_count == 1
             assert run.error_code == "coverage_incomplete"
@@ -849,7 +862,7 @@ def test_fixed_and_rolling_window_resolution():
     )
     assert resolve_window("electricity_retail_sales", monthly, NOW) == {
         "start": "2025-12-01",
-        "end": "2026-01-01",
+        "end": "2025-12-01",
     }
 
 
@@ -935,11 +948,7 @@ async def test_rolling_runs_freeze_retry_and_overlap_revision(monkeypatch):
                 )
                 == 3
             )
-        loaded = await TargetRepository(factory, build_operation_registry()).load_for_execution(
-            ids[2], 2
-        )
-        frozen = await worker._resolved_run_config(runs[0].id, loaded, None)
-        assert frozen["end"] == "2026-01-03"
+        assert runs[0].resolved_window["end"] == "2026-01-03"
         with pytest.raises(DBAPIError, match="collection_run_window_immutable"):
             async with factory.begin() as session:
                 await session.execute(
@@ -968,6 +977,122 @@ async def test_fixed_window_not_automatically_dispatched():
             target.operation_config = rolling_config()
             target.config_revision += 1
         assert len(await scheduler.claim_due(datetime.now(UTC) + timedelta(seconds=1))) == 1
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_many_fixed_targets_do_not_starve_rolling_due_target():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    groups = [await seed(factory, "marketaux", "news_all") for _ in range(7)]
+    rolling = groups[-1]
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, rolling[2])
+            target.operation_config = rolling_config()
+            target.config_revision = 2
+        claimed = await TargetScheduler(
+            TargetRepository(factory, build_operation_registry()), RedisDouble()
+        ).claim_due(datetime.now(UTC) + timedelta(seconds=1), limit=1)
+        assert len(claimed) == 1 and claimed[0].target_id == rolling[2]
+    finally:
+        for ids in groups:
+            await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_pre_request_window_recovery_survives_new_run_and_time_boundary(monkeypatch):
+    import market_intelligence.collection.control_plane as cp
+
+    class Clock(datetime):
+        current = NOW.replace(hour=23, minute=59, second=30)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    monkeypatch.setattr(cp, "datetime", Clock)
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_config()
+            target.config_revision = 2
+        repository = TargetRepository(factory, build_operation_registry())
+        transport = MockProviderTransport([response({"data": [], "meta": {"found": 0}})])
+        worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            transport,
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        loaded = await repository.load_for_execution(ids[2], 2)
+        first = TargetDispatch(ids[2], 2, 1, "normal", dispatch_identity(ids[2], 2, 1))
+        run_id, cursor = await worker._start_run(loaded, first, CollectionRunMode.NORMAL)
+        config, continuation = await worker._resolved_run_config(
+            run_id, loaded, cursor, CollectionRunMode.NORMAL
+        )
+        assert continuation["resolved_window"] == {
+            "start": config["start"],
+            "end": config["end"],
+        }
+        async with factory.begin() as session:
+            run = await session.get(CollectionRun, run_id)
+            run.status = cp.CollectionRunStatus.FAILED
+            run.finished_at = Clock.current
+        Clock.current += timedelta(days=2)
+        second = TargetDispatch(ids[2], 2, 2, "normal", dispatch_identity(ids[2], 2, 2))
+        result = await worker.execute(second)
+        assert result.status == "succeeded"
+        call = transport.calls[0]
+        assert call.params["published_after"] == config["start"]
+        assert call.params["published_before"] == config["end"]
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_continuation_lineage_guard_rejects_bypass():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        malformed = {
+            "version": 1,
+            "provider": "marketaux",
+            "operation": "news_all",
+            "config_hash": "0" * 64,
+            "resolved_window": {"start": "2026-01-01", "end": "2026-01-03"},
+            "lineage": {
+                "target_id": str(ids[2]),
+                "config_revision": 999,
+                "operation_key": "news_all",
+                "operation_config_version": 2,
+                "provider_contract_version": 2,
+                "cursor_version": 1,
+                "run_mode": "normal",
+            },
+            "state": {},
+        }
+        with pytest.raises(DBAPIError, match="collection_continuation_contract_invalid"):
+            async with factory.begin() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO collection_cursors(source_account_id,target_id,cursor_type,cursor_version,run_mode,continuation) VALUES (:account,:target,'news_all',1,'normal',CAST(:continuation AS jsonb))"
+                    ),
+                    {
+                        "account": ids[1],
+                        "target": ids[2],
+                        "continuation": json.dumps(malformed),
+                    },
+                )
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
@@ -1074,7 +1199,7 @@ async def test_sec_file_keyset_mutations_and_completion(change):
         changed.reverse()
     continuation = first.continuation
     for _ in range(6):
-        history = bool(continuation.get("file"))
+        history = bool(continuation["state"].get("file"))
         payload = body(original)["filings"]["recent"] if history else body(changed)
         result = await adapter.fetch(
             replace(request("sec_edgar", "submissions_recent", 1), continuation=continuation),
@@ -1092,3 +1217,141 @@ async def test_sec_file_keyset_mutations_and_completion(change):
         MockProviderTransport([response(body(changed))]),
     )
     assert len(overlap.raw_items) == len(changed)
+
+
+@pytest.mark.parametrize(
+    "provider,operation,foreign_state",
+    [
+        ("marketaux", "news_all", {"offset": 1}),
+        ("finnhub", "company_news", {"page": 2}),
+        ("eia", "electricity_retail_sales", {"last_key": ["a", "b"]}),
+        ("eia", "electricity_rto_region_data", {"file": "x"}),
+        ("sec_edgar", "submissions_recent", {"offset": 1}),
+    ],
+)
+def test_exact_continuation_codec_rejects_cross_operation_state(provider, operation, foreign_state):
+    req = request(provider, operation)
+    lineage = request_lineage(req, operation)
+    valid = encode_continuation(provider, operation, req.config, lineage, {})
+    valid["state"] = foreign_state
+    with pytest.raises(ContinuationContractError):
+        decode_continuation(valid, provider, operation, req.config, lineage)
+
+
+def test_continuation_rejects_unknown_lineage_and_cross_cik_file():
+    req = request("sec_edgar", "submissions_recent")
+    lineage = request_lineage(req, "submissions_recent")
+    value = encode_continuation(
+        "sec_edgar",
+        "submissions_recent",
+        req.config,
+        lineage,
+        {
+            "file": "CIK0001045810-submissions-001.json",
+            "files": [],
+        },
+    )
+    value["lineage"]["unknown"] = 1
+    with pytest.raises(ContinuationContractError):
+        decode_continuation(value, "sec_edgar", "submissions_recent", req.config, lineage)
+    value = encode_continuation(
+        "sec_edgar",
+        "submissions_recent",
+        req.config,
+        lineage,
+        {
+            "file": "CIK0001045810-submissions-001.json",
+            "files": [],
+        },
+    )
+    value["state"]["file"] = "CIK9999999999-submissions-001.json"
+    with pytest.raises(ContinuationContractError):
+        decode_continuation(value, "sec_edgar", "submissions_recent", req.config, lineage)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("history", [False, True])
+async def test_sec_required_column_lengths_fail_closed_and_empty_is_valid(history):
+    adapter = BreadthAdapter(
+        "sec_edgar", "submissions_recent", RuntimeCredential("SEC_USER_AGENT", "synthetic")
+    )
+    required = {
+        "accessionNumber": [],
+        "filingDate": [],
+        "form": [],
+        "primaryDocument": [],
+    }
+    body = required if history else {"filings": {"recent": required, "files": []}}
+    req = request("sec_edgar", "submissions_recent")
+    if history:
+        lineage = request_lineage(req, "submissions_recent")
+        req = replace(
+            req,
+            continuation=encode_continuation(
+                "sec_edgar",
+                "submissions_recent",
+                req.config,
+                lineage,
+                {"file": "CIK0001045810-submissions-001.json", "files": []},
+            ),
+        )
+    valid = await adapter.fetch(req, MockProviderTransport([response(body)]))
+    assert not valid.safe_errors and not valid.raw_items
+    broken = json.loads(json.dumps(body))
+    columns = broken if history else broken["filings"]["recent"]
+    columns["form"] = ["8-K"]
+    invalid = await adapter.fetch(req, MockProviderTransport([response(broken)]))
+    assert invalid.safe_errors and not invalid.raw_items
+
+
+@pytest.mark.asyncio
+async def test_pagination_completion_inconsistency_fails_closed():
+    marketaux = BreadthAdapter(
+        "marketaux", "news_all", RuntimeCredential("MARKETAUX_API_TOKEN", "synthetic")
+    )
+    bad_news = await marketaux.fetch(
+        request("marketaux", "news_all"),
+        MockProviderTransport([response({"data": [], "meta": {"found": 1}})]),
+    )
+    eia = BreadthAdapter(
+        "eia", "electricity_retail_sales", RuntimeCredential("EIA_API_KEY", "synthetic")
+    )
+    bad_eia = await eia.fetch(
+        request("eia", "electricity_retail_sales"),
+        MockProviderTransport([response({"response": {"data": [], "total": 1}})]),
+    )
+    assert bad_news.safe_errors and bad_eia.safe_errors
+    assert bad_news.continuation is None and bad_eia.continuation is None
+
+
+def test_monthly_period_count_lag_overlap_and_future_watermark():
+    base = {
+        k: v
+        for k, v in CONFIGS["eia", "electricity_retail_sales"].items()
+        if k not in {"start", "end"}
+    }
+    for lookback, expected_start in ((1, "2025-12-01"), (12, "2025-01-01")):
+        config = {
+            **base,
+            "window_mode": "rolling_window",
+            "lookback_months": lookback,
+            "overlap_months": 0,
+            "ingestion_lag_months": 0,
+            "granularity": "month",
+        }
+        assert resolve_window("electricity_retail_sales", config, NOW)["start"] == expected_start
+    overlap = {
+        **base,
+        "window_mode": "rolling_window",
+        "lookback_months": 3,
+        "overlap_months": 1,
+        "ingestion_lag_months": 1,
+        "granularity": "month",
+    }
+    resolved = resolve_window(
+        "electricity_retail_sales",
+        overlap,
+        NOW,
+        datetime(2030, 1, 1, tzinfo=UTC),
+    )
+    assert resolved == {"start": "2025-11-01", "end": "2025-11-01"}

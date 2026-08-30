@@ -1,6 +1,7 @@
 # Market Intelligence Collector
 
-M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze per run;
+M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
+first request with exact recovery lineage;
 Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers.
 Production authority remains legacy and v2 activation is not authorized. Original c4c1313 CI failed;
 the PR body records the revised HEAD's actual checks, not an assumed PASS.

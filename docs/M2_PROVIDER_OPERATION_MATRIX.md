@@ -9,7 +9,7 @@ The exact tuple is resolved by the static registry; config hashes fence continua
 |---|---|---|
 | Marketaux / news_all | `/v1/news/all`; explicit query/language/symbols/start/end; ascending page+limit, max31-day window | Safe title/URL/source/time/query/language/symbols; ARTICLE when complete; link_only |
 | Finnhub / quote (v1) | `/api/v1/quote`; explicit symbol; one observation is the endpoint's semantic unit | Real seven quote values/timestamp/currency/exchange; licensed; no Content/Notification |
-| Finnhub / company_news | `/api/v1/company-news`; symbol/from/to, max31 days; stable time/identity keyset, not provider pagination | Stable symbol+provider ID or validated-URL fallback; headline/time/URL/source/category; licensed ARTICLE only when safe; summary blocked |
+| Finnhub / company_news | `/api/v1/company-news`; symbol/from/to, max31 days; stable time/identity keyset, not provider pagination | Provider-global provider ID or normalized validated-URL fallback (symbol is observation context, not canonical identity); headline/time/URL/source/category; licensed ARTICLE only when safe; summary blocked |
 | EIA / electricity_retail_sales | `/v2/electricity/retail-sales/data/`; explicit geography/sector facets, monthly window; offset/length | Stable geography/sector/price series, period/value/unit; public_summary; no Content/Notification |
 | EIA / electricity_rto_region_data | `/v2/electricity/rto/region-data/data/`; explicit respondents, D/NG types, hourly start/end ≤7 days; offset/length | Stable region/type series and per-period identity; finite value/unit; unknown unit is PARTIAL; no Content/Notification |
 | SEC / submissions_recent | `data.sec.gov/submissions/CIK....json`; explicit CIK/ticker/forms/date window ≤31 days; bounded safe official historical files ≤5 | Accession canonical identity, document/official Archives URL and submissions file provenance; OFFICIAL_RELEASE, UNAVAILABLE, link_only |
@@ -21,9 +21,11 @@ documents are fetched. Append/reorder do not invalidate continuation; earlier ar
 are discovered by subsequent bounded overlap reconciliation.
 
 All v2 configs require fixed_window or rolling_window. Rolling lookback/overlap/lag and day/hour/month granularity
-resolve once per durable run; retry/stale recovery reuse the frozen window. v2 legacy_cursor_type is NULL and
+resolve and persist before the first request; exact target/config/operation/contract/cursor/run-mode lineage lets
+retry/crash/lock-loss/stale recovery reuse the frozen window. v2 legacy_cursor_type is NULL and
 must exactly equal registry mapping. Production rollback-window activation protection remains enforced.
-Retail uses explicit month-unit parameters (lookback ≤12 months, overlap < lookback, lag ≤12 months), not seconds.
+Retail uses explicit month-unit parameters (lookback ≤12 complete inclusive periods, overlap < lookback,
+lag ≤12 months), not seconds. Lag zero excludes the current incomplete month.
 
 Batch ceiling 100 is a code ceiling, not a claim about account entitlement. Provider plan/quota/license review may
 require lower target limits. Every run independently enforces ≤20 requests/pages, ≤10 MB decoded response,

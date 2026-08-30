@@ -43,6 +43,10 @@ not pending/PASS. Revised tests use shared TEST_DATABASE_URL or the CI-created d
 
 The revision adds exact legacy mapping checks at load/revise/shadow, NULL v2 identities, append/reorder/revision
 keysets, fixed/rolling run-frozen windows, URL-required fallback and atomic/idempotent rejected-row AuditLogs.
+Run-frozen windows now have pre-request durable recovery state with exact target/config/operation/contract/cursor/
+run-mode lineage and a PostgreSQL fail-closed guard. Continuation codecs are exact per operation; SEC required
+column arrays are equal-length or the page fails closed. Monthly EIA windows are inclusive complete-period sets:
+`lookback_months=N` means exactly N periods and lag zero excludes the current incomplete month.
 Test-only future-v2 eligibility temporarily disables and restores the activation trigger in the disposable DB;
 production constraints remain intact. Migration 0009 remains a stopped-writer boundary, not rolling-upgrade
 compatible. Independent review is PENDING; exact final test count/HEAD/CI are recorded in the PR body.

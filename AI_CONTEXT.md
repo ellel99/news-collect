@@ -1,6 +1,7 @@
 # AI Context
 
-PR #46 M2-A directed fixes: explicit fixed/rolling windows, durable run-frozen bounds, keyset continuation,
+PR #46 M2-A directed fixes: explicit fixed/rolling windows, pre-request durable run-frozen lineage, exact
+operation continuation codecs, keyset continuation,
 NULL v2 legacy identity and traceable rejected-row audit. v2 cannot inherit a v1 legacy cursor. Production
 rollback-window guard remains installed; tests simulate future eligibility only in a disposable database.
 Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/C/D or activation authorization.

@@ -2,6 +2,13 @@
 
 ## M2-A PR #46 directed blocker fixes
 
+- Persist exact pre-request frozen-window recovery lineage and enforce operation-specific continuation shapes in
+  application and PostgreSQL before any Provider request.
+- Define EIA monthly windows as inclusive complete-period sets, harden SEC required column parsing and pagination
+  consistency, isolate traceable bad rows, and make Finnhub company-news identity provider-global.
+- Classify unpublished 0009 as a forward schema migration with an explicit stopped-writer deployment boundary;
+  it is not rolling-upgrade compatible or an additive/expand-only migration.
+
 - Use shared test database configuration; original CI FAIL is recorded accurately.
 - Enforce exact legacy mapping at load/revise/preflight; v2 is NULL and cannot reuse v1 identity.
 - Replace snapshot-offset blocking with Finnhub/SEC per-file stable keysets and bounded overlap.
