@@ -1,8 +1,10 @@
 # Market Intelligence Collector
 
 M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
-first request with exact recovery lineage;
-Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers.
+first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.
+Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers. Finnhub
+company_news is the operation-specific ARTICLE/notification exception; Finnhub quote and all EIA observations
+remain non-content/non-notification facts.
 Production authority remains legacy and v2 activation is not authorized. Original c4c1313 CI failed;
 the PR body records the revised HEAD's actual checks, not an assumed PASS.
 

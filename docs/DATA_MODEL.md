@@ -2,7 +2,9 @@
 
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows
-across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery. v2 targets have
+across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery.
+CollectionRun.operation_config_hash and CollectionCursor.continuation_run_id let PostgreSQL bind v2 continuation
+to the exact immutable run/window/config; legal empty completion clears both continuation fields atomically. v2 targets have
 NULL legacy_cursor_type and exact registry comparison, never legacy dual-write. Existing temporary activation
 constraints remain; 0009 is a forward schema migration with an explicit stopped-writer deployment boundary and
 is not rolling-upgrade compatible. Rejected rows use deterministic hash-only AuditLog

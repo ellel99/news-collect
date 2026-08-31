@@ -27,8 +27,9 @@ Every v2 config requires window_mode: fixed_window with explicit start/end for m
 or rolling_window with lookback_seconds, overlap_seconds, ingestion_lag_seconds and operation-specific
 granularity (news/SEC day, RTO hour, retail month). Dynamic start/end never enter target config. News/SEC
 ceiling is 31 days, RTO 7 days. Retail uses lookback_months (1–12), overlap_months (less than lookback),
-ingestion_lag_months (0–12), month granularity and durable monthly watermark; fixed retail bounds are at most 12
-inclusive calendar periods. Monthly config cannot substitute second-based parameters. `lookback_months=N` yields
+ingestion_lag_months (0–12), month granularity and durable monthly watermark; fixed retail bounds use canonical
+`YYYY-MM-01` inclusive periods and contain at most 12 periods. Month-end, mid-month, and hourly forms fail closed.
+Monthly config cannot substitute second-based parameters. `lookback_months=N` yields
 exactly N complete periods; lag zero ends at the previous complete month. Overlap subtracts the configured period
 count from an in-window watermark. A future/after-window watermark clamps to the last complete period and never
 reverses the window.
@@ -38,8 +39,11 @@ The same bounded worker remains usable for explicitly dispatched manual fixed-wi
 Before the first Provider request, the worker atomically freezes start/end in CollectionRun.resolved_window and
 persists a pending continuation recovery record. Exact lineage binds target/config revision, operation,
 operation-config/provider-contract versions, cursor version and run mode. Retry, crash, lock-loss and stale/new-run
-recovery reuse it; mismatched lineage fails before network. Database guards enforce immutable run bounds and exact
-v2 continuation identity. Successful completion clears recovery state so the next cadence resolves a new window.
+recovery reuse it; mismatched lineage fails before network. `CollectionCursor.continuation_run_id` binds pending
+state to the immutable `CollectionRun.resolved_window` and `operation_config_hash`. Database guards independently
+enforce target/cursor/source-account/run/config/window/lineage/state agreement. Successful completion, including a
+legal empty page, clears continuation and run binding in the same transaction so the next cadence resolves a new
+window; retry, crash, lock loss and PARTIAL coverage retain recovery state.
 
 Provider pagination is not a transactional upstream snapshot. Reconciliation repeats the configured bounded
 window to discover late revisions. Finnhub continuation stores last (published_at, provider_item_id); SEC
@@ -62,6 +66,8 @@ identity or untrusted page structure fails the whole page closed without silentl
 - Adds `finnhub_company_news` Evidence type and its news flags; database guards use provider + operation.
 - Adds durable CollectionRun request_count/page_count for cumulative budgets across retry/restart.
 - Adds CollectionRun.resolved_window with safe JSON constraint and once-initialized immutable-window trigger.
+- Adds immutable CollectionRun.operation_config_hash and CollectionCursor.continuation_run_id so PostgreSQL can
+  prove every v2 recovery window belongs to its exact run rather than merely accepting date-shaped JSON.
 - Adds an exact v2 continuation database guard; operation codecs reject unknown/cross-operation fields, wrong
   config/window/lineage, invalid numeric/key state and cross-CIK SEC queues.
 - Adds RawItemObservation.observation_key (default `run` for legacy), changing uniqueness to
@@ -109,6 +115,7 @@ No raw response persistence; Marketaux description/snippet and Finnhub summary/b
 document download, arbitrary EIA endpoint, infinite history, live request, credential read, activation/cutover,
 Migration B, Rich Evidence Packet, Event Bundle or AI. PR #39 remains untouched.
 
-Tests must cover operation-specific safe facts, multi-page persistence, page failure/resume, page dedup with
-observation lineage, SEC recent/history overlap and unsafe reference rejection, new Content policy, finite
+Tests must cover operation-specific safe facts, multi-page persistence, page failure/resume, legal empty completion,
+page dedup with observation lineage, all six mixed-row paths, strict SEC history reference dates, cross-symbol
+Finnhub canonical integration, new Content policy, finite
 budgets, unsupported versions, R1/R2/R8-A and scheduler/Telegram regression. Migration round trip is isolated.

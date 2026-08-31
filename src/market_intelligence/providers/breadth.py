@@ -333,20 +333,31 @@ class BreadthAdapter:
                 if not isinstance(row, dict):
                     raise ValueError("breadth_response_invalid")
                 identity = row.get("id")
-                if identity is not None and (
+                invalid_identity = identity is not None and (
                     isinstance(identity, bool)
                     or not isinstance(identity, (int, str))
                     or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", str(identity))
-                ):
-                    raise ValueError("breadth_item_untraceable")
+                )
                 try:
                     canonical_url = self._canonical_url(row.get("url"))
                 except ValueError:
-                    if identity is None:
+                    if identity is None or invalid_identity:
                         raise
                     rejected.append(
                         self._rejection_hash(
                             "finnhub", self.operation_key, f"company-news:id:{identity}"
+                        )
+                    )
+                    continue
+                if invalid_identity:
+                    if canonical_url is None:
+                        raise ValueError("breadth_item_untraceable")
+                    rejected.append(
+                        self._rejection_hash(
+                            "finnhub",
+                            self.operation_key,
+                            "company-news:url:"
+                            + hashlib.sha256(canonical_url.encode()).hexdigest(),
                         )
                     )
                     continue
@@ -497,11 +508,22 @@ class BreadthAdapter:
         if not state:
             references = body.get("filings", {}).get("files", [])
             for reference in references:
+                if not isinstance(reference, dict) or not {
+                    "name",
+                    "filingFrom",
+                    "filingTo",
+                }.issubset(reference):
+                    raise ValueError("sec_history_reference_invalid")
                 name = self._file(c["cik"], reference["name"])
-                if (
-                    reference.get("filingTo", "") >= c["start"]
-                    and reference.get("filingFrom", "9999") <= c["end"]
-                ):
+                filing_from, filing_to = reference["filingFrom"], reference["filingTo"]
+                try:
+                    parsed_from = date.fromisoformat(filing_from)
+                    parsed_to = date.fromisoformat(filing_to)
+                except (TypeError, ValueError):
+                    raise ValueError("sec_history_reference_invalid") from None
+                if parsed_from > parsed_to:
+                    raise ValueError("sec_history_reference_invalid")
+                if filing_to >= c["start"] and filing_from <= c["end"]:
                     files.append(name)
             if len(files) > c["max_history_files"]:
                 raise ValueError("breadth_history_budget_exceeded")

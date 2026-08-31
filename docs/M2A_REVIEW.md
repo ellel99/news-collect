@@ -44,9 +44,14 @@ not pending/PASS. Revised tests use shared TEST_DATABASE_URL or the CI-created d
 The revision adds exact legacy mapping checks at load/revise/shadow, NULL v2 identities, append/reorder/revision
 keysets, fixed/rolling run-frozen windows, URL-required fallback and atomic/idempotent rejected-row AuditLogs.
 Run-frozen windows now have pre-request durable recovery state with exact target/config/operation/contract/cursor/
-run-mode lineage and a PostgreSQL fail-closed guard. Continuation codecs are exact per operation; SEC required
-column arrays are equal-length or the page fails closed. Monthly EIA windows are inclusive complete-period sets:
+run-mode lineage and a PostgreSQL fail-closed guard bound to the exact run, immutable resolved window and config
+hash. Legal empty completion clears that binding atomically; crash/retry/PARTIAL retain it. Continuation codecs are
+exact per operation; SEC required column arrays and history reference name/from/to metadata are strictly validated.
+Monthly EIA fixed windows require canonical `YYYY-MM-01` bounds and are inclusive complete-period sets:
 `lookback_months=N` means exactly N periods and lag zero excludes the current incomplete month.
+PostgreSQL integration proves provider-global Finnhub identity across symbol contexts: one canonical RawItem,
+two observation/projection lineages, one Evidence/Content and at most one notification intent. Six operation paths
+prove traceable invalid-row isolation without turning out-of-scope filters into rejection markers.
 Test-only future-v2 eligibility temporarily disables and restores the activation trigger in the disposable DB;
 production constraints remain intact. Migration 0009 remains a stopped-writer boundary, not rolling-upgrade
 compatible. Independent review is PENDING; exact final test count/HEAD/CI are recorded in the PR body.

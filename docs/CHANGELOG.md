@@ -4,8 +4,11 @@
 
 - Persist exact pre-request frozen-window recovery lineage and enforce operation-specific continuation shapes in
   application and PostgreSQL before any Provider request.
+- Bind continuation to an immutable run window/config hash; atomically clear it on every successful completed v2
+  page, including legal empty responses, so subsequent rolling cadence resolves a new window.
 - Define EIA monthly windows as inclusive complete-period sets, harden SEC required column parsing and pagination
-  consistency, isolate traceable bad rows, and make Finnhub company-news identity provider-global.
+  consistency/reference dates, require canonical monthly fixed bounds, isolate traceable bad rows across all six
+  operation paths, and verify Finnhub company-news identity provider-global across symbol contexts.
 - Classify unpublished 0009 as a forward schema migration with an explicit stopped-writer deployment boundary;
   it is not rolling-upgrade compatible or an additive/expand-only migration.
 

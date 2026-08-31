@@ -112,6 +112,23 @@ def _guards(expanded: bool) -> None:
 
 def upgrade() -> None:
     op.add_column("collection_runs", sa.Column("resolved_window", JSONB(), nullable=True))
+    op.add_column(
+        "collection_runs", sa.Column("operation_config_hash", sa.String(64), nullable=True)
+    )
+    op.create_check_constraint(
+        "ck_collection_runs_operation_config_hash",
+        "collection_runs",
+        "operation_config_hash IS NULL OR operation_config_hash ~ '^[0-9a-f]{64}$'",
+    )
+    op.add_column("collection_cursors", sa.Column("continuation_run_id", sa.Uuid(), nullable=True))
+    op.create_foreign_key(
+        "fk_collection_cursors_continuation_run",
+        "collection_cursors",
+        "collection_runs",
+        ["continuation_run_id"],
+        ["id"],
+        ondelete="RESTRICT",
+    )
     op.create_check_constraint(
         "ck_collection_runs_resolved_window",
         "collection_runs",
@@ -119,18 +136,38 @@ def upgrade() -> None:
     )
     op.execute("""CREATE FUNCTION m2_run_window_guard() RETURNS trigger AS $$ BEGIN
       IF OLD.resolved_window IS NOT NULL AND NEW.resolved_window IS DISTINCT FROM OLD.resolved_window
-      THEN RAISE EXCEPTION 'collection_run_window_immutable'; END IF; RETURN NEW;
+      THEN RAISE EXCEPTION 'collection_run_window_immutable'; END IF;
+      IF OLD.operation_config_hash IS NOT NULL
+        AND NEW.operation_config_hash IS DISTINCT FROM OLD.operation_config_hash
+      THEN RAISE EXCEPTION 'collection_run_config_hash_immutable'; END IF;
+      RETURN NEW;
       END; $$ LANGUAGE plpgsql""")
     op.execute("""CREATE TRIGGER trg_m2_run_window_guard BEFORE UPDATE ON collection_runs
       FOR EACH ROW EXECUTE FUNCTION m2_run_window_guard();""")
     op.execute("""
     CREATE FUNCTION m2_continuation_guard() RETURNS trigger AS $$
-    DECLARE t collection_targets%ROWTYPE; provider_key text; state_keys text[];
+    DECLARE t collection_targets%ROWTYPE; r collection_runs%ROWTYPE;
+            provider_key text; state_keys text[];
     BEGIN
-      IF NEW.target_id IS NULL OR NEW.continuation IS NULL
-        OR NEW.continuation = 'null'::jsonb THEN RETURN NEW; END IF;
+      IF NEW.target_id IS NULL THEN RETURN NEW; END IF;
       SELECT * INTO t FROM collection_targets WHERE id=NEW.target_id;
       IF NOT FOUND OR t.provider_contract_version <> 2 THEN RETURN NEW; END IF;
+      IF NEW.cursor_type IS DISTINCT FROM t.operation_key
+        OR NEW.cursor_version IS DISTINCT FROM t.cursor_version
+        OR NEW.source_account_id IS DISTINCT FROM t.source_account_id
+      THEN RAISE EXCEPTION 'collection_cursor_target_identity_invalid'; END IF;
+      IF NEW.continuation IS NULL OR NEW.continuation = 'null'::jsonb THEN
+        IF NEW.continuation_run_id IS NOT NULL
+        THEN RAISE EXCEPTION 'collection_continuation_run_invalid'; END IF;
+        RETURN NEW;
+      END IF;
+      SELECT * INTO r FROM collection_runs WHERE id=NEW.continuation_run_id;
+      IF NOT FOUND OR r.target_id IS DISTINCT FROM t.id
+        OR r.source_id IS DISTINCT FROM t.source_id
+        OR r.source_account_id IS DISTINCT FROM t.source_account_id
+        OR r.run_mode IS DISTINCT FROM NEW.run_mode
+        OR r.resolved_window IS NULL
+      THEN RAISE EXCEPTION 'collection_continuation_run_invalid'; END IF;
       SELECT access_method INTO provider_key FROM sources WHERE id=t.source_id;
       IF jsonb_typeof(NEW.continuation) <> 'object'
         OR ARRAY(SELECT jsonb_object_keys(NEW.continuation) ORDER BY 1)
@@ -139,6 +176,7 @@ def upgrade() -> None:
         OR NEW.continuation->>'provider' IS DISTINCT FROM provider_key
         OR NEW.continuation->>'operation' IS DISTINCT FROM t.operation_key
         OR COALESCE(NEW.continuation->>'config_hash','') !~ '^[0-9a-f]{64}$'
+        OR NEW.continuation->>'config_hash' IS DISTINCT FROM r.operation_config_hash
         OR jsonb_typeof(NEW.continuation->'resolved_window') <> 'object'
         OR ARRAY(SELECT jsonb_object_keys(NEW.continuation->'resolved_window') ORDER BY 1)
           <> ARRAY['end','start']
@@ -151,7 +189,12 @@ def upgrade() -> None:
           'cursor_version',t.cursor_version,
           'run_mode',NEW.run_mode::text)
         OR jsonb_typeof(NEW.continuation->'state') <> 'object'
+        OR NEW.continuation->'resolved_window' IS DISTINCT FROM r.resolved_window
       THEN RAISE EXCEPTION 'collection_continuation_contract_invalid'; END IF;
+      IF t.operation_config->>'window_mode'='fixed_window' AND (
+        NEW.continuation#>>'{resolved_window,start}' IS DISTINCT FROM t.operation_config->>'start'
+        OR NEW.continuation#>>'{resolved_window,end}' IS DISTINCT FROM t.operation_config->>'end')
+      THEN RAISE EXCEPTION 'collection_continuation_window_invalid'; END IF;
       state_keys := ARRAY(SELECT jsonb_object_keys(NEW.continuation->'state') ORDER BY 1);
       IF (provider_key='marketaux' AND t.operation_key='news_all' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['page']))
         OR (provider_key='finnhub' AND t.operation_key='company_news' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['last_key']))
@@ -164,7 +207,8 @@ def upgrade() -> None:
     END; $$ LANGUAGE plpgsql
     """)
     op.execute("""CREATE TRIGGER trg_m2_continuation_guard
-      BEFORE INSERT OR UPDATE OF continuation,target_id,run_mode,cursor_version,cursor_type
+      BEFORE INSERT OR UPDATE OF continuation,continuation_run_id,target_id,source_account_id,
+        run_mode,cursor_version,cursor_type
       ON collection_cursors FOR EACH ROW EXECUTE FUNCTION m2_continuation_guard();""")
     for name in ("request_count", "page_count"):
         op.add_column(
@@ -208,6 +252,12 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION m2_run_window_guard()")
     op.drop_constraint("ck_collection_runs_resolved_window", "collection_runs", type_="check")
     op.drop_column("collection_runs", "resolved_window")
+    op.drop_constraint("ck_collection_runs_operation_config_hash", "collection_runs", type_="check")
+    op.drop_column("collection_runs", "operation_config_hash")
+    op.drop_constraint(
+        "fk_collection_cursors_continuation_run", "collection_cursors", type_="foreignkey"
+    )
+    op.drop_column("collection_cursors", "continuation_run_id")
     for name in ("request_count", "page_count"):
         op.drop_constraint(
             f"ck_collection_runs_{name}_nonnegative", "collection_runs", type_="check"

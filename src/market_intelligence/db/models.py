@@ -508,6 +508,9 @@ class CollectionCursor(Base):
     )
     cursor_value: Mapped[str | None] = mapped_column(Text)
     continuation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    continuation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_runs.id", ondelete="RESTRICT")
+    )
     watermark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
@@ -533,6 +536,10 @@ class CollectionRun(Base):
         CheckConstraint(
             "resolved_window IS NULL OR (jsonb_typeof(resolved_window)='object' AND resolved_window ?& ARRAY['start','end'] AND (resolved_window - 'start' - 'end')='{}'::jsonb AND jsonb_typeof(resolved_window->'start')='string' AND jsonb_typeof(resolved_window->'end')='string' AND (resolved_window->>'start') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$' AND (resolved_window->>'end') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$')",  # noqa: E501
             name="ck_collection_runs_resolved_window",
+        ),
+        CheckConstraint(
+            "operation_config_hash IS NULL OR operation_config_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_collection_runs_operation_config_hash",
         ),
         CheckConstraint("new_count >= 0", name="ck_collection_runs_new_nonnegative"),
         CheckConstraint(
@@ -584,6 +591,7 @@ class CollectionRun(Base):
     request_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     page_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     resolved_window: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    operation_config_hash: Mapped[str | None] = mapped_column(String(64))
     new_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     duplicate_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     error_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))

@@ -1,7 +1,7 @@
 # AI Context
 
-PR #46 M2-A directed fixes: explicit fixed/rolling windows, pre-request durable run-frozen lineage, exact
-operation continuation codecs, keyset continuation,
+PR #46 M2-A directed fixes: explicit fixed/rolling windows, pre-request durable run/config/window-bound lineage,
+atomic empty-completion cleanup, exact operation continuation codecs, keyset continuation,
 NULL v2 legacy identity and traceable rejected-row audit. v2 cannot inherit a v1 legacy cursor. Production
 rollback-window guard remains installed; tests simulate future eligibility only in a disposable database.
 Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/C/D or activation authorization.
@@ -29,6 +29,8 @@ Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/
   R0 Foundation v2.3 Freeze Review 已 PASS/Completed；R1 I-A/II/III/IV implementation 已进入 main，
   尚未获得 production activation/cutover 授权。R2/R8-A 已进入 main；R8-A 已实现 READY safe factual
   projection 到 canonical Evidence 的 durable handoff，factual payload 仍只保存在 projection。
+  R8-A v1 Finnhub quote 不创建 Content/Notification；M2-A Finnhub `company_news` 是经 operation policy
+  明确批准的 ARTICLE/Notification 例外。EIA operations 仍不创建 Content/Notification。
   PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
 - Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 为

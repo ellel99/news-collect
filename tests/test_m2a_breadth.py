@@ -13,7 +13,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -25,8 +25,10 @@ from market_intelligence.collection.control_plane import (
     dispatch_identity,
 )
 from market_intelligence.collection.control_plane_tools import ControlPlaneAuditService
+from market_intelligence.collection.downstream import persist_fetch_result
 from market_intelligence.collection.target_configs import build_operation_registry
 from market_intelligence.collection.target_repository import TargetRepository, TargetRepositoryError
+from market_intelligence.db.base import system_metadata
 from market_intelligence.db.models import (
     AuditLog,
     CollectionCursor,
@@ -35,11 +37,18 @@ from market_intelligence.db.models import (
     CollectionTarget,
     ContentItem,
     EvidenceItem,
+    Notification,
     RawItem,
     RawItemObservation,
     SafeFactProjection,
 )
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
+from market_intelligence.notifications.intent import (
+    WATERMARK_KEY,
+    IntentWatermark,
+    NotificationIntentReconciler,
+    _persist_cutover_watermark,
+)
 from market_intelligence.providers.breadth import BreadthAdapter
 from market_intelligence.providers.breadth_config import breadth_config
 from market_intelligence.providers.continuation import (
@@ -69,6 +78,53 @@ def rolling_config(operation="news_all"):
     }
 
 
+def rolling_operation_config(provider, operation):
+    base = {
+        k: v
+        for k, v in CONFIGS[provider, operation].items()
+        if k not in {"start", "end", "window_mode"}
+    }
+    if operation == "electricity_retail_sales":
+        return {
+            **base,
+            "window_mode": "rolling_window",
+            "lookback_months": 2,
+            "overlap_months": 1,
+            "ingestion_lag_months": 0,
+            "granularity": "month",
+        }
+    granularity = "hour" if operation == "electricity_rto_region_data" else "day"
+    unit = 3600 if granularity == "hour" else 86400
+    return {
+        **base,
+        "window_mode": "rolling_window",
+        "lookback_seconds": 2 * unit,
+        "overlap_seconds": unit,
+        "ingestion_lag_seconds": 0,
+        "granularity": granularity,
+    }
+
+
+def empty_page(provider, operation):
+    if provider == "marketaux":
+        return {"data": [], "meta": {"found": 0}}
+    if provider == "finnhub":
+        return []
+    if provider == "eia":
+        return {"response": {"data": [], "total": 0}}
+    return {
+        "filings": {
+            "recent": {
+                "accessionNumber": [],
+                "filingDate": [],
+                "form": [],
+                "primaryDocument": [],
+            },
+            "files": [],
+        }
+    }
+
+
 DB = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
@@ -95,7 +151,7 @@ CONFIGS = {
         "sectors": ["ALL"],
         "frequency": "monthly",
         "start": "2026-01-01",
-        "end": "2026-01-31",
+        "end": "2026-01-01",
     },
     ("sec_edgar", "submissions_recent"): {
         "ticker": "NVDA",
@@ -331,14 +387,23 @@ async def seed(factory, provider, operation, pages=3):
 
 
 async def cleanup(factory, ids):
-    source, account, target = ids
+    source, _account, _target = ids
     async with factory.begin() as session:
         await session.execute(
-            text("DELETE FROM audit_logs WHERE target_id=:target"), {"target": target}
+            text(
+                "DELETE FROM audit_logs WHERE target_id IN (SELECT id FROM collection_targets WHERE source_id=:source)"
+            ),
+            {"source": source},
         )
         await session.execute(
             text(
                 "DELETE FROM evidence_projection_links WHERE safe_fact_projection_id IN (SELECT p.id FROM safe_fact_projections p JOIN raw_items r ON r.id=p.raw_item_id WHERE r.source_id=:source)"
+            ),
+            {"source": source},
+        )
+        await session.execute(
+            text(
+                "DELETE FROM notifications WHERE content_item_id IN (SELECT id FROM content_items WHERE source_id=:source)"
             ),
             {"source": source},
         )
@@ -352,19 +417,24 @@ async def cleanup(factory, ids):
             ),
             {"source": source},
         )
-        for table in ("raw_item_observations", "raw_items", "collection_runs"):
+        for table in ("raw_item_observations", "raw_items"):
             await session.execute(
                 text(f"DELETE FROM {table} WHERE source_id=:source"), {"source": source}
             )
         await session.execute(
-            text("DELETE FROM collection_cursors WHERE source_account_id=:account"),
-            {"account": account},
+            text(
+                "DELETE FROM collection_cursors WHERE target_id IN (SELECT id FROM collection_targets WHERE source_id=:source) OR source_account_id IN (SELECT id FROM source_accounts WHERE source_id=:source)"
+            ),
+            {"source": source},
         )
         await session.execute(
-            text("DELETE FROM collection_targets WHERE id=:target"), {"target": target}
+            text("DELETE FROM collection_runs WHERE source_id=:source"), {"source": source}
         )
         await session.execute(
-            text("DELETE FROM source_accounts WHERE id=:account"), {"account": account}
+            text("DELETE FROM collection_targets WHERE source_id=:source"), {"source": source}
+        )
+        await session.execute(
+            text("DELETE FROM source_accounts WHERE source_id=:source"), {"source": source}
         )
         await session.execute(text("DELETE FROM sources WHERE id=:source"), {"source": source})
 
@@ -405,6 +475,145 @@ async def test_collection_to_durable_evidence(provider, operation):
                 else True
             )
     finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_finnhub_cross_symbol_identity_preserves_lineage_and_single_notification():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "finnhub", "company_news")
+    second_target = uuid4()
+    try:
+        async with factory.begin() as session:
+            first = await session.get(CollectionTarget, ids[2])
+            session.add(
+                CollectionTarget(
+                    id=second_target,
+                    target_key=f"m2.{uuid4().hex}",
+                    source_id=ids[0],
+                    source_account_id=ids[1],
+                    operation_key="company_news",
+                    operation_config_version=2,
+                    provider_contract_version=2,
+                    operation_config={
+                        **CONFIGS["finnhub", "company_news"],
+                        "symbol": "MSFT",
+                    },
+                    status=first.status,
+                    cadence_seconds=first.cadence_seconds,
+                    batch_limit=first.batch_limit,
+                    max_requests_per_run=first.max_requests_per_run,
+                    max_pages_per_run=first.max_pages_per_run,
+                    max_response_bytes=first.max_response_bytes,
+                    request_timeout_seconds=first.request_timeout_seconds,
+                    max_runtime_seconds=first.max_runtime_seconds,
+                    cursor_strategy=first.cursor_strategy,
+                    cursor_version=first.cursor_version,
+                    collection_mode=first.collection_mode,
+                    backfill_policy=first.backfill_policy,
+                    revision_policy=first.revision_policy,
+                    rate_limit_group=f"m2.{uuid4().hex}",
+                    next_due_at=datetime.now(UTC),
+                    health_status=first.health_status,
+                )
+            )
+            await _persist_cutover_watermark(
+                session,
+                IntentWatermark(datetime(2000, 1, 1, tzinfo=UTC), uuid5(NAMESPACE_URL, "0")),
+            )
+        shared = [rows("finnhub", "company_news")[0]]
+        adapter = BreadthAdapter(
+            "finnhub", "company_news", RuntimeCredential("FINNHUB_API_KEY", "synthetic")
+        )
+        for target, symbol in ((ids[2], "NVDA"), (second_target, "MSFT")):
+            provider_result = await adapter.fetch(
+                replace(
+                    request("finnhub", "company_news"),
+                    source_id=ids[0],
+                    source_account_id=ids[1],
+                    target_id=target,
+                    config={**CONFIGS["finnhub", "company_news"], "symbol": symbol},
+                ),
+                MockProviderTransport([response(shared)]),
+            )
+            assert not provider_result.safe_errors
+            async with factory.begin() as session:
+                run = CollectionRun(
+                    source_id=ids[0],
+                    source_account_id=ids[1],
+                    target_id=target,
+                    run_mode=CollectionRunMode.NORMAL,
+                    dispatch_identity=f"synthetic-{symbol}",
+                    started_at=datetime.now(UTC),
+                    finished_at=datetime.now(UTC),
+                    status="succeeded",
+                )
+                session.add(run)
+                await session.flush()
+                await persist_fetch_result(
+                    session,
+                    run_id=run.id,
+                    source_id=ids[0],
+                    source_account_id=ids[1],
+                    provider="finnhub",
+                    target_id=target,
+                    operation_key="company_news",
+                    config_revision=1,
+                    provider_contract_version=2,
+                    result=provider_result,
+                    observation_key=f"symbol-{symbol}",
+                )
+        assert (await SafeFactProjectionWorker(factory).process_batch()).ready == 2
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch()).linked == 2
+        await EvidenceProjectionHandoffWorker(factory).process_batch()
+        first_reconcile = await NotificationIntentReconciler(factory).reconcile()
+        second_reconcile = await NotificationIntentReconciler(factory).reconcile()
+        async with factory() as session:
+            assert (
+                await session.scalar(
+                    select(func.count()).select_from(RawItem).where(RawItem.source_id == ids[0])
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(RawItemObservation)
+                    .where(RawItemObservation.source_id == ids[0])
+                )
+                == 2
+            )
+            projections = tuple(
+                await session.scalars(
+                    select(SafeFactProjection).join(RawItem).where(RawItem.source_id == ids[0])
+                )
+            )
+            assert {row.factual_payload["symbol"] for row in projections} == {"NVDA", "MSFT"}
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(EvidenceItem)
+                    .where(EvidenceItem.source_id == ids[0])
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ContentItem)
+                    .where(ContentItem.source_id == ids[0])
+                )
+                == 1
+            )
+            assert await session.scalar(select(func.count()).select_from(Notification)) == 1
+        assert first_reconcile.created == 1 and second_reconcile.created == 0
+    finally:
+        async with factory.begin() as session:
+            await session.execute(
+                system_metadata.delete().where(system_metadata.c.key == WATERMARK_KEY)
+            )
         await cleanup(factory, ids)
         await engine.dispose()
 
@@ -741,6 +950,28 @@ async def test_finnhub_fallback_requires_url_and_is_collision_safe():
     )
     assert invalid.safe_errors and not invalid.raw_items
 
+    variants = [
+        {
+            **rows("finnhub", "company_news")[0],
+            "id": None,
+            "url": "HTTPS://EXAMPLE.COM:443/story?utm_source=x&fbclid=y#fragment",
+        },
+        {
+            **rows("finnhub", "company_news")[0],
+            "id": None,
+            "url": "https://example.com/story",
+        },
+    ]
+    normalized = await adapter.fetch(
+        request("finnhub", "company_news"), MockProviderTransport([response(variants)])
+    )
+    assert len({p["provider_item_id"] for p in normalized.factual_projections}) == 1
+    variants[1]["url"] = "https://example.com/other-story"
+    distinct = await adapter.fetch(
+        request("finnhub", "company_news"), MockProviderTransport([response(variants)])
+    )
+    assert len({p["provider_item_id"] for p in distinct.factual_projections}) == 2
+
 
 @pytest.mark.asyncio
 async def test_v2_legacy_identity_load_revise_rejected():
@@ -822,6 +1053,96 @@ async def test_mixed_page_audit_is_durable_idempotent_and_no_legacy_cursor():
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider,operation,history",
+    [
+        ("marketaux", "news_all", False),
+        ("finnhub", "company_news", False),
+        ("eia", "electricity_retail_sales", False),
+        ("eia", "electricity_rto_region_data", False),
+        ("sec_edgar", "submissions_recent", False),
+        ("sec_edgar", "submissions_recent", True),
+    ],
+)
+async def test_all_operation_paths_isolate_traceable_invalid_rows(provider, operation, history):
+    adapter = BreadthAdapter(
+        provider, operation, RuntimeCredential(CREDENTIALS[provider], "synthetic")
+    )
+    req = request(provider, operation, 2)
+    if provider == "marketaux":
+        body = {
+            "data": [{**news("bad"), "published_at": "invalid"}, news("good")],
+            "meta": {"found": 2},
+        }
+    elif provider == "finnhub":
+        valid = rows(provider, operation)[0]
+        body = [{**valid, "id": "invalid/id", "url": "https://example.com/rejected"}, valid]
+    elif provider == "eia":
+        valid = rows(provider, operation)["response"]["data"][0]
+        value_field = "price" if operation == "electricity_retail_sales" else "value"
+        body = {"response": {"data": [{**valid, value_field: True}, valid], "total": 2}}
+    else:
+        valid = {
+            "accessionNumber": "0001045810-26-000002",
+            "filingDate": "2026-01-02",
+            "form": "8-K",
+            "primaryDocument": "report.htm",
+        }
+        bad = {
+            **valid,
+            "accessionNumber": "0001045810-26-000001",
+            "primaryDocument": "../blocked.htm",
+        }
+        columns = {key: [bad[key], valid[key]] for key in valid}
+        body = columns if history else {"filings": {"recent": columns, "files": []}}
+        if history:
+            req = replace(
+                req,
+                continuation=encode_continuation(
+                    provider,
+                    operation,
+                    req.config,
+                    request_lineage(req, operation),
+                    {"file": "CIK0001045810-submissions-001.json", "files": []},
+                ),
+            )
+    result = await adapter.fetch(req, MockProviderTransport([response(body)]))
+    assert not result.safe_errors
+    assert len(result.raw_items) == len(result.factual_projections) == 1
+    assert len(result.rejected_row_hashes) == 1
+    assert len(result.rejected_row_hashes[0]) == 64
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"name": "CIK0001045810-submissions-001.json", "filingTo": "2026-01-03"},
+        {
+            "name": "CIK0001045810-submissions-001.json",
+            "filingFrom": "invalid",
+            "filingTo": "2026-01-03",
+        },
+        {
+            "name": "CIK0001045810-submissions-001.json",
+            "filingFrom": "2026-01-03",
+            "filingTo": "2026-01-01",
+        },
+    ],
+)
+async def test_sec_history_reference_metadata_fail_closed(reference):
+    body = rows("sec_edgar", "submissions_recent")
+    body["filings"]["files"] = [reference]
+    result = await BreadthAdapter(
+        "sec_edgar", "submissions_recent", RuntimeCredential("SEC_USER_AGENT", "synthetic")
+    ).fetch(
+        request("sec_edgar", "submissions_recent"),
+        MockProviderTransport([response(body)]),
+    )
+    assert result.safe_errors and not result.raw_items and not result.rejected_row_hashes
 
 
 @pytest.mark.parametrize(
@@ -1024,7 +1345,7 @@ async def test_pre_request_window_recovery_survives_new_run_and_time_boundary(mo
             target.operation_config = rolling_config()
             target.config_revision = 2
         repository = TargetRepository(factory, build_operation_registry())
-        transport = MockProviderTransport([response({"data": [], "meta": {"found": 0}})])
+        transport = MockProviderTransport([response({"data": [], "meta": {"found": 0}})] * 2)
         worker = CollectionControlPlaneWorker(
             factory,
             repository,
@@ -1053,46 +1374,149 @@ async def test_pre_request_window_recovery_survives_new_run_and_time_boundary(mo
         call = transport.calls[0]
         assert call.params["published_after"] == config["start"]
         assert call.params["published_before"] == config["end"]
+        async with factory() as session:
+            persisted = await session.scalar(
+                select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
+            )
+            assert persisted.continuation is None
+            assert persisted.continuation_run_id is None
+        Clock.current += timedelta(days=1)
+        third = TargetDispatch(ids[2], 2, 3, "normal", dispatch_identity(ids[2], 2, 3))
+        assert (await worker.execute(third)).status == "succeeded"
+        assert transport.calls[1].params["published_before"] != config["end"]
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_database_continuation_lineage_guard_rejects_bypass():
+@pytest.mark.parametrize("provider,operation", CONFIGS)
+async def test_v2_empty_completion_clears_pending_continuation(provider, operation, monkeypatch):
+    import market_intelligence.collection.control_plane as cp
+
+    class Clock(datetime):
+        current = NOW
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    monkeypatch.setattr(cp, "datetime", Clock)
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, provider, operation)
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_operation_config(provider, operation)
+            target.config_revision = 2
+        transport = MockProviderTransport(
+            [response(empty_page(provider, operation)), response(empty_page(provider, operation))]
+        )
+        worker = CollectionControlPlaneWorker(
+            factory,
+            TargetRepository(factory, build_operation_registry()),
+            RedisDouble(),
+            transport,
+            environ={CREDENTIALS[provider]: "synthetic", "SEC_CONTACT_EMAIL": "test@example.com"},
+        )
+        for slot in (1, 2):
+            report = await worker.execute(
+                TargetDispatch(ids[2], 2, slot, "normal", dispatch_identity(ids[2], 2, slot))
+            )
+            assert report.status == "succeeded"
+            async with factory() as session:
+                cursor = await session.scalar(
+                    select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
+                )
+                assert cursor.continuation is None
+                assert cursor.continuation_run_id is None
+            Clock.current += timedelta(days=32 if operation == "electricity_retail_sales" else 1)
+        async with factory() as session:
+            run_windows = tuple(
+                await session.scalars(
+                    select(CollectionRun.resolved_window)
+                    .where(CollectionRun.target_id == ids[2])
+                    .order_by(CollectionRun.started_at)
+                )
+            )
+            assert run_windows[0] != run_windows[1]
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation,error",
+    [
+        ("cursor_type='company_news'", "collection_cursor_target_identity_invalid"),
+        ("cursor_version=2", "collection_cursor_target_identity_invalid"),
+        ("source_account_id=:other_account", "collection_cursor_target_identity_invalid"),
+        ("run_mode='backfill'", "collection_continuation_run_invalid"),
+        (
+            "continuation=jsonb_set(continuation,'{lineage,config_revision}','999'::jsonb)",
+            "collection_continuation_contract_invalid",
+        ),
+        (
+            "continuation=jsonb_set(continuation,'{lineage,operation_config_version}','1'::jsonb)",
+            "collection_continuation_contract_invalid",
+        ),
+        (
+            "continuation=jsonb_set(continuation,'{lineage,provider_contract_version}','1'::jsonb)",
+            "collection_continuation_contract_invalid",
+        ),
+        (
+            "continuation=jsonb_set(continuation,'{resolved_window,start}','\"2025-12-01\"'::jsonb)",
+            "collection_continuation_contract_invalid",
+        ),
+        (
+            "continuation=jsonb_set(continuation,'{config_hash}',to_jsonb(repeat('f',64)))",
+            "collection_continuation_contract_invalid",
+        ),
+        (
+            "continuation=jsonb_set(continuation,'{state}',jsonb_build_object('offset',1))",
+            "collection_continuation_state_invalid",
+        ),
+    ],
+)
+async def test_database_continuation_lineage_guard_rejects_bypass(mutation, error):
     engine = create_async_engine(DB)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     ids = await seed(factory, "marketaux", "news_all")
     try:
-        malformed = {
-            "version": 1,
-            "provider": "marketaux",
-            "operation": "news_all",
-            "config_hash": "0" * 64,
-            "resolved_window": {"start": "2026-01-01", "end": "2026-01-03"},
-            "lineage": {
-                "target_id": str(ids[2]),
-                "config_revision": 999,
-                "operation_key": "news_all",
-                "operation_config_version": 2,
-                "provider_contract_version": 2,
-                "cursor_version": 1,
-                "run_mode": "normal",
-            },
-            "state": {},
-        }
-        with pytest.raises(DBAPIError, match="collection_continuation_contract_invalid"):
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_config()
+            target.config_revision = 2
+            other_account = await session.scalar(
+                text(
+                    "INSERT INTO source_accounts(source_id,identity_status,enabled,collection_options) VALUES (:source,'verified',true,'{}') RETURNING id"
+                ),
+                {"source": ids[0]},
+            )
+        repository = TargetRepository(factory, build_operation_registry())
+        worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            MockProviderTransport([]),
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        loaded = await repository.load_for_execution(ids[2], 2)
+        dispatch = TargetDispatch(ids[2], 2, 1, "normal", dispatch_identity(ids[2], 2, 1))
+        run_id, cursor = await worker._start_run(loaded, dispatch, CollectionRunMode.NORMAL)
+        await worker._resolved_run_config(run_id, loaded, cursor, CollectionRunMode.NORMAL)
+        with pytest.raises(DBAPIError, match=error):
             async with factory.begin() as session:
                 await session.execute(
-                    text(
-                        "INSERT INTO collection_cursors(source_account_id,target_id,cursor_type,cursor_version,run_mode,continuation) VALUES (:account,:target,'news_all',1,'normal',CAST(:continuation AS jsonb))"
-                    ),
-                    {
-                        "account": ids[1],
-                        "target": ids[2],
-                        "continuation": json.dumps(malformed),
-                    },
+                    text(f"UPDATE collection_cursors SET {mutation} WHERE target_id=:target"),
+                    {"target": ids[2], "other_account": other_account},
                 )
+        async with factory.begin() as session:
+            await session.execute(
+                text("DELETE FROM source_accounts WHERE id=:id"), {"id": other_account}
+            )
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
@@ -1355,3 +1779,27 @@ def test_monthly_period_count_lag_overlap_and_future_watermark():
         datetime(2030, 1, 1, tzinfo=UTC),
     )
     assert resolved == {"start": "2025-11-01", "end": "2025-11-01"}
+
+
+@pytest.mark.parametrize(
+    "start,end,valid",
+    [
+        ("2026-01-01", "2026-01-01", True),
+        ("2026-01-01", "2026-12-01", True),
+        ("2026-01-01", "2027-01-01", False),
+        ("2026-01-15", "2026-02-01", False),
+        ("2026-01-01", "2026-01-31", False),
+        ("2026-01-01T00", "2026-02-01T00", False),
+    ],
+)
+def test_monthly_fixed_window_requires_inclusive_month_starts(start, end, valid):
+    config = {
+        **CONFIGS["eia", "electricity_retail_sales"],
+        "start": start,
+        "end": end,
+    }
+    if valid:
+        assert breadth_config("eia", "electricity_retail_sales", config)["end"] == end
+    else:
+        with pytest.raises(ValueError, match="breadth_window_invalid"):
+            breadth_config("eia", "electricity_retail_sales", config)

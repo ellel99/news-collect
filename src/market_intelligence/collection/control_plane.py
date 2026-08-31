@@ -50,6 +50,7 @@ from market_intelligence.providers.credential_resolver import (
     resolve_runtime_credential,
 )
 from market_intelligence.providers.windows import resolve_window, resolved_config
+from market_intelligence.safe_projection.contracts import canonical_projection_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,6 +526,13 @@ class CollectionControlPlaneWorker:
                 )
                 run.resolved_window = window
             config = resolved_config(dict(loaded.config), run.resolved_window)
+            config_hash = canonical_projection_hash(config)
+            if run.operation_config_hash not in {None, config_hash}:
+                raise TargetRepositoryError("run_operation_config_hash_mismatch")
+            run.operation_config_hash = config_hash
+            # The database continuation guard reads the durable run binding. Persist
+            # the immutable window/config before inserting or rebinding the cursor.
+            await session.flush([run])
             if persisted.continuation:
                 decode_continuation(
                     persisted.continuation,
@@ -541,6 +549,7 @@ class CollectionControlPlaneWorker:
                     lineage,
                     {},
                 )
+            persisted.continuation_run_id = run.id
             await session.flush()
             return config, dict(persisted.continuation)
 
@@ -766,7 +775,7 @@ class CollectionControlPlaneWorker:
             target.last_attempt_at = now
             target.next_retry_at = None
             target.next_due_at = now + timedelta(seconds=target.cadence_seconds)
-            if result.next_cursor is not None or result.has_more:
+            if page_mode or result.next_cursor is not None or result.has_more:
                 cursor = await session.scalar(
                     select(CollectionCursor)
                     .where(
@@ -796,6 +805,7 @@ class CollectionControlPlaneWorker:
                     ).candidate
                     cursor.cursor_value = result.next_cursor
                     cursor.continuation = dict(result.continuation) if result.continuation else None
+                    cursor.continuation_run_id = run.id if result.continuation else None
                     if position is not None:
                         cursor.last_published_at = position.published_at
                         cursor.watermark_at = position.published_at

@@ -3,7 +3,8 @@
 Status: Implementation Review — no production activation
 
 All expanded rows use config version 2 / provider contract 2, projection schema 1 and continuation version 1.
-The exact tuple is resolved by the static registry; config hashes fence continuation to the reviewed target.
+The exact tuple is resolved by the static registry; config hashes and continuation_run_id fence continuation to
+the reviewed target and the exact immutable run-resolved window.
 
 | Provider / operation | Request and continuation | Typed factual/content policy |
 |---|---|---|
@@ -14,7 +15,8 @@ The exact tuple is resolved by the static registry; config hashes fence continua
 | EIA / electricity_rto_region_data | `/v2/electricity/rto/region-data/data/`; explicit respondents, D/NG types, hourly start/end ≤7 days; offset/length | Stable region/type series and per-period identity; finite value/unit; unknown unit is PARTIAL; no Content/Notification |
 | SEC / submissions_recent | `data.sec.gov/submissions/CIK....json`; explicit CIK/ticker/forms/date window ≤31 days; bounded safe official historical files ≤5 | Accession canonical identity, document/official Archives URL and submissions file provenance; OFFICIAL_RELEASE, UNAVAILABLE, link_only |
 
-SEC follows only validated `CIK{same_cik}-submissions-NNN.json` references from the submissions response.
+SEC follows only validated `CIK{same_cik}-submissions-NNN.json` references whose filingFrom/filingTo are present,
+valid ordered ISO dates in the submissions response.
 The form set is explicitly selected from 8-K/10-Q/10-K/6-K. Unknown forms in config fail closed; unrelated returned
 forms are filtered before bounded keyset selection. Each file has its own filing-date/accession key. No filing
 documents are fetched. Append/reorder do not invalidate continuation; earlier arrivals and emitted-key revisions
@@ -25,7 +27,8 @@ resolve and persist before the first request; exact target/config/operation/cont
 retry/crash/lock-loss/stale recovery reuse the frozen window. v2 legacy_cursor_type is NULL and
 must exactly equal registry mapping. Production rollback-window activation protection remains enforced.
 Retail uses explicit month-unit parameters (lookback ≤12 complete inclusive periods, overlap < lookback,
-lag ≤12 months), not seconds. Lag zero excludes the current incomplete month.
+lag ≤12 months), not seconds. Fixed bounds are canonical `YYYY-MM-01` inclusive periods; lag zero excludes the
+current incomplete month. Successful legal empty completion clears continuation/run binding; retry/PARTIAL keeps it.
 
 Batch ceiling 100 is a code ceiling, not a claim about account entitlement. Provider plan/quota/license review may
 require lower target limits. Every run independently enforces ≤20 requests/pages, ≤10 MB decoded response,
