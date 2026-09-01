@@ -37,6 +37,7 @@ from market_intelligence.providers.contracts import (
 from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.marketaux import _retry_after, _sanitize_item
 from market_intelligence.safe_projection.contracts import (
+    canonical_projection_hash,
     eia_series_identity,
     rto_series_identity,
     sec_official_url,
@@ -156,7 +157,15 @@ class BreadthAdapter:
                     rejected.append(
                         self._rejection_hash(self.provider_key, self.operation_key, identity)
                     )
-            factuals = tuple(valid)
+            by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+            for payload in valid:
+                identity = payload["provider_item_id"]
+                digest = canonical_projection_hash(payload)
+                prior = by_identity.get(identity)
+                if prior is not None and prior[0] != digest:
+                    raise ValueError("breadth_duplicate_identity_conflict")
+                by_identity.setdefault(identity, (digest, payload))
+            factuals = tuple(item[1] for item in by_identity.values())
             metadata = tuple(
                 {"provider_item_id": p["provider_item_id"], "published_at": p["published_at"]}
                 for p in factuals

@@ -9,6 +9,11 @@ NULL legacy_cursor_type and exact registry comparison, never legacy dual-write. 
 constraints remain; 0009 is a forward schema migration with an explicit stopped-writer deployment boundary and
 is not rolling-upgrade compatible. Rejected rows use deterministic hash-only AuditLog
 markers, not payload storage. No new rejection table or downstream ownership change.
+Legacy cursor uniqueness is partial: `(source_account_id,cursor_type)` only where `target_id IS NULL`.
+Target-owned cursors use `(target_id,cursor_type,cursor_version,run_mode)` where target is non-null, so independent
+targets and normal/backfill never share checkpoints. A pending continuation binds only a matching
+RUNNING/PARTIAL/FAILED run with a pre-request frozen window/config hash; linked SUCCEEDED runs and late freeze are
+database-rejected. Ordinary target revision is blocked until every target continuation is cleared.
 
 版本：2.1-FROZEN  
 状态：Phase 1 entities frozen; later-phase contracts living

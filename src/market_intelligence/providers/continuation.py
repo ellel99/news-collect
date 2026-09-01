@@ -160,7 +160,13 @@ def decode_continuation(
             raise ContinuationContractError("continuation_key_invalid")
         _key(result["last_key"])
     else:
-        if set(result) - {"file", "files", "last_key"}:
+        allowed = {
+            frozenset({"file"}),
+            frozenset({"file", "files"}),
+            frozenset({"file", "last_key"}),
+            frozenset({"file", "files", "last_key"}),
+        }
+        if frozenset(result) not in allowed:
             raise ContinuationContractError("continuation_sec_invalid")
         current, files = result.get("file"), result.get("files", [])
         if current is not None and (not isinstance(current, str) or not _FILE.fullmatch(current)):

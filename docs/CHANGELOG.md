@@ -11,6 +11,12 @@
   operation paths, and verify Finnhub company-news identity provider-global across symbol contexts.
 - Classify unpublished 0009 as a forward schema migration with an explicit stopped-writer deployment boundary;
   it is not rolling-upgrade compatible or an additive/expand-only migration.
+- Scope legacy cursor uniqueness to target-less rows, preserve target/version/mode uniqueness, and fail downgrade
+  closed on collisions. Block target revision while any target cursor has pending continuation.
+- Enforce exact continuation values and pre-request RUNNING/PARTIAL/FAILED run binding in PostgreSQL; reject
+  terminal linkage and late freeze. Collapse exact same-page duplicates and fail closed on conflicting hashes.
+- Exercise same-account Finnhub targets through the real control-plane worker with retry and normal/backfill
+  cursor isolation through the canonical downstream path.
 
 - Use shared test database configuration; original CI FAIL is recorded accurately.
 - Enforce exact legacy mapping at load/revise/preflight; v2 is NULL and cannot reuse v1 identity.

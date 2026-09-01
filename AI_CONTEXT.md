@@ -5,6 +5,9 @@ atomic empty-completion cleanup, exact operation continuation codecs, keyset con
 NULL v2 legacy identity and traceable rejected-row audit. v2 cannot inherit a v1 legacy cursor. Production
 rollback-window guard remains installed; tests simulate future eligibility only in a disposable database.
 Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/C/D or activation authorization.
+The current review fix scopes legacy cursor uniqueness to target-less rows, preserves target/version/mode cursor
+identity, blocks ordinary revision with pending continuation, and enforces exact continuation values plus
+pre-request RUNNING/PARTIAL/FAILED lineage in PostgreSQL. Same-page identity conflicts fail closed without retry.
 
 本文件是 AI 编码工具进入项目时的首要入口。
 

@@ -111,6 +111,14 @@ def _guards(expanded: bool) -> None:
 
 
 def upgrade() -> None:
+    op.drop_index("uq_collection_cursors_account_type", table_name="collection_cursors")
+    op.create_index(
+        "uq_collection_cursors_account_type",
+        "collection_cursors",
+        ["source_account_id", "cursor_type"],
+        unique=True,
+        postgresql_where=sa.text("target_id IS NULL"),
+    )
     op.add_column("collection_runs", sa.Column("resolved_window", JSONB(), nullable=True))
     op.add_column(
         "collection_runs", sa.Column("operation_config_hash", sa.String(64), nullable=True)
@@ -119,6 +127,11 @@ def upgrade() -> None:
         "ck_collection_runs_operation_config_hash",
         "collection_runs",
         "operation_config_hash IS NULL OR operation_config_hash ~ '^[0-9a-f]{64}$'",
+    )
+    op.create_check_constraint(
+        "ck_collection_runs_window_config_pair",
+        "collection_runs",
+        "(resolved_window IS NULL) = (operation_config_hash IS NULL)",
     )
     op.add_column("collection_cursors", sa.Column("continuation_run_id", sa.Uuid(), nullable=True))
     op.create_foreign_key(
@@ -140,6 +153,11 @@ def upgrade() -> None:
       IF OLD.operation_config_hash IS NOT NULL
         AND NEW.operation_config_hash IS DISTINCT FROM OLD.operation_config_hash
       THEN RAISE EXCEPTION 'collection_run_config_hash_immutable'; END IF;
+      IF (OLD.resolved_window IS NULL AND NEW.resolved_window IS NOT NULL)
+        OR (OLD.operation_config_hash IS NULL AND NEW.operation_config_hash IS NOT NULL) THEN
+        IF OLD.request_count <> 0 OR OLD.status <> 'running'
+        THEN RAISE EXCEPTION 'collection_run_freeze_too_late'; END IF;
+      END IF;
       RETURN NEW;
       END; $$ LANGUAGE plpgsql""")
     op.execute("""CREATE TRIGGER trg_m2_run_window_guard BEFORE UPDATE ON collection_runs
@@ -167,6 +185,8 @@ def upgrade() -> None:
         OR r.source_account_id IS DISTINCT FROM t.source_account_id
         OR r.run_mode IS DISTINCT FROM NEW.run_mode
         OR r.resolved_window IS NULL
+        OR r.operation_config_hash IS NULL
+        OR r.status NOT IN ('running','partial','failed')
       THEN RAISE EXCEPTION 'collection_continuation_run_invalid'; END IF;
       SELECT access_method INTO provider_key FROM sources WHERE id=t.source_id;
       IF jsonb_typeof(NEW.continuation) <> 'object'
@@ -196,13 +216,52 @@ def upgrade() -> None:
         OR NEW.continuation#>>'{resolved_window,end}' IS DISTINCT FROM t.operation_config->>'end')
       THEN RAISE EXCEPTION 'collection_continuation_window_invalid'; END IF;
       state_keys := ARRAY(SELECT jsonb_object_keys(NEW.continuation->'state') ORDER BY 1);
-      IF (provider_key='marketaux' AND t.operation_key='news_all' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['page']))
-        OR (provider_key='finnhub' AND t.operation_key='company_news' AND state_keys NOT IN (ARRAY[]::text[],ARRAY['last_key']))
-        OR (provider_key='eia' AND t.operation_key IN ('electricity_retail_sales','electricity_rto_region_data') AND state_keys NOT IN (ARRAY[]::text[],ARRAY['offset']))
-        OR (provider_key='sec_edgar' AND t.operation_key='submissions_recent'
-            AND state_keys NOT IN (ARRAY[]::text[],ARRAY['file'],ARRAY['file','files'],
-              ARRAY['file','files','last_key'],ARRAY['file','last_key']))
-      THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      IF provider_key='marketaux' AND t.operation_key='news_all' THEN
+        IF state_keys NOT IN (ARRAY[]::text[],ARRAY['page'])
+          OR (state_keys=ARRAY['page'] AND (jsonb_typeof(NEW.continuation#>'{state,page}') <> 'number'
+            OR (NEW.continuation#>>'{state,page}') !~ '^[0-9]+$'
+            OR (NEW.continuation#>>'{state,page}')::integer NOT BETWEEN 2 AND 1000))
+        THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      ELSIF provider_key='finnhub' AND t.operation_key='company_news' THEN
+        IF state_keys NOT IN (ARRAY[]::text[],ARRAY['last_key']) OR
+          (state_keys=ARRAY['last_key'] AND (
+            jsonb_typeof(NEW.continuation#>'{state,last_key}') <> 'array'
+            OR jsonb_array_length(NEW.continuation#>'{state,last_key}') <> 2
+            OR EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.continuation#>'{state,last_key}') x
+              WHERE jsonb_typeof(x) <> 'string' OR char_length(x#>>'{}') NOT BETWEEN 1 AND 255)))
+        THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      ELSIF provider_key='eia' AND t.operation_key IN ('electricity_retail_sales','electricity_rto_region_data') THEN
+        IF state_keys NOT IN (ARRAY[]::text[],ARRAY['offset'])
+          OR (state_keys=ARRAY['offset'] AND (jsonb_typeof(NEW.continuation#>'{state,offset}') <> 'number'
+            OR (NEW.continuation#>>'{state,offset}') !~ '^[0-9]+$'
+            OR (NEW.continuation#>>'{state,offset}')::integer NOT BETWEEN 1 AND 10000000))
+        THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      ELSIF provider_key='sec_edgar' AND t.operation_key='submissions_recent' THEN
+        IF state_keys NOT IN (ARRAY[]::text[],ARRAY['file'],ARRAY['file','files'],
+              ARRAY['file','files','last_key'],ARRAY['file','last_key'])
+          OR (NEW.continuation#>'{state,file}' IS NOT NULL AND
+            jsonb_typeof(NEW.continuation#>'{state,file}') NOT IN ('string','null'))
+          OR (jsonb_typeof(NEW.continuation#>'{state,file}') = 'string'
+            AND NEW.continuation#>>'{state,file}' !~ ('^CIK' || (t.operation_config->>'cik') || '-submissions-[0-9]{3}\\.json$'))
+          OR (NEW.continuation#>'{state,files}' IS NOT NULL AND (
+            jsonb_typeof(NEW.continuation#>'{state,files}') <> 'array'
+            OR jsonb_array_length(NEW.continuation#>'{state,files}') > 5
+            OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(NEW.continuation#>'{state,files}') AS q(value)
+              WHERE value !~ ('^CIK' || (t.operation_config->>'cik') || '-submissions-[0-9]{3}\\.json$'))
+            OR (SELECT count(*) FROM jsonb_array_elements_text(NEW.continuation#>'{state,files}'))
+              <> (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(NEW.continuation#>'{state,files}') AS q(value))
+            OR NEW.continuation#>>'{state,file}' IN
+              (SELECT value FROM jsonb_array_elements_text(NEW.continuation#>'{state,files}') AS q(value))))
+          OR (NEW.continuation#>'{state,last_key}' IS NOT NULL AND (
+            jsonb_typeof(NEW.continuation#>'{state,last_key}') <> 'array'
+            OR jsonb_array_length(NEW.continuation#>'{state,last_key}') <> 2
+            OR EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.continuation#>'{state,last_key}') x
+              WHERE jsonb_typeof(x) <> 'string' OR char_length(x#>>'{}') NOT BETWEEN 1 AND 255)))
+          OR (state_keys=ARRAY['file','files'] AND NEW.continuation#>>'{state,file}' IS NULL)
+        THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
+      ELSE
+        RAISE EXCEPTION 'collection_continuation_operation_unsupported';
+      END IF;
       RETURN NEW;
     END; $$ LANGUAGE plpgsql
     """)
@@ -210,6 +269,16 @@ def upgrade() -> None:
       BEFORE INSERT OR UPDATE OF continuation,continuation_run_id,target_id,source_account_id,
         run_mode,cursor_version,cursor_type
       ON collection_cursors FOR EACH ROW EXECUTE FUNCTION m2_continuation_guard();""")
+    op.execute("""CREATE FUNCTION m2_run_terminal_continuation_guard() RETURNS trigger AS $$ BEGIN
+      IF NEW.status='succeeded' AND EXISTS (
+        SELECT 1 FROM collection_cursors c WHERE c.continuation_run_id=NEW.id
+          AND c.continuation IS NOT NULL AND c.continuation <> 'null'::jsonb)
+      THEN RAISE EXCEPTION 'collection_succeeded_run_has_continuation'; END IF;
+      RETURN NEW;
+      END; $$ LANGUAGE plpgsql""")
+    op.execute("""CREATE CONSTRAINT TRIGGER trg_m2_run_terminal_continuation_guard
+      AFTER INSERT OR UPDATE OF status ON collection_runs DEFERRABLE INITIALLY DEFERRED
+      FOR EACH ROW EXECUTE FUNCTION m2_run_terminal_continuation_guard();""")
     for name in ("request_count", "page_count"):
         op.add_column(
             "collection_runs", sa.Column(name, sa.Integer(), nullable=False, server_default="0")
@@ -244,12 +313,20 @@ def downgrade() -> None:
       OR EXISTS(SELECT 1 FROM collection_runs WHERE resolved_window IS NOT NULL)""")
     ).scalar_one():
         raise RuntimeError("migration_0009_incompatible_operation_state")
+    if bind.execute(
+        sa.text("""SELECT EXISTS(
+      SELECT 1 FROM collection_cursors GROUP BY source_account_id,cursor_type HAVING count(*) > 1)""")
+    ).scalar_one():
+        raise RuntimeError("migration_0009_incompatible_cursor_identity")
     _guards(False)
     _checks(False)
     op.execute("DROP TRIGGER trg_m2_continuation_guard ON collection_cursors")
     op.execute("DROP FUNCTION m2_continuation_guard()")
+    op.execute("DROP TRIGGER trg_m2_run_terminal_continuation_guard ON collection_runs")
+    op.execute("DROP FUNCTION m2_run_terminal_continuation_guard()")
     op.execute("DROP TRIGGER trg_m2_run_window_guard ON collection_runs")
     op.execute("DROP FUNCTION m2_run_window_guard()")
+    op.drop_constraint("ck_collection_runs_window_config_pair", "collection_runs", type_="check")
     op.drop_constraint("ck_collection_runs_resolved_window", "collection_runs", type_="check")
     op.drop_column("collection_runs", "resolved_window")
     op.drop_constraint("ck_collection_runs_operation_config_hash", "collection_runs", type_="check")
@@ -270,3 +347,10 @@ def downgrade() -> None:
         ["collection_run_id", "raw_item_id"],
     )
     op.drop_column("raw_item_observations", "observation_key")
+    op.drop_index("uq_collection_cursors_account_type", table_name="collection_cursors")
+    op.create_index(
+        "uq_collection_cursors_account_type",
+        "collection_cursors",
+        ["source_account_id", "cursor_type"],
+        unique=True,
+    )

@@ -50,7 +50,15 @@ exact per operation; SEC required column arrays and history reference name/from/
 Monthly EIA fixed windows require canonical `YYYY-MM-01` bounds and are inclusive complete-period sets:
 `lookback_months=N` means exactly N periods and lag zero excludes the current incomplete month.
 PostgreSQL integration proves provider-global Finnhub identity across symbol contexts: one canonical RawItem,
-two observation/projection lineages, one Evidence/Content and at most one notification intent. Six operation paths
+two observation/projection lineages, one Evidence/Content and at most one notification intent. It now drives two
+same-account targets through CollectionControlPlaneWorker, including isolated retry and coexisting normal/backfill
+cursors. Legacy account/type uniqueness applies only to target-less rows; target identity includes version/mode,
+and downgrade fails before restoring the old index if collisions exist. Ordinary revision locks all target cursors
+and rejects pending continuation.
+
+PostgreSQL validates exact state values and exact RUNNING/PARTIAL/FAILED lineage, rejects SUCCEEDED binding and
+request-late window/config freezing. All six operation paths collapse same-identity/same-projection rows and reject
+conflicting same-page projections non-retryably before checkpoint advance. Six operation paths
 prove traceable invalid-row isolation without turning out-of-scope filters into rejection markers.
 Test-only future-v2 eligibility temporarily disables and restores the activation trigger in the disposable DB;
 production constraints remain intact. Migration 0009 remains a stopped-writer boundary, not rolling-upgrade

@@ -29,6 +29,10 @@ must exactly equal registry mapping. Production rollback-window activation prote
 Retail uses explicit month-unit parameters (lookback ≤12 complete inclusive periods, overlap < lookback,
 lag ≤12 months), not seconds. Fixed bounds are canonical `YYYY-MM-01` inclusive periods; lag zero excludes the
 current incomplete month. Successful legal empty completion clears continuation/run binding; retry/PARTIAL keeps it.
+State values are exact in Python and PostgreSQL: Marketaux page is integer 2–1000, Finnhub/SEC keysets are bounded
+non-empty string pairs, EIA offset is integer 1–10000000, and SEC file queues are bounded, unique and same-CIK.
+Unknown tuples and mixed state fail closed. Same-page repeated identity with the same factual hash is collapsed;
+a conflicting factual hash rejects the page non-retryably before checkpoint advance.
 
 Batch ceiling 100 is a code ceiling, not a claim about account entitlement. Provider plan/quota/license review may
 require lower target limits. Every run independently enforces ≤20 requests/pages, ≤10 MB decoded response,

@@ -44,6 +44,9 @@ state to the immutable `CollectionRun.resolved_window` and `operation_config_has
 enforce target/cursor/source-account/run/config/window/lineage/state agreement. Successful completion, including a
 legal empty page, clears continuation and run binding in the same transaction so the next cadence resolves a new
 window; retry, crash, lock loss and PARTIAL coverage retain recovery state.
+Ordinary target revision locks every target-scoped cursor across cursor versions and normal/backfill modes and
+fails with `target_revision_pending_continuation` while any continuation is non-empty. It never silently abandons
+recovery state; doing so requires a separately reviewed reset/reconciliation operation.
 
 Provider pagination is not a transactional upstream snapshot. Reconciliation repeats the configured bounded
 window to discover late revisions. Finnhub continuation stores last (published_at, provider_item_id); SEC
@@ -70,6 +73,12 @@ identity or untrusted page structure fails the whole page closed without silentl
   prove every v2 recovery window belongs to its exact run rather than merely accepting date-shaped JSON.
 - Adds an exact v2 continuation database guard; operation codecs reject unknown/cross-operation fields, wrong
   config/window/lineage, invalid numeric/key state and cross-CIK SEC queues.
+- Narrows legacy cursor uniqueness to `(source_account_id,cursor_type) WHERE target_id IS NULL`; target-owned
+  uniqueness remains `(target_id,cursor_type,cursor_version,run_mode) WHERE target_id IS NOT NULL`. Downgrade scans
+  for collisions and fails closed before restoring the old legacy index.
+- A non-empty continuation binds only a matching RUNNING/PARTIAL/FAILED run whose window and config hash were
+  frozen before request count advanced. SUCCEEDED lineage, late freeze, invalid state values and unsupported
+  operation tuples are rejected by PostgreSQL as well as the Python codec.
 - Adds RawItemObservation.observation_key (default `run` for legacy), changing uniqueness to
   `(collection_run_id, raw_item_id, observation_key)`. v2 key is a hash of the incoming continuation, so page replay
   is idempotent and the same canonical item observed on another page retains a separate observation/projection.
@@ -116,6 +125,7 @@ document download, arbitrary EIA endpoint, infinite history, live request, crede
 Migration B, Rich Evidence Packet, Event Bundle or AI. PR #39 remains untouched.
 
 Tests must cover operation-specific safe facts, multi-page persistence, page failure/resume, legal empty completion,
-page dedup with observation lineage, all six mixed-row paths, strict SEC history reference dates, cross-symbol
-Finnhub canonical integration, new Content policy, finite
+page dedup with observation lineage, all six same-page duplicate/conflict and mixed-row paths, strict SEC history
+reference dates, and worker-driven same-account Finnhub targets with isolated normal/backfill/retry cursors.
+Cross-symbol canonical integration, new Content policy, finite
 budgets, unsupported versions, R1/R2/R8-A and scheduler/Telegram regression. Migration round trip is isolated.

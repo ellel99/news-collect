@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from market_intelligence.collection.target_configs import OperationContract, OperationRegistry
 from market_intelligence.db.models import (
     AuditLog,
+    CollectionCursor,
     CollectionCursorStrategy,
     CollectionMode,
     CollectionRun,
@@ -192,6 +193,15 @@ class TargetRepository:
             )
             if running is not None:
                 raise TargetRepositoryError("target_revision_in_flight")
+            cursors = tuple(
+                await session.scalars(
+                    select(CollectionCursor)
+                    .where(CollectionCursor.target_id == target_id)
+                    .with_for_update()
+                )
+            )
+            if any(cursor.continuation for cursor in cursors):
+                raise TargetRepositoryError("target_revision_pending_continuation")
             proposed_status = safe.get("status", current.status)
             if isinstance(proposed_status, str):
                 try:

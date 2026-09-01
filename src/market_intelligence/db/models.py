@@ -479,6 +479,7 @@ class CollectionCursor(Base):
             "source_account_id",
             "cursor_type",
             unique=True,
+            postgresql_where=text("target_id IS NULL"),
         ),
         Index(
             "uq_collection_cursors_target_type_version_mode",
