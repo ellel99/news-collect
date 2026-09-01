@@ -2,7 +2,7 @@
 
 Foundation：v2.3-FROZEN
 Current Phase：Event Intelligence foundation
-Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Active — Implementation Review）
+Active SPEC：SPEC-0045 — M2-A Four-Provider Data Breadth（Active — Implementation Review）
 Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 
 | SPEC | 名称 | 状态 | 依赖 |
@@ -43,7 +43,9 @@ Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 | SPEC-0041 | Unified Production Collection Control Plane | Completed — Docs Review approved | SPEC-0003/0030–0038；R0 PASS；PR #39 frozen |
 | SPEC-0041 implementation | Unified Production Collection Control Plane Implementation Contract | Completed — Implementation Review approved | SPEC-0041 architecture；Foundation v2.3 R0 PASS；R1 |
 | SPEC-0042 implementation | Durable Safe Factual Projection | Completed — Implementation Review approved | SPEC-0041 implementation merged；Pre-AI R2 |
-| SPEC-0043 | R8-A SafeFactProjection → Evidence Durable Handoff | Active — Implementation Review | SPEC-0042 implementation；Pre-AI R8 |
+| SPEC-0043 | R8-A SafeFactProjection → Evidence Durable Handoff | Completed — Implementation Review approved; PR #45 merged | SPEC-0042 implementation；Pre-AI R8 |
+| SPEC-0044 | M2 AI-Ready Evidence Data Plane | Authorized milestone; M2-B/C/D not started | R1/R2/R8-A |
+| SPEC-0045 | M2-A Four-Provider Data Breadth | Active — Implementation Review; user execution contract authorized | SPEC-0044; main f398f55 |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在

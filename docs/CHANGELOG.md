@@ -1,5 +1,46 @@
 # Changelog
 
+## M2-A PR #46 directed blocker fixes
+
+- Persist exact pre-request frozen-window recovery lineage and enforce operation-specific continuation shapes in
+  application and PostgreSQL before any Provider request.
+- Bind continuation to an immutable run window/config hash; atomically clear it on every successful completed v2
+  page, including legal empty responses, so subsequent rolling cadence resolves a new window.
+- Define EIA monthly windows as inclusive complete-period sets, harden SEC required column parsing and pagination
+  consistency/reference dates, require canonical monthly fixed bounds, isolate traceable bad rows across all six
+  operation paths, and verify Finnhub company-news identity provider-global across symbol contexts.
+- Classify unpublished 0009 as a forward schema migration with an explicit stopped-writer deployment boundary;
+  it is not rolling-upgrade compatible or an additive/expand-only migration.
+- Scope legacy cursor uniqueness to target-less rows, preserve target/version/mode uniqueness, and fail downgrade
+  closed on collisions. Block target revision while any target cursor has pending continuation.
+- Enforce exact continuation values and pre-request RUNNING/PARTIAL/FAILED run binding in PostgreSQL; reject
+  terminal linkage and late freeze. Collapse exact same-page duplicates and fail closed on conflicting hashes.
+- Exercise same-account Finnhub targets through the real control-plane worker with retry and normal/backfill
+  cursor isolation through the canonical downstream path.
+- Align EIA adapter/response/codec/PostgreSQL offset ceiling at 10,000,000 and terminate Marketaux page-1000
+  overflow as durable non-looping PARTIAL coverage without an invalid continuation.
+- Move Finnhub/SEC duplicate identity comparison before local keyset slicing and make Python/SQL SEC state matrices
+  exact and symmetric.
+- Add a PAUSED-only, locked, optimistic-token continuation abandon operation with value-free AuditLog records;
+  preserve cursor value/watermark and allow ordinary revision only after explicit cleanup.
+- Mirror the migration window/config pair check in SQLAlchemy metadata.
+
+- Use shared test database configuration; original CI FAIL is recorded accurately.
+- Enforce exact legacy mapping at load/revise/preflight; v2 is NULL and cannot reuse v1 identity.
+- Replace snapshot-offset blocking with Finnhub/SEC per-file stable keysets and bounded overlap.
+- Add explicit fixed/rolling windows and immutable safe run-resolved window in unpublished migration 0009.
+- Reject missing-ID/no-URL fallback collisions; persist hash-only rejected-row audit with valid page items.
+- Keep stopped-writer deployment, legacy production authority and all no-live/activation boundaries.
+
+## Unreleased — M2-A Four-Provider Data Breadth
+
+- Adds versioned bounded Marketaux pages, Finnhub company_news windows, EIA RTO hourly regional observations
+  and facet-selected retail sales, and SEC form/window/history reconciliation with safe file references.
+- Adds operation-scoped factual/Evidence/Content policy, atomic page checkpoints and durable request budgets.
+- Migration 0009 adds page observation identity and finnhub_company_news checks without overwriting canonical
+  RawItem/Evidence/Content. Existing v1 compatibility operations remain available; production stays legacy.
+- M2-B/C/D, live requests, activation/cutover, Migration B and AI remain outside this implementation.
+
 ## Unreleased — R8-A SafeFactProjection → Evidence Durable Handoff
 
 - Revalidates every READY projection through the R2 typed contract and canonical hash before handoff; adds exact

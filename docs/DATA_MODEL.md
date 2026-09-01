@@ -1,9 +1,34 @@
 # Data Model
 
+M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
+date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows
+across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery.
+CollectionRun.operation_config_hash and CollectionCursor.continuation_run_id let PostgreSQL bind v2 continuation
+to the exact immutable run/window/config; legal empty completion clears both continuation fields atomically. v2 targets have
+NULL legacy_cursor_type and exact registry comparison, never legacy dual-write. Existing temporary activation
+constraints remain; 0009 is a forward schema migration with an explicit stopped-writer deployment boundary and
+is not rolling-upgrade compatible. Rejected rows use deterministic hash-only AuditLog
+markers, not payload storage. No new rejection table or downstream ownership change.
+Legacy cursor uniqueness is partial: `(source_account_id,cursor_type)` only where `target_id IS NULL`.
+Target-owned cursors use `(target_id,cursor_type,cursor_version,run_mode)` where target is non-null, so independent
+targets and normal/backfill never share checkpoints. A pending continuation binds only a matching
+RUNNING/PARTIAL/FAILED run with a pre-request frozen window/config hash; linked SUCCEEDED runs and late freeze are
+database-rejected. Ordinary target revision is blocked until every target continuation is cleared.
+`ck_collection_runs_window_config_pair` is declared identically in migration 0009 and SQLAlchemy metadata.
+Explicit continuation abandon requires PAUSED state, exact config revision and value-free continuation hashes;
+it clears only the continuation pair and emits AuditLog hash/identity metadata while preserving cursor position,
+watermark and factual lineage.
+
 版本：2.1-FROZEN  
 状态：Phase 1 entities frozen; later-phase contracts living
 
 ## 1. 建模原则
+
+M2-A pending Implementation Review: forward migration 0009 adds CollectionRun request/page budget counters,
+RawItemObservation.observation_key (legacy default `run`, v2 page continuation hash) and operation-specific
+Evidence policy including finnhub_company_news. Observation uniqueness becomes run/raw/page-key; canonical
+RawItem.collection_run_id and Evidence/Content remain first-persistence identity, never overwritten. Downgrade
+rejects incompatible breadth state. See [M2-A contract](../spec/SPEC-0045-m2a-four-provider-data-breadth.md).
 
 - 表名和字段名使用 `snake_case`；
 - 主键使用 UUID；

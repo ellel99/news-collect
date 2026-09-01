@@ -25,6 +25,7 @@ from market_intelligence.db.models import (
     SafeProjectionProcessingStatus,
 )
 from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
+from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.safe_projection.contracts import (
     ProjectionContractError,
     canonical_projection_hash,
@@ -43,21 +44,6 @@ class EvidenceHandoffReport:
 
 class HandoffConflict(ValueError):
     pass
-
-
-_ITEM_TYPE = {
-    "marketaux": ("marketaux_news", "news", "news"),
-    "finnhub": ("finnhub_quote", "market_data", "market_data"),
-    "eia": ("eia_energy_timeseries", "energy_official", "official_energy"),
-    "sec_edgar": ("sec_filing", "disclosure", "disclosure"),
-}
-
-_ACCESS_POLICY = {
-    "marketaux": "link_only",
-    "finnhub": "licensed",
-    "eia": "public_summary",
-    "sec_edgar": "link_only",
-}
 
 
 class EvidenceProjectionHandoffWorker:
@@ -199,6 +185,14 @@ class EvidenceProjectionHandoffWorker:
                 observation = await session.get(RawItemObservation, projection.observation_id)
                 if raw is None or observation is None:
                     raise HandoffConflict("evidence_projection_provenance_missing")
+                try:
+                    factual_operation_policy(
+                        projection.provider,
+                        projection.operation_key,
+                        observation.provider_contract_version,
+                    )
+                except ValueError as exc:
+                    raise HandoffConflict("evidence_projection_contract_invalid") from exc
                 content = await _content(session, projection, raw)
                 evidence = await _evidence(session, projection, observation, raw, content)
                 link.evidence_item_id = evidence.id
@@ -247,7 +241,8 @@ async def _content(
     session: AsyncSession, projection: SafeFactProjection, raw: RawItem
 ) -> ContentItem | None:
     payload = projection.factual_payload
-    if projection.provider == "marketaux":
+    policy = factual_operation_policy(projection.provider, projection.operation_key)
+    if policy.content == "article":
         if not all(
             isinstance(payload.get(k), str) and payload[k]
             for k in ("title", "canonical_url", "source_identity")
@@ -256,7 +251,7 @@ async def _content(
         kind = ContentKind.ARTICLE
         title = payload["title"]
         url = payload["canonical_url"]
-    elif projection.provider == "sec_edgar":
+    elif policy.content == "official_release":
         kind = ContentKind.OFFICIAL_RELEASE
         title = f"SEC {payload['form']} filing"
         url = payload["official_url"]
@@ -296,6 +291,7 @@ async def _content(
         deleted_status=DeletedStatus.UNKNOWN,
         metadata_={
             "provider": projection.provider,
+            "operation_key": projection.operation_key,
             "retention": "metadata_only" if projection.provider == "marketaux" else "link_only",
         },
     )
@@ -311,11 +307,18 @@ async def _evidence(
     raw: RawItem,
     content: ContentItem | None,
 ) -> EvidenceItem:
-    item_type, evidence_kind, source_type = _ITEM_TYPE.get(projection.provider, (None, None, None))
-    if item_type is None:
-        raise HandoffConflict("evidence_provider_unsupported")
+    policy = factual_operation_policy(projection.provider, projection.operation_key)
+    item_type, evidence_kind, source_type = (
+        policy.item_type,
+        policy.evidence_kind,
+        policy.source_type,
+    )
     provider_item_id = str(projection.factual_payload["provider_item_id"])
-    legacy_item_id = legacy_provider_item_identity(projection.provider, projection.factual_payload)
+    legacy_item_id = (
+        provider_item_id
+        if projection.operation_key in {"company_news", "electricity_rto_region_data"}
+        else legacy_provider_item_identity(projection.provider, projection.factual_payload)
+    )
     existing = tuple(
         await session.scalars(
             select(EvidenceItem).where(
@@ -349,10 +352,10 @@ async def _evidence(
     )
     if conflict is not None:
         raise HandoffConflict("evidence_canonical_identity_conflict")
-    is_market = projection.provider == "finnhub"
+    is_market = projection.operation_key == "quote"
     is_official = projection.provider in {"eia", "sec_edgar"}
     is_disclosure = projection.provider == "sec_edgar"
-    is_news = projection.provider == "marketaux"
+    is_news = policy.evidence_kind == "news"
     payload: dict[str, Any] = projection.factual_payload
     item = EvidenceItem(
         evidence_version=1,
@@ -368,7 +371,7 @@ async def _evidence(
         provider_item_hash=projection.projection_hash,
         event_time=datetime.fromisoformat(payload["published_at"]),
         observed_at=observation.observed_at,
-        access_level=_ACCESS_POLICY[projection.provider],
+        access_level=policy.access,
         processing_status="validated",
         official_source_flag=is_official,
         market_data_flag=is_market,
@@ -382,7 +385,7 @@ async def _evidence(
             "has_description": False,
         },
         numeric_presence={
-            "has_numeric_value": projection.provider in {"finnhub", "eia"},
+            "has_numeric_value": is_market or projection.provider == "eia",
             "numeric_field_count": 7 if is_market else 1 if projection.provider == "eia" else 0,
             "nullable_allowed": projection.provider == "eia",
         },

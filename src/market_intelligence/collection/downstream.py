@@ -52,6 +52,7 @@ async def persist_fetch_result(
     config_revision: int | None,
     provider_contract_version: int,
     result: ProviderFetchResult,
+    observation_key: str = "run",
 ) -> DownstreamCounts:
     """Atomically persist RawItem + observation + PENDING safe factual projection."""
 
@@ -83,6 +84,7 @@ async def persist_fetch_result(
             observed_at=envelope.fetched_at,
             projection_hash=projection_hash,
             inserted=inserted,
+            observation_key=observation_key,
         )
         observation_count += 1
         projection_count += await _projection(
@@ -105,6 +107,13 @@ async def persist_fetch_result(
 
 
 def _factual_payload(provider: str, operation_key: str, metadata: Any) -> dict[str, Any]:
+    if (provider, operation_key) in {
+        ("finnhub", "company_news"),
+        ("eia", "electricity_rto_region_data"),
+    }:
+        if not isinstance(metadata, Mapping):
+            raise DownstreamPersistenceError("safe_fact_projection_contract_unknown")
+        return dict(metadata)
     fields = {
         ("marketaux", "news_all"): (
             "provider_item_id",
@@ -160,7 +169,10 @@ def _factual_payload(provider: str, operation_key: str, metadata: Any) -> dict[s
     }.get((provider, operation_key))
     if fields is None or not isinstance(metadata, Mapping):
         raise DownstreamPersistenceError("safe_fact_projection_contract_unknown")
-    return {field: metadata.get(field) for field in fields}
+    result = {field: metadata.get(field) for field in fields}
+    if provider == "sec_edgar" and "submissions_file" in metadata:
+        result["submissions_file"] = metadata["submissions_file"]
+    return result
 
 
 async def _observation(
@@ -178,6 +190,7 @@ async def _observation(
     observed_at: Any,
     projection_hash: str,
     inserted: bool,
+    observation_key: str,
 ) -> UUID:
     previous_hash = await session.scalar(
         select(RawItemObservation.projection_hash)
@@ -205,6 +218,7 @@ async def _observation(
         "observed_at": observed_at,
         "projection_hash": projection_hash,
         "observation_kind": kind,
+        "observation_key": observation_key,
     }
     identity = await session.scalar(
         insert(RawItemObservation)
@@ -213,6 +227,7 @@ async def _observation(
             index_elements=[
                 RawItemObservation.collection_run_id,
                 RawItemObservation.raw_item_id,
+                RawItemObservation.observation_key,
             ]
         )
         .returning(RawItemObservation.id)
@@ -223,6 +238,7 @@ async def _observation(
         select(RawItemObservation).where(
             RawItemObservation.collection_run_id == run_id,
             RawItemObservation.raw_item_id == raw_item_id,
+            RawItemObservation.observation_key == observation_key,
         )
     )
     if existing is None or existing.projection_hash != projection_hash:

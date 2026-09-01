@@ -56,8 +56,12 @@ def validate_factual_payload(
         return _marketaux(payload)
     if key == ("finnhub", "quote"):
         return _finnhub(payload)
+    if key == ("finnhub", "company_news"):
+        return _company_news(payload)
     if key == ("eia", "electricity_retail_sales"):
         return _eia(payload)
+    if key == ("eia", "electricity_rto_region_data"):
+        return _rto(payload)
     if key == ("sec_edgar", "submissions_recent"):
         return _sec(payload)
     raise ProjectionContractError("projection_contract_unknown")
@@ -70,7 +74,7 @@ def normalize_and_classify_factual_payload(
     payload: Mapping[str, Any],
 ) -> tuple[dict[str, Any], ProjectionQuality]:
     normalized = validate_factual_payload(provider, operation_key, schema_version, payload)
-    if provider == "marketaux":
+    if (provider, operation_key) in {("marketaux", "news_all"), ("finnhub", "company_news")}:
         quality: ProjectionQuality = (
             "partial"
             if any(
@@ -295,6 +299,9 @@ def _eia(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _sec(payload: Mapping[str, Any]) -> dict[str, Any]:
+    reference = payload.get("submissions_file")
+    payload = dict(payload)
+    payload.pop("submissions_file", None)
     result = _exact(
         payload,
         {
@@ -321,7 +328,11 @@ def _sec(payload: Mapping[str, Any]) -> dict[str, Any]:
         filing_date = date.fromisoformat(str(result["filing_date"]))
     except ValueError:
         raise ProjectionContractError("projection_sec_reference_invalid") from None
-    if str(filing_date) != result["filing_date"] or not _DOCUMENT.fullmatch(document):
+    if (
+        str(filing_date) != result["filing_date"]
+        or not _DOCUMENT.fullmatch(document)
+        or ".." in document
+    ):
         raise ProjectionContractError("projection_sec_reference_invalid")
     if result["provider_item_id"] != accession:
         raise ProjectionContractError("projection_provider_identity_invalid")
@@ -334,6 +345,83 @@ def _sec(payload: Mapping[str, Any]) -> dict[str, Any]:
     if result["official_source"] is not True or result["official_url"] != expected_url:
         raise ProjectionContractError("projection_sec_reference_invalid")
     result["official_url"] = expected_url
+    if reference is not None:
+        if (
+            not isinstance(reference, str)
+            or not re.fullmatch(r"CIK\d{10}(?:-submissions-\d{3})?\.json", reference)
+            or not reference.startswith(f"CIK{cik}")
+        ):
+            raise ProjectionContractError("projection_sec_reference_invalid")
+        result["submissions_file"] = reference
+    return result
+
+
+def _company_news(payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = _exact(
+        payload,
+        {
+            "provider_item_id",
+            "published_at",
+            "title",
+            "canonical_url",
+            "source_identity",
+            "symbol",
+            "category",
+            "summary_coverage",
+        },
+    )
+    result["provider_item_id"] = _opaque_id(result["provider_item_id"])
+    if not result["provider_item_id"].startswith("company-news:"):
+        raise ProjectionContractError("projection_provider_identity_invalid")
+    result["published_at"] = _timestamp(result["published_at"])
+    result["symbol"] = _symbol(result["symbol"])
+    for key in ("title", "source_identity", "category"):
+        result[key] = _text(result[key], optional=True)
+    if result["canonical_url"] is not None and not _public_url(result["canonical_url"]):
+        raise ProjectionContractError("projection_url_invalid")
+    if result["summary_coverage"] != "blocked":
+        raise ProjectionContractError("projection_coverage_invalid")
+    return result
+
+
+def rto_series_identity(region: str, metric: str) -> str:
+    if not re.fullmatch(r"[A-Z0-9-]{1,12}", region) or metric not in {"D", "NG"}:
+        raise ProjectionContractError("projection_rto_series_invalid")
+    return f"electricity/rto/region-data/{region}/{metric}"
+
+
+def _rto(payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = _exact(
+        payload,
+        {
+            "provider_item_id",
+            "published_at",
+            "period",
+            "dataset",
+            "series_identity",
+            "region",
+            "metric",
+            "value",
+            "unit",
+        },
+    )
+    if result["dataset"] != "electricity_rto_region_data":
+        raise ProjectionContractError("projection_rto_series_invalid")
+    period = result["period"]
+    if not isinstance(period, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}", period):
+        raise ProjectionContractError("projection_rto_period_invalid")
+    timestamp = _timestamp(period + ":00:00+00:00")
+    series = rto_series_identity(str(result["region"]), str(result["metric"]))
+    identity = "rto:" + hashlib.sha256(f"{series}:{period}".encode()).hexdigest()
+    if (
+        result["series_identity"] != series
+        or result["provider_item_id"] != identity
+        or _timestamp(result["published_at"]) != timestamp
+    ):
+        raise ProjectionContractError("projection_rto_identity_invalid")
+    result["published_at"] = timestamp
+    result["value"] = _number(result["value"])
+    result["unit"] = _text(result["unit"], maximum=100)
     return result
 
 

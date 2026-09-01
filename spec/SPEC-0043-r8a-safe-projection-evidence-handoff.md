@@ -1,6 +1,6 @@
 # SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff
 
-Status: Active — Implementation Review
+Status: Completed — Implementation Review approved; PR #45 merged
 
 ## Scope
 

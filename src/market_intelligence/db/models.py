@@ -479,6 +479,7 @@ class CollectionCursor(Base):
             "source_account_id",
             "cursor_type",
             unique=True,
+            postgresql_where=text("target_id IS NULL"),
         ),
         Index(
             "uq_collection_cursors_target_type_version_mode",
@@ -508,6 +509,9 @@ class CollectionCursor(Base):
     )
     cursor_value: Mapped[str | None] = mapped_column(Text)
     continuation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    continuation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_runs.id", ondelete="RESTRICT")
+    )
     watermark_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
@@ -528,6 +532,20 @@ class CollectionRun(Base):
             name="ck_collection_runs_finished_not_before_started",
         ),
         CheckConstraint("fetched_count >= 0", name="ck_collection_runs_fetched_nonnegative"),
+        CheckConstraint("request_count >= 0", name="ck_collection_runs_request_count_nonnegative"),
+        CheckConstraint("page_count >= 0", name="ck_collection_runs_page_count_nonnegative"),
+        CheckConstraint(
+            "resolved_window IS NULL OR (jsonb_typeof(resolved_window)='object' AND resolved_window ?& ARRAY['start','end'] AND (resolved_window - 'start' - 'end')='{}'::jsonb AND jsonb_typeof(resolved_window->'start')='string' AND jsonb_typeof(resolved_window->'end')='string' AND (resolved_window->>'start') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$' AND (resolved_window->>'end') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$')",  # noqa: E501
+            name="ck_collection_runs_resolved_window",
+        ),
+        CheckConstraint(
+            "operation_config_hash IS NULL OR operation_config_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_collection_runs_operation_config_hash",
+        ),
+        CheckConstraint(
+            "(resolved_window IS NULL) = (operation_config_hash IS NULL)",
+            name="ck_collection_runs_window_config_pair",
+        ),
         CheckConstraint("new_count >= 0", name="ck_collection_runs_new_nonnegative"),
         CheckConstraint(
             "duplicate_count >= 0",
@@ -575,6 +593,10 @@ class CollectionRun(Base):
         )
     )
     fetched_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    request_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    page_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    resolved_window: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    operation_config_hash: Mapped[str | None] = mapped_column(String(64))
     new_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     duplicate_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     error_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
@@ -668,7 +690,10 @@ class RawItemObservation(Base):
     __tablename__ = "raw_item_observations"
     __table_args__ = (
         UniqueConstraint(
-            "collection_run_id", "raw_item_id", name="uq_raw_item_observations_run_item"
+            "collection_run_id",
+            "raw_item_id",
+            "observation_key",
+            name="uq_raw_item_observations_run_item",
         ),
         CheckConstraint(
             "char_length(projection_hash)=64",
@@ -705,6 +730,7 @@ class RawItemObservation(Base):
     config_revision: Mapped[int | None] = mapped_column(BigInteger)
     provider_contract_version: Mapped[int] = mapped_column(SmallInteger)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observation_key: Mapped[str] = mapped_column(String(64), server_default="run")
     projection_hash: Mapped[str] = mapped_column(String(64))
     observation_kind: Mapped[RawItemObservationKind] = mapped_column(
         Enum(
@@ -912,7 +938,8 @@ class EvidenceItem(Base):
         ),
         CheckConstraint(
             "provider_item_type IN "
-            "('marketaux_news', 'finnhub_quote', 'eia_energy_timeseries', 'sec_filing')",
+            "('marketaux_news', 'finnhub_quote', 'finnhub_company_news', "
+            "'eia_energy_timeseries', 'sec_filing')",
             name="ck_evidence_items_provider_item_type_allowlist",
         ),
         CheckConstraint(
@@ -934,7 +961,8 @@ class EvidenceItem(Base):
             name="ck_evidence_items_processing_status_allowlist",
         ),
         CheckConstraint(
-            "(provider_item_type = 'marketaux_news' AND news_signal_flag "
+            "(provider_item_type IN ('marketaux_news', 'finnhub_company_news') "
+            "AND news_signal_flag "
             "AND NOT official_source_flag AND NOT market_data_flag AND NOT disclosure_flag) OR "
             "(provider_item_type = 'finnhub_quote' AND market_data_flag "
             "AND NOT official_source_flag AND NOT disclosure_flag AND NOT news_signal_flag) OR "

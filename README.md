@@ -1,5 +1,20 @@
 # Market Intelligence Collector
 
+M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
+first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.
+Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers. Finnhub
+company_news is the operation-specific ARTICLE/notification exception; Finnhub quote and all EIA observations
+remain non-content/non-notification facts.
+Legacy cursor uniqueness excludes target-owned cursors. Real worker integration verifies same-account multi-target
+and normal/backfill checkpoint isolation; target revision is blocked while any continuation is pending, and exact
+PostgreSQL run/state guards prevent late or terminal continuation rebinding.
+EIA pagination now uses one 10,000,000 offset/total ceiling across adapter, codec and database. Marketaux page 1000
+ends as durable partial coverage rather than producing page 1001. Finnhub/SEC deduplicate the full eligible array
+before local slicing. Unrecoverable continuation can only be abandoned through the explicit PAUSED, locked,
+hash-audited management operation; ordinary revision still refuses pending state.
+Production authority remains legacy and v2 activation is not authorized. Original c4c1313 CI failed;
+the PR body records the revised HEAD's actual checks, not an assumed PASS.
+
 用户已确认本项目的长期产品目标：建立面向个人投资研究的实时信息采集与 AI 分析系统，
 提供重要事件的一键了解、可追溯影响分析、市场数据验证和可解释研究参考。
 
@@ -20,8 +35,9 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：SPEC-0043 — R8-A SafeFactProjection → Evidence Durable Handoff（Implementation
-  Review）。R1/R2 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
+- 当前 Active SPEC：SPEC-0045 — M2-A Four-Provider Data Breadth（Implementation Review）；
+  [M2 milestone](spec/SPEC-0044-m2-ai-ready-evidence-data-plane.md) 定义后续 Packet/Bundle/Readiness 门禁。
+  R1/R2/R8-A 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
   R8-A 增加 canonical Evidence identity 与 durable projection lineage；handoff 会重跑 R2 contract/hash
   校验，并采用显式 access policy（Marketaux/SEC `link_only`、Finnhub `licensed`、EIA
   `public_summary`）。它不复制 factual payload，也不触发
@@ -82,7 +98,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0043（R8-A SafeFactProjection → Evidence Durable Handoff Implementation Review）。
+- Active SPEC：SPEC-0045（M2-A Four-Provider Data Breadth Implementation Review）。
   R1/R2 已完成批准范围；Migration B/production activation/cutover 仍未授权。
 
 统一 runtime verification：
