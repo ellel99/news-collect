@@ -8,6 +8,10 @@ remain non-content/non-notification facts.
 Legacy cursor uniqueness excludes target-owned cursors. Real worker integration verifies same-account multi-target
 and normal/backfill checkpoint isolation; target revision is blocked while any continuation is pending, and exact
 PostgreSQL run/state guards prevent late or terminal continuation rebinding.
+EIA pagination now uses one 10,000,000 offset/total ceiling across adapter, codec and database. Marketaux page 1000
+ends as durable partial coverage rather than producing page 1001. Finnhub/SEC deduplicate the full eligible array
+before local slicing. Unrecoverable continuation can only be abandoned through the explicit PAUSED, locked,
+hash-audited management operation; ordinary revision still refuses pending state.
 Production authority remains legacy and v2 activation is not authorized. Original c4c1313 CI failed;
 the PR body records the revised HEAD's actual checks, not an assumed PASS.
 

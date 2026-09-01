@@ -17,6 +17,13 @@
   terminal linkage and late freeze. Collapse exact same-page duplicates and fail closed on conflicting hashes.
 - Exercise same-account Finnhub targets through the real control-plane worker with retry and normal/backfill
   cursor isolation through the canonical downstream path.
+- Align EIA adapter/response/codec/PostgreSQL offset ceiling at 10,000,000 and terminate Marketaux page-1000
+  overflow as durable non-looping PARTIAL coverage without an invalid continuation.
+- Move Finnhub/SEC duplicate identity comparison before local keyset slicing and make Python/SQL SEC state matrices
+  exact and symmetric.
+- Add a PAUSED-only, locked, optimistic-token continuation abandon operation with value-free AuditLog records;
+  preserve cursor value/watermark and allow ordinary revision only after explicit cleanup.
+- Mirror the migration window/config pair check in SQLAlchemy metadata.
 
 - Use shared test database configuration; original CI FAIL is recorded accurately.
 - Enforce exact legacy mapping at load/revise/preflight; v2 is NULL and cannot reuse v1 identity.

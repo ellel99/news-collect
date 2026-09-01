@@ -8,6 +8,9 @@ Original c4c1313 CI was FAIL; use current PR checks for revised status. No M2-B/
 The current review fix scopes legacy cursor uniqueness to target-less rows, preserves target/version/mode cursor
 identity, blocks ordinary revision with pending continuation, and enforces exact continuation values plus
 pre-request RUNNING/PARTIAL/FAILED lineage in PostgreSQL. Same-page identity conflicts fail closed without retry.
+EIA offset/total is uniformly capped at 10,000,000; Marketaux page 1000 terminates durable PARTIAL when coverage
+remains. Finnhub/SEC group full eligible arrays before local slicing. Pending continuation abandon is an explicit
+PAUSED-only locked/CAS/value-free-audit operation and never changes cursor position or factual lineage.
 
 本文件是 AI 编码工具进入项目时的首要入口。
 

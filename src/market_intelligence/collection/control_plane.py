@@ -666,7 +666,7 @@ class CollectionControlPlaneWorker:
                     request.config,
                     self._lineage(loaded, run_mode),
                 )
-            final = not result.has_more or index + 1 == pages
+            final = result.coverage_incomplete or not result.has_more or index + 1 == pages
             await self._persist_result(
                 loaded,
                 dispatch,
@@ -683,9 +683,11 @@ class CollectionControlPlaneWorker:
             if final:
                 return TargetRunOutcome(
                     dispatch.target_id,
-                    "partial" if result.has_more else "succeeded",
+                    "partial" if result.has_more or result.coverage_incomplete else "succeeded",
                     run_id,
-                    "coverage_incomplete" if result.has_more else None,
+                    "coverage_incomplete"
+                    if result.has_more or result.coverage_incomplete
+                    else None,
                 )
             async with self._factory() as session:
                 cursor = await session.scalar(
@@ -756,7 +758,7 @@ class CollectionControlPlaneWorker:
             run.finished_at = now if final else None
             if not final:
                 run.status = CollectionRunStatus.RUNNING
-            elif result.has_more:
+            elif result.has_more or result.coverage_incomplete:
                 run.status = CollectionRunStatus.PARTIAL
                 run.error_code = "coverage_incomplete"
                 run.error_message_redacted = (

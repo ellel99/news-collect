@@ -238,7 +238,7 @@ def upgrade() -> None:
         THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
       ELSIF provider_key='sec_edgar' AND t.operation_key='submissions_recent' THEN
         IF state_keys NOT IN (ARRAY[]::text[],ARRAY['file'],ARRAY['file','files'],
-              ARRAY['file','files','last_key'],ARRAY['file','last_key'])
+              ARRAY['file','files','last_key'])
           OR (NEW.continuation#>'{state,file}' IS NOT NULL AND
             jsonb_typeof(NEW.continuation#>'{state,file}') NOT IN ('string','null'))
           OR (jsonb_typeof(NEW.continuation#>'{state,file}') = 'string'
@@ -257,7 +257,8 @@ def upgrade() -> None:
             OR jsonb_array_length(NEW.continuation#>'{state,last_key}') <> 2
             OR EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.continuation#>'{state,last_key}') x
               WHERE jsonb_typeof(x) <> 'string' OR char_length(x#>>'{}') NOT BETWEEN 1 AND 255)))
-          OR (state_keys=ARRAY['file','files'] AND NEW.continuation#>>'{state,file}' IS NULL)
+          OR (jsonb_typeof(NEW.continuation#>'{state,file}') = 'null'
+            AND state_keys <> ARRAY['file','files','last_key'])
         THEN RAISE EXCEPTION 'collection_continuation_state_invalid'; END IF;
       ELSE
         RAISE EXCEPTION 'collection_continuation_operation_unsupported';

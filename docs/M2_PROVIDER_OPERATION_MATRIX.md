@@ -33,6 +33,14 @@ State values are exact in Python and PostgreSQL: Marketaux page is integer 2–1
 non-empty string pairs, EIA offset is integer 1–10000000, and SEC file queues are bounded, unique and same-CIK.
 Unknown tuples and mixed state fail closed. Same-page repeated identity with the same factual hash is collapsed;
 a conflicting factual hash rejects the page non-retryably before checkpoint advance.
+EIA request offset/response total/codec/database maximum is uniformly 10,000,000. Marketaux page 1000 with more
+data terminates as durable PARTIAL/coverage_incomplete without a page-1001 continuation; page 1000 with no more
+completes normally. Finnhub and SEC group the entire eligible response before local keyset slicing, so a duplicate
+conflict cannot hide across a `limit=1` boundary.
+
+SEC exact states are: string `file`; string `file` plus bounded `files`; string `file` plus `files` and `last_key`;
+or recent-page `file:null` plus `files` and `last_key`. A null file without a key, a file+key without explicit queue,
+cross-CIK files, duplicate/current-in-queue entries and unknown fields are rejected identically by Python and SQL.
 
 Batch ceiling 100 is a code ceiling, not a claim about account entitlement. Provider plan/quota/license review may
 require lower target limits. Every run independently enforces ≤20 requests/pages, ≤10 MB decoded response,

@@ -414,6 +414,159 @@ async def test_same_page_identity_conflict_fails_closed(provider, operation, pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("offset", [99_999, 100_000, 100_001, 9_999_999, 10_000_000])
+async def test_eia_offset_policy_accepts_exact_bounded_values(offset):
+    provider, operation = "eia", "electricity_retail_sales"
+    req = request(provider, operation, 1)
+    continuation = encode_continuation(
+        provider,
+        operation,
+        req.config,
+        request_lineage(req, operation),
+        {"offset": offset},
+    )
+    result = await BreadthAdapter(
+        provider, operation, RuntimeCredential("EIA_API_KEY", "synthetic")
+    ).fetch(
+        replace(req, continuation=continuation),
+        MockProviderTransport([response({"response": {"data": [], "total": offset}})]),
+    )
+    assert not result.safe_errors
+    assert not result.has_more and result.continuation is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("offset", [0, 10_000_001])
+async def test_eia_offset_policy_rejects_outside_continuation_range(offset):
+    provider, operation = "eia", "electricity_retail_sales"
+    req = request(provider, operation, 1)
+    value = encode_continuation(
+        provider, operation, req.config, request_lineage(req, operation), {}
+    )
+    value["state"] = {"offset": offset}
+    transport = MockProviderTransport([])
+    result = await BreadthAdapter(
+        provider, operation, RuntimeCredential("EIA_API_KEY", "synthetic")
+    ).fetch(replace(req, continuation=value), transport)
+    assert result.safe_errors and not result.safe_errors[0].retryable
+    assert not transport.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "page,found,expected_more,expected_coverage,next_page",
+    [
+        (999, 2000, True, False, 1000),
+        (1000, 2000, False, False, None),
+        (1000, 2001, False, True, None),
+    ],
+)
+async def test_marketaux_terminal_page_policy(
+    page, found, expected_more, expected_coverage, next_page
+):
+    req = request("marketaux", "news_all", 2)
+    continuation = encode_continuation(
+        "marketaux",
+        "news_all",
+        req.config,
+        request_lineage(req, "news_all"),
+        {"page": page},
+    )
+    result = await BreadthAdapter(
+        "marketaux", "news_all", RuntimeCredential("MARKETAUX_API_TOKEN", "synthetic")
+    ).fetch(
+        replace(req, continuation=continuation),
+        MockProviderTransport(
+            [response({"data": [news(f"p{page}a"), news(f"p{page}b")], "meta": {"found": found}})]
+        ),
+    )
+    assert not result.safe_errors
+    assert result.has_more is expected_more
+    assert result.coverage_incomplete is expected_coverage
+    assert (result.continuation["state"]["page"] if result.continuation else None) == next_page
+
+
+@pytest.mark.asyncio
+async def test_marketaux_terminal_coverage_is_durable_partial_without_loop():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all", pages=2)
+    repository = TargetRepository(factory, build_operation_registry())
+    transport = MockProviderTransport(
+        [response({"data": [news("terminal-a"), news("terminal-b")], "meta": {"found": 2001}})]
+    )
+    worker = CollectionControlPlaneWorker(
+        factory,
+        repository,
+        RedisDouble(),
+        transport,
+        environ={"MARKETAUX_API_TOKEN": "synthetic"},
+    )
+    dispatch = TargetDispatch(ids[2], 1, 1, "normal", dispatch_identity(ids[2], 1, 1))
+    try:
+        loaded = await repository.load_for_execution(ids[2], 1)
+        run_id, cursor = await worker._start_run(loaded, dispatch, CollectionRunMode.NORMAL)
+        config, _ = await worker._resolved_run_config(
+            run_id, loaded, cursor, CollectionRunMode.NORMAL
+        )
+        terminal = encode_continuation(
+            "marketaux",
+            "news_all",
+            config,
+            worker._lineage(loaded, CollectionRunMode.NORMAL),
+            {"page": 1000},
+        )
+        async with factory.begin() as session:
+            pending = await session.scalar(
+                select(CollectionCursor)
+                .where(CollectionCursor.target_id == ids[2])
+                .with_for_update()
+            )
+            pending.continuation = terminal
+        report = await worker.execute(dispatch)
+        assert report.status == "partial" and report.safe_error == "coverage_incomplete"
+        assert len(transport.calls) == 1
+        async with factory() as session:
+            run = await session.get(CollectionRun, report.run_id)
+            cursor = await session.scalar(
+                select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
+            )
+            assert run.status.value == "partial" and run.error_code == "coverage_incomplete"
+            assert cursor.continuation is None and cursor.continuation_run_id is None
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["finnhub", "sec_recent", "sec_history"])
+@pytest.mark.parametrize("conflict", [False, True])
+async def test_local_keyset_deduplicates_before_limit(path, conflict):
+    provider = "finnhub" if path == "finnhub" else "sec_edgar"
+    operation = "company_news" if path == "finnhub" else "submissions_recent"
+    body = (
+        sec_history_duplicate_page(conflict=conflict)
+        if path == "sec_history"
+        else duplicate_page(provider, operation, conflict=conflict)
+    )
+    req = replace(operation_request(provider, operation, path), limit=1)
+    adapter = BreadthAdapter(
+        provider, operation, RuntimeCredential(CREDENTIALS[provider], "synthetic")
+    )
+    first = await adapter.fetch(req, MockProviderTransport([response(body)]))
+    second = await adapter.fetch(req, MockProviderTransport([response(body)]))
+    if conflict:
+        for result in (first, second):
+            assert result.safe_errors and not result.safe_errors[0].retryable
+            assert not result.raw_items and result.continuation is None
+    else:
+        for result in (first, second):
+            assert not result.safe_errors
+            assert len(result.raw_items) == 1
+            assert not result.has_more and result.continuation is None
+
+
+@pytest.mark.asyncio
 async def test_marketaux_page_and_failure_preserve_continuation():
     transport = MockProviderTransport(
         [response({"data": [news("a"), news("b")], "meta": {"found": 4}}), response({}, 500)]
@@ -1770,6 +1923,159 @@ async def test_database_continuation_state_values_fail_closed(provider, operatio
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("offset", [99_999, 100_000, 100_001, 9_999_999, 10_000_000])
+async def test_database_eia_offset_policy_accepts_same_boundaries_as_codec(offset):
+    provider, operation = "eia", "electricity_retail_sales"
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, provider, operation)
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_operation_config(provider, operation)
+            target.config_revision = 2
+        repository = TargetRepository(factory, build_operation_registry())
+        worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            MockProviderTransport([]),
+            environ={"EIA_API_KEY": "synthetic"},
+        )
+        loaded = await repository.load_for_execution(ids[2], 2)
+        dispatch = TargetDispatch(ids[2], 2, 1, "normal", dispatch_identity(ids[2], 2, 1))
+        run_id, cursor = await worker._start_run(loaded, dispatch, CollectionRunMode.NORMAL)
+        await worker._resolved_run_config(run_id, loaded, cursor, CollectionRunMode.NORMAL)
+        async with factory.begin() as session:
+            await session.execute(
+                text("""UPDATE collection_cursors
+                  SET continuation=jsonb_set(continuation,'{state}',CAST(:state AS jsonb))
+                  WHERE target_id=:target"""),
+                {"state": json.dumps({"offset": offset}), "target": ids[2]},
+            )
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "state,accepted",
+    [
+        ({"file": "CIK0001045810-submissions-001.json"}, True),
+        ({"file": "CIK0001045810-submissions-001.json", "files": []}, True),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "files": ["CIK0001045810-submissions-002.json"],
+            },
+            True,
+        ),
+        (
+            {"file": None, "files": [], "last_key": ["2026-01-02", "0001045810-26-000001"]},
+            True,
+        ),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "files": [],
+                "last_key": ["2026-01-02", "0001045810-26-000001"],
+            },
+            True,
+        ),
+        ({"file": None}, False),
+        ({"file": None, "files": []}, False),
+        (
+            {"file": None, "files": ["CIK0001045810-submissions-001.json"]},
+            False,
+        ),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "last_key": ["2026-01-02", "0001045810-26-000001"],
+            },
+            False,
+        ),
+        ({"file": "CIK0000320193-submissions-001.json"}, False),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "files": ["CIK0001045810-submissions-001.json"],
+            },
+            False,
+        ),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "files": ["CIK0001045810-submissions-002.json"] * 2,
+            },
+            False,
+        ),
+        (
+            {
+                "file": "CIK0001045810-submissions-001.json",
+                "files": [f"CIK0001045810-submissions-{i:03d}.json" for i in range(2, 8)],
+            },
+            False,
+        ),
+        ({"file": "CIK0001045810-submissions-001.json", "unknown": 1}, False),
+    ],
+)
+async def test_sec_continuation_python_and_postgres_acceptance_are_symmetric(state, accepted):
+    provider, operation = "sec_edgar", "submissions_recent"
+    req = request(provider, operation)
+    lineage = request_lineage(req, operation)
+    encoded = encode_continuation(provider, operation, req.config, lineage, {})
+    encoded["state"] = state
+    if accepted:
+        assert decode_continuation(encoded, provider, operation, req.config, lineage) == state
+    else:
+        with pytest.raises(ContinuationContractError):
+            decode_continuation(encoded, provider, operation, req.config, lineage)
+
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, provider, operation)
+    try:
+        async with factory.begin() as session:
+            target = await session.get(CollectionTarget, ids[2])
+            target.operation_config = rolling_operation_config(provider, operation)
+            target.config_revision = 2
+        repository = TargetRepository(factory, build_operation_registry())
+        worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            MockProviderTransport([]),
+            environ={"SEC_USER_AGENT": "synthetic", "SEC_CONTACT_EMAIL": "test@example.com"},
+        )
+        loaded = await repository.load_for_execution(ids[2], 2)
+        dispatch = TargetDispatch(ids[2], 2, 1, "normal", dispatch_identity(ids[2], 2, 1))
+        run_id, cursor = await worker._start_run(loaded, dispatch, CollectionRunMode.NORMAL)
+        await worker._resolved_run_config(run_id, loaded, cursor, CollectionRunMode.NORMAL)
+        if accepted:
+            async with factory.begin() as session:
+                await session.execute(
+                    text("""UPDATE collection_cursors
+                      SET continuation=jsonb_set(continuation,'{state}',CAST(:state AS jsonb))
+                      WHERE target_id=:target"""),
+                    {"state": json.dumps(state), "target": ids[2]},
+                )
+        else:
+            with pytest.raises(DBAPIError, match="collection_continuation_state_invalid"):
+                async with factory.begin() as session:
+                    await session.execute(
+                        text("""UPDATE collection_cursors
+                          SET continuation=jsonb_set(continuation,'{state}',CAST(:state AS jsonb))
+                          WHERE target_id=:target"""),
+                        {"state": json.dumps(state), "target": ids[2]},
+                    )
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_database_run_lifecycle_guards_and_recovery_states():
     engine = create_async_engine(DB)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -1835,6 +2141,17 @@ async def test_database_run_lifecycle_guards_and_recovery_states():
     finally:
         await cleanup(factory, ids)
         await engine.dispose()
+
+
+def test_collection_run_metadata_contains_window_config_pair_constraint():
+    constraints = {
+        constraint.name: str(constraint.sqltext)
+        for constraint in CollectionRun.__table__.constraints
+        if getattr(constraint, "name", None)
+    }
+    assert constraints["ck_collection_runs_window_config_pair"] == (
+        "(resolved_window IS NULL) = (operation_config_hash IS NULL)"
+    )
 
 
 @pytest.mark.asyncio
@@ -1921,6 +2238,183 @@ async def test_target_revision_succeeds_after_continuation_is_explicitly_cleared
             pending.continuation = None
             pending.continuation_run_id = None
         assert await repository.revise(ids[2], 2, {"cadence_seconds": 601}) == 3
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+async def create_pending_marketaux_continuation(
+    factory, ids, run_mode: CollectionRunMode, slot: int
+):
+    repository = TargetRepository(factory, build_operation_registry())
+    transport = MockProviderTransport(
+        [
+            response(
+                {
+                    "data": [news(f"{run_mode.value}-a"), news(f"{run_mode.value}-b")],
+                    "meta": {"found": 4},
+                }
+            ),
+            response({}, 500),
+        ]
+    )
+    worker = CollectionControlPlaneWorker(
+        factory,
+        repository,
+        RedisDouble(),
+        transport,
+        environ={"MARKETAUX_API_TOKEN": "synthetic"},
+    )
+    dispatch = TargetDispatch(
+        ids[2], 1, slot, run_mode.value, dispatch_identity(ids[2], 1, slot, run_mode.value)
+    )
+    report = await worker.execute(dispatch)
+    assert report.status == "retry" and report.run_id is not None
+    loaded = await repository.load_for_execution(ids[2], 1)
+    await worker._finish_error(
+        loaded,
+        dispatch,
+        report.run_id,
+        "operator_review_pending",
+        False,
+        None,
+    )
+    return repository, report
+
+
+@pytest.mark.asyncio
+async def test_explicit_continuation_abandon_is_atomic_audited_and_revision_safe():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    try:
+        repository, _ = await create_pending_marketaux_continuation(
+            factory, ids, CollectionRunMode.NORMAL, 1
+        )
+        await create_pending_marketaux_continuation(factory, ids, CollectionRunMode.BACKFILL, 2)
+        tokens = await repository.pending_continuations(ids[2], 1)
+        assert {token.run_mode for token in tokens} == {"normal", "backfill"}
+
+        with pytest.raises(
+            TargetRepositoryError, match="target_continuation_abandon_requires_paused"
+        ):
+            await repository.abandon_pending_continuations(
+                ids[2], 1, tokens, reason_code="operator_reviewed_reset"
+            )
+        with pytest.raises(TargetRepositoryError, match="target_revision_conflict"):
+            await repository.abandon_pending_continuations(
+                ids[2], 0, tokens, reason_code="operator_reviewed_reset"
+            )
+
+        await repository.pause_for_continuation_abandon(ids[2], 1)
+        async with factory() as session:
+            before = {
+                (row.cursor_version, row.run_mode.value): (row.cursor_value, row.watermark_at)
+                for row in await session.scalars(
+                    select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
+                )
+            }
+        assert (
+            await repository.abandon_pending_continuations(
+                ids[2], 1, tokens, reason_code="operator_reviewed_reset"
+            )
+            == 2
+        )
+        async with factory() as session:
+            cursors = tuple(
+                await session.scalars(
+                    select(CollectionCursor).where(CollectionCursor.target_id == ids[2])
+                )
+            )
+            assert all(
+                row.continuation is None and row.continuation_run_id is None for row in cursors
+            )
+            assert {
+                (row.cursor_version, row.run_mode.value): (row.cursor_value, row.watermark_at)
+                for row in cursors
+            } == before
+            audits = tuple(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.target_id == ids[2],
+                        AuditLog.action == "collection_continuation_abandoned",
+                    )
+                )
+            )
+            assert len(audits) == 2
+            for audit in audits:
+                assert set(audit.after) == {
+                    "config_revision",
+                    "cursor_version",
+                    "run_mode",
+                    "bound_run_id",
+                    "continuation_hash",
+                    "resolved_window_hash",
+                    "operation_config_hash",
+                    "reason_code",
+                }
+                assert len(audit.after["continuation_hash"]) == 64
+                assert "query" not in json.dumps(audit.after).lower()
+                assert "url" not in json.dumps(audit.after).lower()
+        assert await repository.revise(ids[2], 1, {"cadence_seconds": 601}) == 2
+        assert (
+            await repository.abandon_pending_continuations(
+                ids[2], 2, tokens, reason_code="operator_reviewed_reset"
+            )
+            == 0
+        )
+    finally:
+        await cleanup(factory, ids)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_continuation_abandon_rejects_running_and_concurrent_advance():
+    engine = create_async_engine(DB)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    ids = await seed(factory, "marketaux", "news_all")
+    repository = TargetRepository(factory, build_operation_registry())
+    try:
+        first_worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            MockProviderTransport(
+                [
+                    response({"data": [news("a"), news("b")], "meta": {"found": 6}}),
+                    response({}, 500),
+                ]
+            ),
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        dispatch = TargetDispatch(ids[2], 1, 1, "normal", dispatch_identity(ids[2], 1, 1))
+        first = await first_worker.execute(dispatch)
+        assert first.status == "retry" and first.run_id is not None
+        stale_tokens = await repository.pending_continuations(ids[2], 1)
+        with pytest.raises(TargetRepositoryError, match="target_revision_in_flight"):
+            await repository.abandon_pending_continuations(
+                ids[2], 1, stale_tokens, reason_code="continuation_unrecoverable"
+            )
+
+        second_worker = CollectionControlPlaneWorker(
+            factory,
+            repository,
+            RedisDouble(),
+            MockProviderTransport(
+                [
+                    response({"data": [news("c"), news("d")], "meta": {"found": 6}}),
+                    response({}, 500),
+                ]
+            ),
+            environ={"MARKETAUX_API_TOKEN": "synthetic"},
+        )
+        second = await second_worker.execute(dispatch)
+        assert second.status == "partial" and second.run_id == first.run_id
+        await repository.pause_for_continuation_abandon(ids[2], 1)
+        with pytest.raises(TargetRepositoryError, match="target_continuation_changed"):
+            await repository.abandon_pending_continuations(
+                ids[2], 1, stale_tokens, reason_code="continuation_unrecoverable"
+            )
     finally:
         await cleanup(factory, ids)
         await engine.dispose()

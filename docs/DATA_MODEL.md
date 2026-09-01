@@ -14,6 +14,10 @@ Target-owned cursors use `(target_id,cursor_type,cursor_version,run_mode)` where
 targets and normal/backfill never share checkpoints. A pending continuation binds only a matching
 RUNNING/PARTIAL/FAILED run with a pre-request frozen window/config hash; linked SUCCEEDED runs and late freeze are
 database-rejected. Ordinary target revision is blocked until every target continuation is cleared.
+`ck_collection_runs_window_config_pair` is declared identically in migration 0009 and SQLAlchemy metadata.
+Explicit continuation abandon requires PAUSED state, exact config revision and value-free continuation hashes;
+it clears only the continuation pair and emits AuditLog hash/identity metadata while preserving cursor position,
+watermark and factual lineage.
 
 版本：2.1-FROZEN  
 状态：Phase 1 entities frozen; later-phase contracts living

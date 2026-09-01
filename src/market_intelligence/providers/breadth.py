@@ -91,7 +91,7 @@ class BreadthAdapter:
                 not isinstance(page, int)
                 or not 1 <= page <= 1000
                 or not isinstance(offset, int)
-                or not 0 <= offset <= 100000
+                or not 0 <= offset <= 10_000_000
             ):
                 raise ValueError("breadth_continuation_invalid")
             operation, params = self._params(config, request.limit, page, offset, state)
@@ -144,6 +144,9 @@ class BreadthAdapter:
             payloads, more, progress = self._payloads(
                 response.body, config, request.limit, page, offset, state, rejected
             )
+            coverage_incomplete = self.provider_key == "marketaux" and page == 1000 and more
+            if coverage_incomplete:
+                more, progress = False, {}
             valid = []
             for payload in payloads:
                 try:
@@ -157,15 +160,7 @@ class BreadthAdapter:
                     rejected.append(
                         self._rejection_hash(self.provider_key, self.operation_key, identity)
                     )
-            by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
-            for payload in valid:
-                identity = payload["provider_item_id"]
-                digest = canonical_projection_hash(payload)
-                prior = by_identity.get(identity)
-                if prior is not None and prior[0] != digest:
-                    raise ValueError("breadth_duplicate_identity_conflict")
-                by_identity.setdefault(identity, (digest, payload))
-            factuals = tuple(item[1] for item in by_identity.values())
+            factuals = tuple(self._deduplicate_payloads(valid))
             metadata = tuple(
                 {"provider_item_id": p["provider_item_id"], "published_at": p["published_at"]}
                 for p in factuals
@@ -207,6 +202,7 @@ class BreadthAdapter:
                 factual_projections=factuals,
                 continuation=continuation,
                 rejected_row_hashes=tuple(rejected),
+                coverage_incomplete=coverage_incomplete,
             )
         except (ValueError, TypeError, KeyError, IndexError, OverflowError):
             return failed(
@@ -403,6 +399,7 @@ class BreadthAdapter:
             payloads = [
                 p for p in payloads if (p["published_at"], p["provider_item_id"]) > last_key
             ]
+            payloads = self._deduplicate_payloads(payloads)
             emitted = payloads[:limit]
             return (
                 emitted,
@@ -562,7 +559,7 @@ class BreadthAdapter:
         eligible = [r for r in eligible if (r["filingDate"], r["accessionNumber"]) > last_key]
         payloads = []
         filename = state.get("file", f"CIK{c['cik']}.json")
-        for row in eligible[:limit]:
+        for row in eligible:
             accession, document = row["accessionNumber"], row["primaryDocument"]
             if row.get("_permanent_invalid"):
                 rejected.append(self._rejection_hash("sec_edgar", self.operation_key, accession))
@@ -582,22 +579,38 @@ class BreadthAdapter:
                     "submissions_file": filename,
                 }
             )
-        if limit < len(eligible):
+        payloads = self._deduplicate_payloads(payloads)
+        emitted = payloads[:limit]
+        if limit < len(payloads):
             return (
-                payloads,
+                emitted,
                 True,
                 {
                     "last_key": [
-                        eligible[limit - 1]["filingDate"],
-                        eligible[limit - 1]["accessionNumber"],
+                        emitted[-1]["filing_date"],
+                        emitted[-1]["provider_item_id"],
                     ],
                     "file": state.get("file"),
                     "files": files,
                 },
             )
         if files:
-            return payloads, True, {"file": files[0], "files": files[1:]}
-        return payloads, False, {}
+            return emitted, True, {"file": files[0], "files": files[1:]}
+        return emitted, False, {}
+
+    @staticmethod
+    def _deduplicate_payloads(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+        for payload in payloads:
+            identity = payload.get("provider_item_id")
+            if not isinstance(identity, str):
+                raise ValueError("breadth_item_untraceable")
+            digest = canonical_projection_hash(payload)
+            prior = by_identity.get(identity)
+            if prior is not None and prior[0] != digest:
+                raise ValueError("breadth_duplicate_identity_conflict")
+            by_identity.setdefault(identity, (digest, payload))
+        return [item[1] for item in by_identity.values()]
 
     @staticmethod
     def _sec_rows(body: Any, *, history: bool) -> list[dict[str, Any]]:

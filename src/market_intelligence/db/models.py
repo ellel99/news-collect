@@ -542,6 +542,10 @@ class CollectionRun(Base):
             "operation_config_hash IS NULL OR operation_config_hash ~ '^[0-9a-f]{64}$'",
             name="ck_collection_runs_operation_config_hash",
         ),
+        CheckConstraint(
+            "(resolved_window IS NULL) = (operation_config_hash IS NULL)",
+            name="ck_collection_runs_window_config_pair",
+        ),
         CheckConstraint("new_count >= 0", name="ck_collection_runs_new_nonnegative"),
         CheckConstraint(
             "duplicate_count >= 0",

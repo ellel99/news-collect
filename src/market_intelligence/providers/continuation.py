@@ -163,7 +163,6 @@ def decode_continuation(
         allowed = {
             frozenset({"file"}),
             frozenset({"file", "files"}),
-            frozenset({"file", "last_key"}),
             frozenset({"file", "files", "last_key"}),
         }
         if frozenset(result) not in allowed:
@@ -188,7 +187,7 @@ def decode_continuation(
             raise ContinuationContractError("continuation_sec_invalid")
         if "last_key" in result:
             _key(result["last_key"])
-        if current is None and files and "last_key" not in result:
+        if current is None and frozenset(result) != frozenset({"file", "files", "last_key"}):
             raise ContinuationContractError("continuation_sec_invalid")
     return result
 

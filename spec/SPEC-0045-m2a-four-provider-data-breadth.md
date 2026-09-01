@@ -22,6 +22,10 @@ fetch sends at most one request. A run reserves its durable request count before
 the budget. Page persistence atomically commits canonical RawItem, observation, PENDING SafeFactProjection and
 target-owned continuation. No page is advanced before that transaction commits. Budget exhaustion is durable
 PARTIAL/coverage_incomplete; the next authorized run resumes the saved continuation.
+EIA offset and response-total policy is consistently bounded at `0..10_000_000` for request preflight/response
+validation, while persisted continuation is `1..10_000_000`. Marketaux continuation is page `2..1000`; when page
+1000 still reports more, that page commits once with no invalid page-1001 token and the run terminates durable
+PARTIAL/coverage_incomplete. It never loops page 1000 or reports complete coverage.
 
 Every v2 config requires window_mode: fixed_window with explicit start/end for manual bounded collection,
 or rolling_window with lookback_seconds, overlap_seconds, ingestion_lag_seconds and operation-specific
@@ -46,7 +50,11 @@ legal empty page, clears continuation and run binding in the same transaction so
 window; retry, crash, lock loss and PARTIAL coverage retain recovery state.
 Ordinary target revision locks every target-scoped cursor across cursor versions and normal/backfill modes and
 fails with `target_revision_pending_continuation` while any continuation is non-empty. It never silently abandons
-recovery state; doing so requires a separately reviewed reset/reconciliation operation.
+recovery state. The explicit management path first pauses the target without changing config revision, then locks
+the target, all target cursors and runs, compares value-free optimistic continuation tokens, rejects RUNNING/stale/
+concurrent state, and atomically clears only continuation plus continuation_run_id. Cursor value/watermark and all
+fact lineage remain unchanged. Each abandoned cursor writes a value-free AuditLog containing only IDs, versions,
+run mode, hashes and an allowlisted reason. Ordinary revision is permitted only afterward.
 
 Provider pagination is not a transactional upstream snapshot. Reconciliation repeats the configured bounded
 window to discover late revisions. Finnhub continuation stores last (published_at, provider_item_id); SEC
@@ -62,6 +70,10 @@ and rejects userinfo or secret-bearing keys. Traceable invalid rows get a hash-o
 deterministic per target/operation/
 row identity. Marker, valid items and checkpoint commit together; repeats do not duplicate markers. Unknown
 identity or untrusted page structure fails the whole page closed without silently skipping facts.
+For Finnhub and SEC array-local keysets, every eligible trusted response row is canonicalized and grouped before
+`limit` slicing. Same identity/hash collapses deterministically; same identity with a different factual hash rejects
+the whole response non-retryably before any cursor/continuation persistence. Marketaux and both EIA operations use
+the same six-path duplicate/conflict policy.
 
 ## Persistence and migration 0009
 
@@ -71,6 +83,8 @@ identity or untrusted page structure fails the whole page closed without silentl
 - Adds CollectionRun.resolved_window with safe JSON constraint and once-initialized immutable-window trigger.
 - Adds immutable CollectionRun.operation_config_hash and CollectionCursor.continuation_run_id so PostgreSQL can
   prove every v2 recovery window belongs to its exact run rather than merely accepting date-shaped JSON.
+- Migration and SQLAlchemy metadata both carry `ck_collection_runs_window_config_pair`: resolved_window and
+  operation_config_hash are either both NULL or both non-NULL.
 - Adds an exact v2 continuation database guard; operation codecs reject unknown/cross-operation fields, wrong
   config/window/lineage, invalid numeric/key state and cross-CIK SEC queues.
 - Narrows legacy cursor uniqueness to `(source_account_id,cursor_type) WHERE target_id IS NULL`; target-owned

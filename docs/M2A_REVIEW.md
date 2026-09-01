@@ -60,6 +60,12 @@ PostgreSQL validates exact state values and exact RUNNING/PARTIAL/FAILED lineage
 request-late window/config freezing. All six operation paths collapse same-identity/same-projection rows and reject
 conflicting same-page projections non-retryably before checkpoint advance. Six operation paths
 prove traceable invalid-row isolation without turning out-of-scope filters into rejection markers.
+
+Final review remediation aligns EIA preflight/total/codec/SQL at 10,000,000, gives Marketaux page 1000 a durable
+non-looping PARTIAL terminal outcome, and moves Finnhub/SEC identity grouping before local `limit` slicing. Python
+and SQL share the exact SEC null/string file matrix. A dedicated PAUSED-only continuation abandon operation uses
+locked CAS tokens and value-free AuditLog records; ordinary revise remains fail closed. Migration and ORM metadata
+both declare the window/config pair constraint.
 Test-only future-v2 eligibility temporarily disables and restores the activation trigger in the disposable DB;
 production constraints remain intact. Migration 0009 remains a stopped-writer boundary, not rolling-upgrade
 compatible. Independent review is PENDING; exact final test count/HEAD/CI are recorded in the PR body.
