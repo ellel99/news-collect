@@ -25,6 +25,7 @@ from market_intelligence.db.models import (
     SafeFactProjection,
     SafeProjectionProcessingStatus,
     Source,
+    SourceAccount,
 )
 from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.rich_evidence.contracts import (
@@ -155,12 +156,22 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_linked_projection_missing")
         raw = await session.get(RawItem, evidence.raw_item_id)
         source = await session.get(Source, evidence.source_id)
-        if raw is None or source is None:
+        first_run = await session.get(CollectionRun, raw.collection_run_id) if raw else None
+        account = (
+            await session.get(SourceAccount, evidence.source_account_id)
+            if evidence.source_account_id is not None
+            else None
+        )
+        if raw is None or source is None or first_run is None:
             raise RichEvidenceError("rich_evidence_provenance_invalid")
         if (
             raw.source_id != evidence.source_id
             or raw.source_account_id != evidence.source_account_id
             or source.access_method != evidence.provider
+            or first_run.source_id != evidence.source_id
+            or first_run.source_account_id != evidence.source_account_id
+            or (evidence.source_account_id is not None and account is None)
+            or (account is not None and account.source_id != evidence.source_id)
         ):
             raise RichEvidenceError("rich_evidence_provenance_invalid")
 
