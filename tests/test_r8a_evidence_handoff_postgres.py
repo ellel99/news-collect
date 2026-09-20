@@ -1227,7 +1227,7 @@ async def test_packet_serialized_size_budget_reports_truncation() -> None:
             )
         assert evidence_id is not None
         packet = await RichEvidencePacketBuilder(
-            factory, max_revisions=10, max_serialized_bytes=4_096
+            factory, max_revisions=10, max_serialized_bytes=6_000
         ).build_one(evidence_id)
         assert packet.truncation.truncated is True
         assert packet.truncation.reason == "serialized_size_budget"
@@ -1243,12 +1243,12 @@ async def test_packet_serialized_size_budget_reports_truncation() -> None:
     [
         "raw_item_id=gen_random_uuid()",
         "observation_id=gen_random_uuid()",
-        "provider='eia'",
+        "provider='marketaux'",
         "operation_key='quote'",
         "projection_schema_version=2",
         "factual_payload=jsonb_set(factual_payload,'{value}','0')",
         "projection_hash=repeat('0',64)",
-        "quality_status='partial'",
+        "quality_status='complete'",
     ],
 )
 async def test_linked_projection_direct_sql_factual_mutation_is_rejected(
@@ -1275,7 +1275,7 @@ async def test_packet_builder_rejects_tampered_ready_projection() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        raw_id, projection_id, _ = await _seed_ready(factory, "marketaux")
+        raw_id, _, _ = await _seed_ready(factory, "marketaux")
         assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
         async with factory() as session:
             evidence_id = await session.scalar(
@@ -1283,20 +1283,20 @@ async def test_packet_builder_rejects_tampered_ready_projection() -> None:
             )
         assert evidence_id is not None
         async with factory.begin() as session:
-            projection = await session.get(SafeFactProjection, projection_id)
-            assert projection is not None
+            raw = await session.get(RawItem, raw_id)
+            assert raw is not None
             await session.execute(
-                text("UPDATE raw_item_observations SET provider='eia' WHERE id=:id"),
-                {"id": projection.observation_id},
+                text("UPDATE sources SET access_method='finnhub' WHERE id=:id"),
+                {"id": raw.source_id},
             )
         with pytest.raises(RichEvidenceError, match="rich_evidence_provenance_invalid"):
             await RichEvidencePacketBuilder(factory).build_one(evidence_id)
         async with factory.begin() as session:
-            projection = await session.get(SafeFactProjection, projection_id)
-            assert projection is not None
+            raw = await session.get(RawItem, raw_id)
+            assert raw is not None
             await session.execute(
-                text("UPDATE raw_item_observations SET provider='marketaux' WHERE id=:id"),
-                {"id": projection.observation_id},
+                text("UPDATE sources SET access_method='marketaux' WHERE id=:id"),
+                {"id": raw.source_id},
             )
     finally:
         await _cleanup(factory)
