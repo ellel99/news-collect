@@ -117,7 +117,7 @@ def test_repository_inventory_is_linear_and_contains_0003() -> None:
         "0009",
         "0010",
     )
-    assert report.code_heads == ("0009",)
+    assert report.code_heads == ("0010",)
 
 
 @pytest.mark.asyncio
