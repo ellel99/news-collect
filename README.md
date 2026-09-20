@@ -1,6 +1,10 @@
 # Market Intelligence Collector
 
-M2-A PR #46 review fixes: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
+M2-A is complete in main. M2-B is implemented in a Draft PR as a deterministic, typed, bounded Rich Evidence
+Packet read boundary over linked READY safe factual projections. It does not persist a second factual payload,
+call external services, or activate the unified control plane. Production authority remains `legacy`.
+
+Historical M2-A implementation: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
 first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.
 Finnhub/SEC use recoverable keysets plus overlap; rejected rows have value-free durable audit markers. Finnhub
 company_news is the operation-specific ARTICLE/notification exception; Finnhub quote and all EIA observations
@@ -35,7 +39,7 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：SPEC-0045 — M2-A Four-Provider Data Breadth（Implementation Review）；
+- 当前 Active SPEC：SPEC-0046 — M2-B Rich Evidence Packet（Implementation Review）；
   [M2 milestone](spec/SPEC-0044-m2-ai-ready-evidence-data-plane.md) 定义后续 Packet/Bundle/Readiness 门禁。
   R1/R2/R8-A 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
   R8-A 增加 canonical Evidence identity 与 durable projection lineage；handoff 会重跑 R2 contract/hash
@@ -98,7 +102,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0045（M2-A Four-Provider Data Breadth Implementation Review）。
+- Active SPEC：SPEC-0046（M2-B Rich Evidence Packet Implementation Review）。
   R1/R2 已完成批准范围；Migration B/production activation/cutover 仍未授权。
 
 统一 runtime verification：

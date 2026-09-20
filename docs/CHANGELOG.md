@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — M2-B Rich Evidence Packet
+
+- Add SPEC-0046 and a typed provider-neutral packet contract for six approved operation paths.
+- Add deterministic, bounded, read-only packet construction with keyset listing, revision lineage, explicit
+  missing/blocked/truncation semantics, and exact Finnhub/EIA numeric preservation.
+- Add migration 0010 to prevent direct SQL mutation/deletion of linked factual projection fields.
+- Keep production authority legacy; no external request, activation, Event/Fact/Impact/AI or M2-C/D work.
+
 ## M2-A PR #46 directed blocker fixes
 
 - Persist exact pre-request frozen-window recovery lineage and enforce operation-specific continuation shapes in

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
+from alembic.config import Config
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -38,7 +44,19 @@ from market_intelligence.evidence.write_path import (
     EvidenceWriteService,
     EvidenceWriteStatus,
 )
-from market_intelligence.safe_projection.contracts import canonical_projection_hash
+from market_intelligence.rich_evidence import RichEvidenceError, RichEvidencePacketBuilder
+from market_intelligence.rich_evidence.contracts import (
+    EiaRetailFacts,
+    EiaRtoFacts,
+    FinnhubCompanyNewsFacts,
+    FinnhubQuoteFacts,
+    MarketauxNewsFacts,
+    SecFilingFacts,
+)
+from market_intelligence.safe_projection.contracts import (
+    canonical_projection_hash,
+    normalize_and_classify_factual_payload,
+)
 
 POSTGRES_TEST_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -109,10 +127,11 @@ async def _seed_ready(
     *,
     raw_id: uuid.UUID | None = None,
     payload_updates: dict[str, object] | None = None,
+    operation_payload: tuple[str, dict[str, object]] | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID, dict[str, object]]:
     marker = uuid.uuid4().hex
-    operation, payload = _payload(provider, marker)
-    if raw_id is not None and provider == "finnhub":
+    operation, payload = operation_payload or _payload(provider, marker)
+    if raw_id is not None and provider == "finnhub" and operation == "quote":
         payload["c"] = 102.5
     if raw_id is not None and provider == "marketaux":
         async with factory() as lookup:
@@ -121,6 +140,7 @@ async def _seed_ready(
             payload["provider_item_id"] = raw.external_id
     if payload_updates:
         payload.update(payload_updates)
+    payload, quality = normalize_and_classify_factual_payload(provider, operation, 1, payload)
     projection_hash = canonical_projection_hash(payload)
     async with factory.begin() as session:
         if raw_id is None:
@@ -171,10 +191,11 @@ async def _seed_ready(
             """),
                 {"source": source_id, "account": account_id, "now": datetime.now(UTC)},
             )
+        contract_version = 2 if operation in {"company_news", "electricity_rto_region_data"} else 1
         observation_id = await session.scalar(
             text("""
             INSERT INTO raw_item_observations(collection_run_id,raw_item_id,source_id,source_account_id,provider,operation_key,provider_contract_version,observed_at,projection_hash,observation_kind)
-            VALUES (:run,:raw,:source,:account,:provider,:operation,1,:now,:hash,'revision_candidate') RETURNING id
+            VALUES (:run,:raw,:source,:account,:provider,:operation,:contract_version,:now,:hash,'revision_candidate') RETURNING id
         """),
             {
                 "run": run_id,
@@ -183,6 +204,7 @@ async def _seed_ready(
                 "account": account_id,
                 "provider": provider,
                 "operation": operation,
+                "contract_version": contract_version,
                 "now": datetime.now(UTC),
                 "hash": projection_hash,
             },
@@ -190,7 +212,7 @@ async def _seed_ready(
         projection_id = await session.scalar(
             text("""
             INSERT INTO safe_fact_projections(observation_id,raw_item_id,provider,operation_key,projection_schema_version,factual_payload,projection_hash,quality_status,processing_status,processed_at)
-            VALUES (:observation,:raw,:provider,:operation,1,CAST(:payload AS jsonb),:hash,'complete','ready',:now) RETURNING id
+            VALUES (:observation,:raw,:provider,:operation,1,CAST(:payload AS jsonb),:hash,:quality,'ready',:now) RETURNING id
         """),
             {
                 "observation": observation_id,
@@ -199,6 +221,7 @@ async def _seed_ready(
                 "operation": operation,
                 "payload": __import__("json").dumps(payload),
                 "hash": projection_hash,
+                "quality": quality,
                 "now": datetime.now(UTC),
             },
         )
@@ -976,3 +999,323 @@ def test_handoff_source_does_not_use_legacy_or_downstream_runtime() -> None:
         "requests",
     ):
         assert forbidden not in source
+
+
+def test_rich_evidence_builder_is_read_only_and_legacy_mapper_free() -> None:
+    source = (
+        __import__("pathlib").Path("src/market_intelligence/rich_evidence/builder.py").read_text()
+    )
+    for forbidden in (
+        "provider_mappings",
+        "EvidenceWriteService",
+        "EventCandidate",
+        "ImpactAnalysis",
+        "Notification(",
+        "httpx",
+        "requests",
+        "payload_location",
+        "raw_payload_reference",
+    ):
+        assert forbidden not in source
+
+
+def _extra_operation_payload(operation: str) -> tuple[str, dict[str, object]]:
+    if operation == "company_news":
+        return operation, {
+            "provider_item_id": "company-news:stable-item",
+            "published_at": "2026-01-01T00:00:00+00:00",
+            "title": "Synthetic company news",
+            "canonical_url": "https://example.com/company-news",
+            "source_identity": "Synthetic Source",
+            "symbol": "AAPL",
+            "category": "company",
+            "summary_coverage": "blocked",
+        }
+    return operation, {
+        "provider_item_id": "rto:6575c77c6e751632238ff02e741a338dfe8f930ecec7d31140172bbe3b8e9edc",
+        "published_at": "2026-01-01T00:00:00+00:00",
+        "period": "2026-01-01T00",
+        "dataset": "electricity_rto_region_data",
+        "series_identity": "electricity/rto/region-data/CAL/D",
+        "region": "CAL",
+        "metric": "D",
+        "value": 150.25,
+        "unit": "megawatthours",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider,operation,expected_type",
+    [
+        ("marketaux", "news_all", MarketauxNewsFacts),
+        ("finnhub", "quote", FinnhubQuoteFacts),
+        ("finnhub", "company_news", FinnhubCompanyNewsFacts),
+        ("eia", "electricity_retail_sales", EiaRetailFacts),
+        ("eia", "electricity_rto_region_data", EiaRtoFacts),
+        ("sec_edgar", "submissions_recent", SecFilingFacts),
+    ],
+)
+async def test_rich_evidence_packet_covers_six_typed_operations(
+    provider: str, operation: str, expected_type: type[object]
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        operation_payload = (
+            _extra_operation_payload(operation)
+            if operation in {"company_news", "electricity_rto_region_data"}
+            else None
+        )
+        raw_id, _, _ = await _seed_ready(factory, provider, operation_payload=operation_payload)
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        builder = RichEvidencePacketBuilder(factory)
+        first = await builder.build_one(evidence_id)
+        second = await builder.build_one(evidence_id)
+        assert isinstance(first.current.facts, expected_type)
+        assert first == second
+        assert first.packet_digest == second.packet_digest
+        assert first.operation_key == operation
+        assert first.truncation.truncated is False
+        serialized = json.dumps(dataclasses.asdict(first), default=str)
+        for forbidden in ("raw_payload", "credential", "api_key", "authorization", '"body"'):
+            assert forbidden not in serialized.lower()
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rich_evidence_revision_is_deterministic_and_preserves_numeric_values() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "finnhub")
+        _, _, _ = await _seed_ready(factory, "finnhub", raw_id=raw_id)
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 2
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        packet = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        assert len(packet.revisions) == 2
+        assert len({item.projection_hash for item in packet.revisions}) == 2
+        assert all(isinstance(item.facts, FinnhubQuoteFacts) for item in packet.revisions)
+        assert {cast(FinnhubQuoteFacts, item.facts).c for item in packet.revisions} == {
+            101.25,
+            102.5,
+        }
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_company_news_packet_preserves_cross_symbol_revision_context() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    first = _extra_operation_payload("company_news")
+    second = (
+        "company_news",
+        {**first[1], "symbol": "MSFT"},
+    )
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "finnhub", operation_payload=first)
+        await _seed_ready(factory, "finnhub", raw_id=raw_id, operation_payload=second)
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 2
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        packet = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        assert {
+            cast(FinnhubCompanyNewsFacts, revision.facts).symbol for revision in packet.revisions
+        } == {"AAPL", "MSFT"}
+        assert len({revision.projection_hash for revision in packet.revisions}) == 2
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_packet_revision_budget_is_explicit_and_keeps_current() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "finnhub")
+        await _seed_ready(factory, "finnhub", raw_id=raw_id, payload_updates={"c": 103.5})
+        await _seed_ready(factory, "finnhub", raw_id=raw_id, payload_updates={"c": 104.5})
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 3
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        packet = await RichEvidencePacketBuilder(factory, max_revisions=2).build_one(evidence_id)
+        assert packet.truncation.truncated is True
+        assert packet.truncation.reason == "revision_budget"
+        assert packet.truncation.total_revision_count == 3
+        assert packet.truncation.included_revision_count == 2
+        assert packet.current == packet.revisions[-1]
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sec_recent_history_revision_keeps_canonical_evidence() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, payload = await _seed_ready(factory, "sec_edgar")
+        revised = {
+            **payload,
+            "primary_document": "revised8k.htm",
+            "official_url": (
+                "https://www.sec.gov/Archives/edgar/data/320193/000032019326000001/revised8k.htm"
+            ),
+            "submissions_file": "CIK0000320193-submissions-001.json",
+        }
+        await _seed_ready(
+            factory,
+            "sec_edgar",
+            raw_id=raw_id,
+            operation_payload=("submissions_recent", revised),
+        )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 2
+        async with factory() as session:
+            evidence_ids = tuple(
+                await session.scalars(
+                    select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+                )
+            )
+        assert len(evidence_ids) == 1
+        packet = await RichEvidencePacketBuilder(factory).build_one(evidence_ids[0])
+        assert len(packet.revisions) == 2
+        assert {
+            cast(SecFilingFacts, revision.facts).submissions_file for revision in packet.revisions
+        } == {None, "CIK0000320193-submissions-001.json"}
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_packet_serialized_size_budget_reports_truncation() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "marketaux", payload_updates={"title": "A" * 900})
+        for letter in ("B", "C", "D", "E"):
+            await _seed_ready(
+                factory,
+                "marketaux",
+                raw_id=raw_id,
+                payload_updates={"title": letter * 900},
+            )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 5
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        packet = await RichEvidencePacketBuilder(
+            factory, max_revisions=10, max_serialized_bytes=4_096
+        ).build_one(evidence_id)
+        assert packet.truncation.truncated is True
+        assert packet.truncation.reason == "serialized_size_budget"
+        assert packet.current == packet.revisions[-1]
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        "raw_item_id=gen_random_uuid()",
+        "observation_id=gen_random_uuid()",
+        "provider='eia'",
+        "operation_key='quote'",
+        "projection_schema_version=2",
+        "factual_payload=jsonb_set(factual_payload,'{value}','0')",
+        "projection_hash=repeat('0',64)",
+        "quality_status='partial'",
+    ],
+)
+async def test_linked_projection_direct_sql_factual_mutation_is_rejected(
+    assignment: str,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, projection_id, _ = await _seed_ready(factory, "eia")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text(f"UPDATE safe_fact_projections SET {assignment} WHERE id=:id"),
+                    {"id": projection_id},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_packet_builder_rejects_tampered_ready_projection() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, projection_id, _ = await _seed_ready(factory, "marketaux")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        async with factory.begin() as session:
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert projection is not None
+            await session.execute(
+                text("UPDATE raw_item_observations SET provider='eia' WHERE id=:id"),
+                {"id": projection.observation_id},
+            )
+        with pytest.raises(RichEvidenceError, match="rich_evidence_provenance_invalid"):
+            await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        async with factory.begin() as session:
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert projection is not None
+            await session.execute(
+                text("UPDATE raw_item_observations SET provider='marketaux' WHERE id=:id"),
+                {"id": projection.observation_id},
+            )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0010_migration_roundtrip_and_linked_state_guard() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
+    assert revision.down_revision == "0009"
+
+    def roundtrip(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.downgrade()
+            revision.module.upgrade()
+
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        await connection.run_sync(roundtrip)
+        await transaction.rollback()
+    await engine.dispose()

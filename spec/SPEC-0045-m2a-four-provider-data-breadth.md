@@ -1,6 +1,6 @@
 # SPEC-0045 — M2-A Four-Provider Data Breadth and Bounded Collection
 
-Status: Active — Implementation Review
+Status: Completed — Implementation Review approved; PR #46 merged
 
 ## Approved scope
 
