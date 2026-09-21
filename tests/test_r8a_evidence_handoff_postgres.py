@@ -1405,7 +1405,7 @@ async def test_packet_scan_budget_crosses_sparse_quality_rows_without_starvation
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         for _ in range(8):
-            await _seed_ready(factory, "finnhub")  # unknown currency/exchange => partial
+            await _seed_ready(factory, "marketaux", payload_updates={"title": None})
         await _seed_ready(
             factory,
             "eia",
