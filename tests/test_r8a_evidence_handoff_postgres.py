@@ -1241,6 +1241,7 @@ async def test_packet_serialized_size_budget_reports_truncation() -> None:
 @pytest.mark.parametrize(
     "assignment",
     [
+        "id=gen_random_uuid()",
         "raw_item_id=gen_random_uuid()",
         "observation_id=gen_random_uuid()",
         "provider='marketaux'",
@@ -1249,6 +1250,15 @@ async def test_packet_serialized_size_budget_reports_truncation() -> None:
         "factual_payload=jsonb_set(factual_payload,'{value}','0')",
         "projection_hash=repeat('0',64)",
         "quality_status='complete'",
+        "processing_status='pending'",
+        "processing_status='processing'",
+        "processing_status='blocked'",
+        "processing_status='retry'",
+        "safe_error_code='unsafe'",
+        "attempt_count=attempt_count+1",
+        "next_retry_at=now()",
+        "processed_at=processed_at + interval '1 second'",
+        "created_at=created_at + interval '1 second'",
     ],
 )
 async def test_linked_projection_direct_sql_factual_mutation_is_rejected(
@@ -1298,6 +1308,117 @@ async def test_packet_builder_rejects_tampered_ready_projection() -> None:
                 text("UPDATE sources SET access_method='marketaux' WHERE id=:id"),
                 {"id": raw.source_id},
             )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_linked_projection_allows_only_updated_at_and_packet_digest_stays_stable() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, projection_id, _ = await _seed_ready(factory, "finnhub")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        builder = RichEvidencePacketBuilder(factory)
+        before = await builder.build_one(evidence_id)
+        async with factory.begin() as session:
+            await session.execute(
+                text(
+                    "UPDATE safe_fact_projections "
+                    "SET updated_at=updated_at + interval '1 second' WHERE id=:id"
+                ),
+                {"id": projection_id},
+            )
+        after = await builder.build_one(evidence_id)
+        assert after.packet_digest == before.packet_digest
+        assert after == before
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_linked_projection_delete_is_rejected() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, projection_id, _ = await _seed_ready(factory, "marketaux")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text("DELETE FROM safe_fact_projections WHERE id=:id"),
+                    {"id": projection_id},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_packet_retention_and_canonical_time_tampering_fail_closed() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "eia")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        async with factory.begin() as session:
+            await session.execute(
+                text("UPDATE raw_items SET retention_class='link_only' WHERE id=:id"),
+                {"id": raw_id},
+            )
+        with pytest.raises(RichEvidenceError, match="rich_evidence_provenance_invalid"):
+            await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        async with factory.begin() as session:
+            await session.execute(
+                text("UPDATE raw_items SET retention_class='metadata_only' WHERE id=:id"),
+                {"id": raw_id},
+            )
+            await session.execute(
+                text(
+                    "UPDATE evidence_items SET event_time=event_time + interval '1 day' "
+                    "WHERE id=:id"
+                ),
+                {"id": evidence_id},
+            )
+        with pytest.raises(RichEvidenceError, match="rich_evidence_time_provenance_invalid"):
+            await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_packet_scan_budget_crosses_sparse_quality_rows_without_starvation() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        for _ in range(8):
+            await _seed_ready(factory, "finnhub")  # unknown currency/exchange => partial
+        await _seed_ready(
+            factory,
+            "eia",
+            payload_updates={"unit": "dollars_per_megawatthour"},
+        )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=20)).linked == 9
+        page = await RichEvidencePacketBuilder(factory).list_packets(
+            limit=1, quality="complete", scan_limit=20
+        )
+        assert page.returned_count == 1
+        assert page.scanned_count >= 1
+        assert page.packets[0].quality == "complete"
+        assert page.scan_exhausted is False
     finally:
         await _cleanup(factory)
         await engine.dispose()

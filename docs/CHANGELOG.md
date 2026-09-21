@@ -5,7 +5,10 @@
 - Add SPEC-0046 and a typed provider-neutral packet contract for six approved operation paths.
 - Add deterministic, bounded, read-only packet construction with keyset listing, revision lineage, explicit
   missing/blocked/truncation semantics, and exact Finnhub/EIA numeric preservation.
-- Add migration 0010 to prevent direct SQL mutation/deletion of linked factual projection fields.
+- Strengthen migration 0010 to a future-safe whole-row immutable guard for linked projections; only `updated_at`
+  remains mutable bookkeeping.
+- Add explicit canonical/current time provenance, retention/content policy validation, final UTF-8 packet-size
+  accounting, and bounded scan/result pagination metadata.
 - Keep production authority legacy; no external request, activation, Event/Fact/Impact/AI or M2-C/D work.
 
 ## M2-A PR #46 directed blocker fixes

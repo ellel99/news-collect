@@ -2,7 +2,8 @@
 
 M2-B adds no packet table. `RichEvidencePacket` is a deterministic typed read model over LINKED
 `EvidenceProjectionLink`, READY `SafeFactProjection`, observation/raw/evidence/content and collection provenance.
-Migration 0010 protects linked projection factual identity/payload/hash/quality against UPDATE or DELETE while
+Migration 0010 protects the whole linked projection row against UPDATE or DELETE, excluding only `updated_at`
+from comparison; status/error/retry/processed time and future columns therefore remain immutable while
 explicit worker bookkeeping fields remain mutable. Downgrade fails closed when linked state exists.
 
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end

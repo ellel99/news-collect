@@ -160,8 +160,10 @@ class RichEvidencePacket:
     provider_item_type: str
     access_level: str
     retention_class: str
-    event_time: datetime | None
-    observed_at: datetime
+    canonical_event_time: datetime | None
+    canonical_observed_at: datetime
+    current_published_at: datetime
+    current_observed_at: datetime
     provenance: SourceProvenance
     content: ContentReference
     current: EvidenceRevision
@@ -176,6 +178,10 @@ class RichEvidencePacket:
 class PacketPage:
     packets: tuple[RichEvidencePacket, ...]
     next_evidence_id: uuid.UUID | None
+    scanned_count: int
+    returned_count: int
+    scan_exhausted: bool
+    has_more: bool
 
 
 class RichEvidenceError(ValueError):

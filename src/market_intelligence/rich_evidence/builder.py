@@ -7,7 +7,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -59,6 +59,15 @@ _EXPECTED_TYPE = {
     ("sec_edgar", "submissions_recent"): "sec_filing",
 }
 
+_RETENTION_POLICY = {
+    ("marketaux", "news_all"): frozenset({"link_only", "metadata_only"}),
+    ("finnhub", "quote"): frozenset({"metadata_only"}),
+    ("finnhub", "company_news"): frozenset({"link_only", "metadata_only"}),
+    ("eia", "electricity_retail_sales"): frozenset({"metadata_only"}),
+    ("eia", "electricity_rto_region_data"): frozenset({"metadata_only"}),
+    ("sec_edgar", "submissions_recent"): frozenset({"link_only", "metadata_only"}),
+}
+
 
 class RichEvidencePacketBuilder:
     """Build packets without mutating the database or reading RawItem payload storage."""
@@ -96,6 +105,7 @@ class RichEvidencePacketBuilder:
         limit: int = 50,
         provider: str | None = None,
         quality: str | None = None,
+        scan_limit: int | None = None,
     ) -> PacketPage:
         if not 1 <= limit <= self._max_batch:
             raise RichEvidenceError("rich_evidence_batch_limit_invalid")
@@ -103,27 +113,54 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_filter_invalid")
         if quality is not None and quality not in {"complete", "partial"}:
             raise RichEvidenceError("rich_evidence_filter_invalid")
+        effective_scan_limit = scan_limit if scan_limit is not None else min(limit * 10, 5_000)
+        if not limit <= effective_scan_limit <= 5_000:
+            raise RichEvidenceError("rich_evidence_scan_limit_invalid")
         async with self._factory() as session:
-            statement = (
-                select(EvidenceItem)
-                .join(EvidenceProjectionLink)
-                .where(EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED)
-                .distinct()
-                .order_by(EvidenceItem.id)
-                .limit(limit + 1)
-            )
-            if after_evidence_id is not None:
-                statement = statement.where(EvidenceItem.id > after_evidence_id)
-            if provider is not None:
-                statement = statement.where(EvidenceItem.provider == provider)
-            rows = list((await session.scalars(statement)).all())
             packets: list[RichEvidencePacket] = []
-            for evidence in rows[:limit]:
-                packet = await self._build(session, evidence)
-                if quality is None or packet.quality == quality:
-                    packets.append(packet)
-            next_id = rows[limit - 1].id if len(rows) > limit else None
-            return PacketPage(tuple(packets), next_id)
+            scanned = 0
+            cursor = after_evidence_id
+            more = False
+            while len(packets) < limit and scanned < effective_scan_limit:
+                take = min(100, effective_scan_limit - scanned)
+                statement = (
+                    select(EvidenceItem)
+                    .join(EvidenceProjectionLink)
+                    .where(EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED)
+                    .distinct()
+                    .order_by(EvidenceItem.id)
+                    .limit(take + 1)
+                )
+                if cursor is not None:
+                    statement = statement.where(EvidenceItem.id > cursor)
+                if provider is not None:
+                    statement = statement.where(EvidenceItem.provider == provider)
+                rows = list((await session.scalars(statement)).all())
+                page_rows = rows[:take]
+                more = len(rows) > take
+                if not page_rows:
+                    more = False
+                    break
+                for evidence in page_rows:
+                    scanned += 1
+                    cursor = evidence.id
+                    packet = await self._build(session, evidence)
+                    if quality is None or packet.quality == quality:
+                        packets.append(packet)
+                        if len(packets) == limit:
+                            more = more or evidence is not page_rows[-1]
+                            break
+                if len(packets) == limit or not more:
+                    break
+            exhausted = scanned >= effective_scan_limit and more
+            return PacketPage(
+                tuple(packets),
+                cursor if more or exhausted else None,
+                scanned,
+                len(packets),
+                exhausted,
+                more or exhausted,
+            )
 
     async def _build(self, session: AsyncSession, evidence: EvidenceItem) -> RichEvidencePacket:
         rows = (
@@ -172,6 +209,7 @@ class RichEvidencePacketBuilder:
             or first_run.source_account_id != evidence.source_account_id
             or (evidence.source_account_id is not None and account is None)
             or (account is not None and account.source_id != evidence.source_id)
+            or raw.retention_class != source.retention_class
         ):
             raise RichEvidenceError("rich_evidence_provenance_invalid")
 
@@ -220,10 +258,26 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_operation_conflict")
         revisions.sort(key=lambda item: (item[0].observed_at, item[0].projection_id.hex))
         current, current_run, current_target = revisions[-1]
+        allowed_retention = _RETENTION_POLICY.get((evidence.provider, current.operation_key))
+        if allowed_retention is None or raw.retention_class not in allowed_retention:
+            raise RichEvidenceError("rich_evidence_retention_policy_invalid")
+        revision_event_times = {_facts_published_at(item[0].facts) for item in revisions}
+        revision_observed_times = {_utc(item[0].observed_at) for item in revisions}
+        if (
+            evidence.event_time is None
+            or _utc(evidence.event_time) not in revision_event_times
+            or _utc(evidence.observed_at) not in revision_observed_times
+        ):
+            raise RichEvidenceError("rich_evidence_time_provenance_invalid")
         selected = revisions[-self._max_revisions :]
         reason = "revision_budget" if len(selected) < len(revisions) else "none"
         content = await self._content_reference(
-            session, evidence, rows, current.operation_key, current.provider_contract_version
+            session,
+            evidence,
+            rows,
+            tuple(item[0] for item in revisions),
+            current.operation_key,
+            current.provider_contract_version,
         )
         missing, blocked = _availability(current.facts)
         packet = self._assemble(
@@ -315,6 +369,7 @@ class RichEvidencePacketBuilder:
         session: AsyncSession,
         evidence: EvidenceItem,
         rows: Sequence[Any],
+        revisions: tuple[EvidenceRevision, ...],
         operation: str,
         provider_contract_version: int,
     ) -> ContentReference:
@@ -338,10 +393,24 @@ class RichEvidencePacketBuilder:
             or content.source_id != evidence.source_id
             or content.source_account_id != evidence.source_account_id
             or policy.content != content.content_kind.value
-            or (
-                evidence.provider == "sec_edgar"
-                and content.body_availability.value != "unavailable"
-            )
+            or content.body_availability.value != "unavailable"
+        ):
+            raise RichEvidenceError("rich_evidence_content_invalid")
+        if evidence.provider in {"eia"} or (
+            evidence.provider == "finnhub" and operation == "quote"
+        ):
+            raise RichEvidenceError("rich_evidence_content_invalid")
+        facts = tuple(revision.facts for revision in revisions)
+        if evidence.provider in {"marketaux", "finnhub"} and not any(
+            isinstance(item, (MarketauxNewsFacts, FinnhubCompanyNewsFacts))
+            and item.title == content.title
+            and item.canonical_url == content.canonical_url
+            for item in facts
+        ):
+            raise RichEvidenceError("rich_evidence_content_invalid")
+        if evidence.provider == "sec_edgar" and not any(
+            isinstance(item, SecFilingFacts) and item.official_url == content.canonical_url
+            for item in facts
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         return ContentReference(
@@ -381,8 +450,10 @@ class RichEvidencePacketBuilder:
             provider_item_type=evidence.provider_item_type,
             access_level=evidence.access_level,
             retention_class=raw.retention_class,
-            event_time=evidence.event_time,
-            observed_at=evidence.observed_at,
+            canonical_event_time=evidence.event_time,
+            canonical_observed_at=evidence.observed_at,
+            current_published_at=_facts_published_at(current.facts),
+            current_observed_at=current.observed_at,
             provenance=SourceProvenance(
                 source_id=evidence.source_id,
                 source_account_id=evidence.source_account_id,
@@ -445,15 +516,31 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, uuid.UUID):
         return str(value)
     if isinstance(value, datetime):
-        return value.isoformat()
+        return _utc(value).isoformat()
     return value
 
 
 def _canonical_json(value: Mapping[str, Any]) -> str:
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     )
 
 
 def _encoded_size(packet: RichEvidencePacket) -> int:
-    return len(_canonical_json(_material(packet)).encode())
+    return len(
+        _canonical_json(cast(dict[str, Any], _json_safe(dataclasses.asdict(packet)))).encode()
+    )
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise RichEvidenceError("rich_evidence_time_provenance_invalid")
+    return value.astimezone(UTC)
+
+
+def _facts_published_at(facts: TypedFacts) -> datetime:
+    try:
+        value = datetime.fromisoformat(facts.published_at.replace("Z", "+00:00"))
+    except ValueError:
+        raise RichEvidenceError("rich_evidence_time_provenance_invalid") from None
+    return _utc(value)

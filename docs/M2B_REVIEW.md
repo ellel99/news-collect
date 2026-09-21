@@ -5,8 +5,9 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
 ## Review surface
 
 - SPEC-0046 and typed contracts in `rich_evidence/`.
-- Deterministic read-only builder with typed allowlists, keyset batch API and explicit budgets.
-- Migration 0010 linked-projection factual immutability guard.
+- Deterministic read-only builder with typed retention/content/time policy, bounded scan/result keyset API and
+  final serialized UTF-8 size budget.
+- Migration 0010 whole-row linked-projection immutability guard; only `updated_at` is allowlisted.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions

@@ -23,14 +23,12 @@ def upgrade() -> None:
         IF TG_OP='DELETE' THEN
           RAISE EXCEPTION 'linked_safe_fact_projection_immutable';
         END IF;
-        IF NEW.raw_item_id IS DISTINCT FROM OLD.raw_item_id
-          OR NEW.observation_id IS DISTINCT FROM OLD.observation_id
-          OR NEW.provider IS DISTINCT FROM OLD.provider
-          OR NEW.operation_key IS DISTINCT FROM OLD.operation_key
-          OR NEW.projection_schema_version IS DISTINCT FROM OLD.projection_schema_version
-          OR NEW.factual_payload IS DISTINCT FROM OLD.factual_payload
-          OR NEW.projection_hash IS DISTINCT FROM OLD.projection_hash
-          OR NEW.quality_status IS DISTINCT FROM OLD.quality_status
+        IF NEW.processing_status <> 'ready'
+          OR NEW.safe_error_code IS NOT NULL
+          OR NEW.next_retry_at IS NOT NULL
+          OR NEW.processed_at IS NULL
+          OR (to_jsonb(NEW) - ARRAY['updated_at'])
+             IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['updated_at'])
         THEN
           RAISE EXCEPTION 'linked_safe_fact_projection_immutable';
         END IF;
