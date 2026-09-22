@@ -45,6 +45,25 @@ def upgrade() -> None:
           OR e.source_id IS DISTINCT FROM r.source_id
           OR e.source_account_id IS DISTINCT FROM r.source_account_id
           OR r.retention_class IS DISTINCT FROM s.retention_class
+          OR NOT (
+            (p.provider='marketaux' AND p.operation_key='news_all'
+              AND e.provider_item_type='marketaux_news' AND e.evidence_kind='news'
+              AND e.source_type='news' AND e.access_level='link_only')
+            OR (p.provider='finnhub' AND p.operation_key='quote'
+              AND e.provider_item_type='finnhub_quote' AND e.evidence_kind='market_data'
+              AND e.source_type='market_data' AND e.access_level='licensed')
+            OR (p.provider='finnhub' AND p.operation_key='company_news'
+              AND e.provider_item_type='finnhub_company_news' AND e.evidence_kind='news'
+              AND e.source_type='news' AND e.access_level='licensed')
+            OR (p.provider='eia' AND p.operation_key IN
+                  ('electricity_retail_sales','electricity_rto_region_data')
+              AND e.provider_item_type='eia_energy_timeseries'
+              AND e.evidence_kind='energy_official' AND e.source_type='official_energy'
+              AND e.access_level='public_summary')
+            OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
+              AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
+              AND e.source_type='disclosure' AND e.access_level='link_only')
+          )
         )
       ) THEN RAISE EXCEPTION 'migration_0010_existing_linked_lineage_invalid'; END IF;
       IF EXISTS (
@@ -53,7 +72,8 @@ def upgrade() -> None:
         JOIN evidence_items e ON e.id=l.evidence_item_id
         LEFT JOIN content_items c ON c.id=l.content_item_id
         WHERE l.status='linked' AND (
-          (p.provider IN ('finnhub','eia') AND l.content_item_id IS NOT NULL)
+          ((p.provider='eia' OR (p.provider='finnhub' AND p.operation_key='quote'))
+            AND l.content_item_id IS NOT NULL)
           OR (l.content_item_id IS NOT NULL AND (
             c.id IS NULL OR c.raw_item_id IS DISTINCT FROM p.raw_item_id
             OR c.body IS NOT NULL OR c.source_summary IS NOT NULL OR c.author IS NOT NULL
@@ -64,6 +84,9 @@ def upgrade() -> None:
             OR (p.provider='marketaux' AND c.language IS DISTINCT FROM
                 p.factual_payload->>'language')
             OR (p.provider IN ('finnhub','sec_edgar') AND c.language IS NOT NULL)
+            OR (p.provider IN ('marketaux','finnhub') AND c.content_kind <> 'article')
+            OR (p.provider='sec_edgar' AND (c.content_kind <> 'official_release'
+                OR c.body_availability <> 'unavailable'))
           ))
         )
       ) THEN RAISE EXCEPTION 'migration_0010_existing_linked_content_invalid'; END IF;
@@ -176,6 +199,36 @@ def upgrade() -> None:
         WHERE p.id=NEW.safe_fact_projection_id;
         PERFORM pg_advisory_xact_lock(hashtextextended('source:'||source_identity::text,0));
         PERFORM pg_advisory_xact_lock(hashtextextended('raw:'||raw_identity::text,0));
+        IF NOT EXISTS (
+          SELECT 1 FROM safe_fact_projections p
+          JOIN raw_items r ON r.id=p.raw_item_id
+          JOIN sources s ON s.id=r.source_id
+          JOIN evidence_items e ON e.id=NEW.evidence_item_id
+          WHERE p.id=NEW.safe_fact_projection_id
+            AND s.retention_class=r.retention_class
+            AND e.raw_item_id=r.id AND e.source_id=r.source_id
+            AND e.source_account_id IS NOT DISTINCT FROM r.source_account_id
+            AND e.provider=p.provider
+            AND (
+              (p.provider='marketaux' AND p.operation_key='news_all'
+                AND e.provider_item_type='marketaux_news' AND e.evidence_kind='news'
+                AND e.source_type='news' AND e.access_level='link_only')
+              OR (p.provider='finnhub' AND p.operation_key='quote'
+                AND e.provider_item_type='finnhub_quote' AND e.evidence_kind='market_data'
+                AND e.source_type='market_data' AND e.access_level='licensed')
+              OR (p.provider='finnhub' AND p.operation_key='company_news'
+                AND e.provider_item_type='finnhub_company_news' AND e.evidence_kind='news'
+                AND e.source_type='news' AND e.access_level='licensed')
+              OR (p.provider='eia' AND p.operation_key IN
+                    ('electricity_retail_sales','electricity_rto_region_data')
+                AND e.provider_item_type='eia_energy_timeseries'
+                AND e.evidence_kind='energy_official' AND e.source_type='official_energy'
+                AND e.access_level='public_summary')
+              OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
+                AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
+                AND e.source_type='disclosure' AND e.access_level='link_only')
+            )
+        ) THEN RAISE EXCEPTION 'linked_operation_policy_invalid'; END IF;
         IF EXISTS (SELECT 1 FROM evidence_projection_links
                    WHERE evidence_item_id=NEW.evidence_item_id AND status='linked')
              IS DISTINCT FROM (NOT NEW.canonical_evidence) THEN
@@ -204,6 +257,18 @@ def upgrade() -> None:
              OR (provider_key IN ('finnhub','sec_edgar') AND c.language IS NOT NULL) THEN
             RAISE EXCEPTION 'linked_content_field_policy_invalid';
           END IF;
+          IF NEW.canonical_content AND NOT EXISTS (
+            SELECT 1 FROM safe_fact_projections p WHERE p.id=NEW.safe_fact_projection_id
+              AND c.source_published_at=(p.factual_payload->>'published_at')::timestamptz
+              AND c.original_url=COALESCE(p.factual_payload->>'canonical_url',
+                                          p.factual_payload->>'official_url')
+              AND c.canonical_url=c.original_url
+              AND (
+                (p.provider IN ('marketaux','finnhub') AND c.content_kind='article'
+                  AND c.title=p.factual_payload->>'title')
+                OR (p.provider='sec_edgar' AND c.content_kind='official_release')
+              )
+          ) THEN RAISE EXCEPTION 'canonical_content_projection_mismatch'; END IF;
         END IF;
       END IF;
       RETURN NEW;

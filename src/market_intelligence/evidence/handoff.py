@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.db.models import (
     BodyAvailability,
+    CollectionRun,
+    CollectionTarget,
     ContentItem,
     ContentKind,
     DeletedStatus,
@@ -23,6 +25,8 @@ from market_intelligence.db.models import (
     RawItemObservation,
     SafeFactProjection,
     SafeProjectionProcessingStatus,
+    Source,
+    SourceAccount,
 )
 from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
 from market_intelligence.providers.operation_policy import factual_operation_policy
@@ -228,14 +232,68 @@ class EvidenceProjectionHandoffWorker:
                     or link.status is not EvidenceProjectionLinkStatus.PROCESSING
                 ):
                     raise HandoffConflict("evidence_projection_concurrent_change")
+                # All factual and provenance checks are intentionally repeated only
+                # after the final lock set. Values inspected before locking are never
+                # consumed to create downstream state.
                 try:
-                    factual_operation_policy(
+                    normalized, locked_quality = normalize_and_classify_factual_payload(
+                        projection.provider,
+                        projection.operation_key,
+                        projection.projection_schema_version,
+                        projection.factual_payload,
+                    )
+                    if normalized != projection.factual_payload:
+                        raise ProjectionContractError("projection_not_canonical")
+                    if canonical_projection_hash(normalized) != projection.projection_hash:
+                        raise ProjectionContractError("projection_hash_mismatch")
+                    if locked_quality != projection.quality_status.value:
+                        raise ProjectionContractError("projection_quality_mismatch")
+                    policy = factual_operation_policy(
                         projection.provider,
                         projection.operation_key,
                         observation.provider_contract_version,
                     )
-                except ValueError as exc:
+                except (ProjectionContractError, ValueError) as exc:
                     raise HandoffConflict("evidence_projection_contract_invalid") from exc
+                run = await session.get(CollectionRun, observation.collection_run_id)
+                source = await session.get(Source, raw.source_id)
+                account = (
+                    None
+                    if raw.source_account_id is None
+                    else await session.get(SourceAccount, raw.source_account_id)
+                )
+                target = (
+                    None
+                    if observation.target_id is None
+                    else await session.get(CollectionTarget, observation.target_id)
+                )
+                if (
+                    run is None
+                    or source is None
+                    or projection.raw_item_id != raw.id
+                    or observation.raw_item_id != raw.id
+                    or observation.provider != projection.provider
+                    or observation.operation_key != projection.operation_key
+                    or observation.projection_hash != projection.projection_hash
+                    or run.source_id != raw.source_id
+                    or run.source_account_id != raw.source_account_id
+                    or run.target_id != observation.target_id
+                    or source.access_method != projection.provider
+                    or source.retention_class != raw.retention_class
+                    or (raw.source_account_id is not None and account is None)
+                    or (account is not None and account.source_id != raw.source_id)
+                    or (
+                        target is not None
+                        and (
+                            target.source_id != raw.source_id
+                            or target.source_account_id != raw.source_account_id
+                            or target.operation_key != projection.operation_key
+                        )
+                    )
+                    or (target is None and observation.target_id is not None)
+                    or policy.access not in {"link_only", "licensed", "public_summary"}
+                ):
+                    raise HandoffConflict("evidence_projection_provenance_invalid")
                 content = await _content(session, projection, raw)
                 evidence = await _evidence(session, projection, observation, raw, content)
                 prior_evidence_link = await session.scalar(
