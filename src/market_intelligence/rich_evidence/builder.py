@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.db.models import (
@@ -92,7 +92,8 @@ class RichEvidencePacketBuilder:
         self._max_batch = max_batch_size
 
     async def build_one(self, evidence_id: uuid.UUID) -> RichEvidencePacket:
-        async with self._factory() as session:
+        async with self._factory() as session, session.begin():
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
             evidence = await session.get(EvidenceItem, evidence_id)
             if evidence is None:
                 raise RichEvidenceError("rich_evidence_not_found")
@@ -113,10 +114,11 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_filter_invalid")
         if quality is not None and quality not in {"complete", "partial"}:
             raise RichEvidenceError("rich_evidence_filter_invalid")
-        effective_scan_limit = scan_limit if scan_limit is not None else min(limit * 10, 5_000)
-        if not limit <= effective_scan_limit <= 5_000:
+        effective_scan_limit = scan_limit if scan_limit is not None else min(limit * 10, 500)
+        if not limit <= effective_scan_limit <= 500:
             raise RichEvidenceError("rich_evidence_scan_limit_invalid")
-        async with self._factory() as session:
+        async with self._factory() as session, session.begin():
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
             packets: list[RichEvidencePacket] = []
             scanned = 0
             cursor = after_evidence_id
@@ -246,6 +248,7 @@ class RichEvidencePacketBuilder:
                         provider_contract_version=observation.provider_contract_version,
                         collection_target_id=observation.target_id,
                         config_revision=observation.config_revision,
+                        linked_at=link.linked_at,
                         observed_at=observation.observed_at,
                         quality=cast(Any, quality),
                         facts=facts,
@@ -261,12 +264,11 @@ class RichEvidencePacketBuilder:
         allowed_retention = _RETENTION_POLICY.get((evidence.provider, current.operation_key))
         if allowed_retention is None or raw.retention_class not in allowed_retention:
             raise RichEvidenceError("rich_evidence_retention_policy_invalid")
-        revision_event_times = {_facts_published_at(item[0].facts) for item in revisions}
-        revision_observed_times = {_utc(item[0].observed_at) for item in revisions}
+        canonical = min(revisions, key=lambda item: (item[0].linked_at, item[0].link_id.hex))[0]
         if (
             evidence.event_time is None
-            or _utc(evidence.event_time) not in revision_event_times
-            or _utc(evidence.observed_at) not in revision_observed_times
+            or _utc(evidence.event_time) != _facts_published_at(canonical.facts)
+            or _utc(evidence.observed_at) != _utc(canonical.observed_at)
         ):
             raise RichEvidenceError("rich_evidence_time_provenance_invalid")
         selected = revisions[-self._max_revisions :]
@@ -276,6 +278,7 @@ class RichEvidencePacketBuilder:
             evidence,
             rows,
             tuple(item[0] for item in revisions),
+            canonical,
             current.operation_key,
             current.provider_contract_version,
         )
@@ -347,6 +350,7 @@ class RichEvidencePacketBuilder:
             or observation.operation_key != projection.operation_key
             or observation.projection_hash != projection.projection_hash
             or observation.collection_run_id != run.id
+            or run.target_id != observation.target_id
             or observation.source_id != raw.source_id
             or observation.source_account_id != raw.source_account_id
             or run.source_id != raw.source_id
@@ -360,7 +364,6 @@ class RichEvidencePacketBuilder:
             or target.source_id != raw.source_id
             or target.source_account_id != raw.source_account_id
             or target.operation_key != observation.operation_key
-            or target.provider_contract_version != observation.provider_contract_version
         ):
             raise RichEvidenceError("rich_evidence_provenance_invalid")
 
@@ -370,6 +373,7 @@ class RichEvidencePacketBuilder:
         evidence: EvidenceItem,
         rows: Sequence[Any],
         revisions: tuple[EvidenceRevision, ...],
+        canonical: EvidenceRevision,
         operation: str,
         provider_contract_version: int,
     ) -> ContentReference:
@@ -400,17 +404,26 @@ class RichEvidencePacketBuilder:
             evidence.provider == "finnhub" and operation == "quote"
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
-        facts = tuple(revision.facts for revision in revisions)
-        if evidence.provider in {"marketaux", "finnhub"} and not any(
-            isinstance(item, (MarketauxNewsFacts, FinnhubCompanyNewsFacts))
-            and item.title == content.title
-            and item.canonical_url == content.canonical_url
-            for item in facts
+        facts = canonical.facts
+        if evidence.provider in {"marketaux", "finnhub"} and not (
+            isinstance(facts, (MarketauxNewsFacts, FinnhubCompanyNewsFacts))
+            and facts.title == content.title
+            and facts.canonical_url == content.canonical_url
+            and content.original_url == facts.canonical_url
+            and content.source_published_at is not None
+            and _utc(content.source_published_at) == _facts_published_at(facts)
+            and content.body is None
+            and content.source_summary is None
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
-        if evidence.provider == "sec_edgar" and not any(
-            isinstance(item, SecFilingFacts) and item.official_url == content.canonical_url
-            for item in facts
+        if evidence.provider == "sec_edgar" and not (
+            isinstance(facts, SecFilingFacts)
+            and facts.official_url == content.canonical_url
+            and content.original_url == facts.official_url
+            and content.source_published_at is not None
+            and _utc(content.source_published_at) == _facts_published_at(facts)
+            and content.body is None
+            and content.source_summary is None
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         return ContentReference(
@@ -527,9 +540,12 @@ def _canonical_json(value: Mapping[str, Any]) -> str:
 
 
 def _encoded_size(packet: RichEvidencePacket) -> int:
-    return len(
-        _canonical_json(cast(dict[str, Any], _json_safe(dataclasses.asdict(packet)))).encode()
-    )
+    return len(canonical_packet_bytes(packet))
+
+
+def canonical_packet_bytes(packet: RichEvidencePacket) -> bytes:
+    """Serialize the complete packet exactly as counted by the byte budget."""
+    return _canonical_json(cast(dict[str, Any], _json_safe(dataclasses.asdict(packet)))).encode()
 
 
 def _utc(value: datetime) -> datetime:

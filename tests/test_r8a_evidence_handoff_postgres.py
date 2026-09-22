@@ -44,7 +44,11 @@ from market_intelligence.evidence.write_path import (
     EvidenceWriteService,
     EvidenceWriteStatus,
 )
-from market_intelligence.rich_evidence import RichEvidenceError, RichEvidencePacketBuilder
+from market_intelligence.rich_evidence import (
+    RichEvidenceError,
+    RichEvidencePacketBuilder,
+    canonical_packet_bytes,
+)
 from market_intelligence.rich_evidence.contracts import (
     EiaRetailFacts,
     EiaRtoFacts,
@@ -230,6 +234,9 @@ async def _seed_ready(
 
 
 async def _cleanup(factory: async_sessionmaker[AsyncSession]) -> None:
+    # LINKED lineage is deliberately undeletable after migration 0010. These tests use
+    # random source identities in the disposable CI database; cleanup may only remove
+    # fixtures that never reached LINKED.
     async with factory.begin() as session:
         source_ids = tuple(
             await session.scalars(
@@ -251,6 +258,16 @@ async def _cleanup(factory: async_sessionmaker[AsyncSession]) -> None:
                 select(SafeFactProjection.id).where(SafeFactProjection.raw_item_id.in_(raw_ids))
             )
         )
+        linked_count = await session.scalar(
+            select(func.count())
+            .select_from(EvidenceProjectionLink)
+            .where(
+                EvidenceProjectionLink.safe_fact_projection_id.in_(projection_ids),
+                EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
+            )
+        )
+        if linked_count:
+            return
         await session.execute(
             delete(EvidenceProjectionLink).where(
                 EvidenceProjectionLink.safe_fact_projection_id.in_(projection_ids)
@@ -277,6 +294,40 @@ async def _cleanup(factory: async_sessionmaker[AsyncSession]) -> None:
         )
         await session.execute(
             text("DELETE FROM sources WHERE id = ANY(:ids)"), {"ids": list(source_ids)}
+        )
+
+
+async def _link_with_explicit_evidence_id(
+    factory: async_sessionmaker[AsyncSession],
+    projection_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+) -> None:
+    """Create deterministic UUID ordering for packet keyset behavior tests."""
+    async with factory.begin() as session:
+        projection = await session.get(SafeFactProjection, projection_id)
+        assert projection is not None
+        observation = await session.get(RawItemObservation, projection.observation_id)
+        raw = await session.get(RawItem, projection.raw_item_id)
+        assert observation is not None and raw is not None
+        content = await handoff_module._content(session, projection, raw)
+        evidence = await handoff_module._evidence(session, projection, observation, raw, content)
+        original_id = evidence.id
+        await session.execute(
+            text("UPDATE evidence_items SET id=:new_id WHERE id=:old_id"),
+            {"new_id": evidence_id, "old_id": original_id},
+        )
+        session.expunge(evidence)
+        session.add(
+            EvidenceProjectionLink(
+                safe_fact_projection_id=projection.id,
+                evidence_item_id=evidence_id,
+                content_item_id=None if content is None else content.id,
+                status=EvidenceProjectionLinkStatus.LINKED,
+                attempt_count=1,
+                next_retry_at=None,
+                safe_error_code=None,
+                linked_at=datetime.now(UTC),
+            )
         )
 
 
@@ -1232,6 +1283,39 @@ async def test_packet_serialized_size_budget_reports_truncation() -> None:
         assert packet.truncation.truncated is True
         assert packet.truncation.reason == "serialized_size_budget"
         assert packet.current == packet.revisions[-1]
+        assert len(canonical_packet_bytes(packet)) <= 6_000
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_single_current_revision_final_utf8_packet_over_budget_fails_closed() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(
+            factory, "marketaux", payload_updates={"title": "事件" * 1_200}
+        )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert evidence_id is not None
+        packet = await RichEvidencePacketBuilder(factory, max_serialized_bytes=100_000).build_one(
+            evidence_id
+        )
+        exact_size = len(canonical_packet_bytes(packet))
+        assert exact_size > 1_024
+        exact = await RichEvidencePacketBuilder(factory, max_serialized_bytes=exact_size).build_one(
+            evidence_id
+        )
+        assert len(canonical_packet_bytes(exact)) == exact_size
+        with pytest.raises(RichEvidenceError, match="rich_evidence_packet_budget_exceeded"):
+            await RichEvidencePacketBuilder(factory, max_serialized_bytes=exact_size - 1).build_one(
+                evidence_id
+            )
     finally:
         await _cleanup(factory)
         await engine.dispose()
@@ -1362,6 +1446,124 @@ async def test_linked_projection_delete_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "table,assignment",
+    [
+        ("evidence_projection_links", "attempt_count=attempt_count+1"),
+        ("evidence_projection_links", "safe_error_code='changed'"),
+        ("evidence_projection_links", "next_retry_at=now()"),
+        ("evidence_projection_links", "created_at=created_at + interval '1 second'"),
+        ("raw_item_observations", "observed_at=observed_at + interval '1 second'"),
+        ("raw_item_observations", "config_revision=1"),
+        ("raw_item_observations", "provider_contract_version=2"),
+        ("raw_item_observations", "operation_key='changed'"),
+        ("raw_items", "collection_run_id=gen_random_uuid()"),
+        ("raw_items", "retention_class='changed'"),
+        ("evidence_items", "event_time=event_time + interval '1 second'"),
+        ("evidence_items", "observed_at=observed_at + interval '1 second'"),
+        ("content_items", "body='forbidden'"),
+        ("content_items", "source_summary='forbidden'"),
+        ("content_items", "title='changed'"),
+        ("content_items", "source_published_at=source_published_at + interval '1 second'"),
+    ],
+)
+async def test_linked_lineage_direct_sql_mutation_is_rejected(table: str, assignment: str) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        provider = "marketaux" if table == "content_items" else "eia"
+        raw_id, projection_id, _ = await _seed_ready(factory, provider)
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            projection = await session.get(SafeFactProjection, projection_id)
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert projection is not None and link is not None
+            identities = {
+                "evidence_projection_links": link.id,
+                "raw_item_observations": projection.observation_id,
+                "raw_items": raw_id,
+                "evidence_items": link.evidence_item_id,
+                "content_items": link.content_item_id,
+            }
+        identity = identities[table]
+        assert identity is not None
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text(f"UPDATE {table} SET {assignment} WHERE id=:id"),
+                    {"id": identity},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_link_delete_cannot_remove_packet_or_unlock_projection() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, projection_id, _ = await _seed_ready(factory, "marketaux")
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            evidence_id = await session.scalar(
+                select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
+            )
+        assert link is not None and evidence_id is not None
+        before = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text("DELETE FROM evidence_projection_links WHERE id=:id"), {"id": link.id}
+                )
+        after = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        assert after.packet_digest == before.packet_digest
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text("UPDATE safe_fact_projections SET attempt_count=99 WHERE id=:id"),
+                    {"id": projection_id},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_nonlinked_association_can_be_cleaned_up() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, projection_id, _ = await _seed_ready(factory, "eia")
+        async with factory.begin() as session:
+            identity = await session.scalar(
+                text(
+                    "INSERT INTO evidence_projection_links"
+                    "(safe_fact_projection_id,status,attempt_count) "
+                    "VALUES (:projection,'pending',0) RETURNING id"
+                ),
+                {"projection": projection_id},
+            )
+            await session.execute(
+                text("DELETE FROM evidence_projection_links WHERE id=:id"), {"id": identity}
+            )
+        async with factory() as session:
+            assert await session.get(EvidenceProjectionLink, identity) is None
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_packet_retention_and_canonical_time_tampering_fail_closed() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -1373,27 +1575,31 @@ async def test_packet_retention_and_canonical_time_tampering_fail_closed() -> No
                 select(EvidenceItem.id).where(EvidenceItem.raw_item_id == raw_id)
             )
         assert evidence_id is not None
-        async with factory.begin() as session:
-            await session.execute(
-                text("UPDATE raw_items SET retention_class='link_only' WHERE id=:id"),
-                {"id": raw_id},
-            )
-        with pytest.raises(RichEvidenceError, match="rich_evidence_provenance_invalid"):
-            await RichEvidencePacketBuilder(factory).build_one(evidence_id)
-        async with factory.begin() as session:
-            await session.execute(
-                text("UPDATE raw_items SET retention_class='metadata_only' WHERE id=:id"),
-                {"id": raw_id},
-            )
-            await session.execute(
-                text(
-                    "UPDATE evidence_items SET event_time=event_time + interval '1 day' "
-                    "WHERE id=:id"
-                ),
-                {"id": evidence_id},
-            )
-        with pytest.raises(RichEvidenceError, match="rich_evidence_time_provenance_invalid"):
-            await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        async with factory() as session:
+            raw = await session.get(RawItem, raw_id)
+            assert raw is not None
+            source_id = raw.source_id
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text("UPDATE raw_items SET retention_class='link_only' WHERE id=:id"),
+                    {"id": raw_id},
+                )
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text("UPDATE sources SET retention_class='link_only' WHERE id=:id"),
+                    {"id": source_id},
+                )
+        with pytest.raises(DBAPIError):
+            async with factory.begin() as session:
+                await session.execute(
+                    text(
+                        "UPDATE evidence_items SET event_time=event_time + interval '1 day' "
+                        "WHERE id=:id"
+                    ),
+                    {"id": evidence_id},
+                )
     finally:
         await _cleanup(factory)
         await engine.dispose()
@@ -1404,19 +1610,27 @@ async def test_packet_scan_budget_crosses_sparse_quality_rows_without_starvation
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        for _ in range(8):
-            await _seed_ready(factory, "marketaux", payload_updates={"title": None})
-        await _seed_ready(
+        for index in range(8):
+            _, projection_id, _ = await _seed_ready(
+                factory, "marketaux", payload_updates={"title": None}
+            )
+            await _link_with_explicit_evidence_id(
+                factory, projection_id, uuid.UUID(int=10_000 + index)
+            )
+        _, complete_projection, _ = await _seed_ready(
             factory,
             "eia",
             payload_updates={"unit": "dollars_per_megawatthour"},
         )
-        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=20)).linked == 9
+        await _link_with_explicit_evidence_id(factory, complete_projection, uuid.UUID(int=20_000))
         page = await RichEvidencePacketBuilder(factory).list_packets(
-            limit=1, quality="complete", scan_limit=20
+            after_evidence_id=uuid.UUID(int=9_999),
+            limit=1,
+            quality="complete",
+            scan_limit=20,
         )
         assert page.returned_count == 1
-        assert page.scanned_count >= 1
+        assert page.scanned_count == 9
         assert page.packets[0].quality == "complete"
         assert page.scan_exhausted is False
     finally:

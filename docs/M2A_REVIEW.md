@@ -19,7 +19,7 @@ review PR; M2-C/D remain unimplemented.
 
 Validation results and exact reviewed commit/changed-file count are recorded in the Draft PR body after execution.
 
-## Implementation self-check ledger (independent review still pending)
+## M2-B follow-on implementation self-check ledger（independent M2-B review pending）
 
 - VERIFIED_FIXED: provider-only Evidence dispatch now resolves exact operation/version; company-news has its
   own news type and RTO has its own typed factual contract.

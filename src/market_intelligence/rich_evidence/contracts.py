@@ -135,6 +135,7 @@ class EvidenceRevision:
     provider_contract_version: int
     collection_target_id: uuid.UUID | None
     config_revision: int | None
+    linked_at: datetime
     observed_at: datetime
     quality: Quality
     facts: TypedFacts

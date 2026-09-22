@@ -98,7 +98,7 @@ RawItems remains prohibited.
 - **Acceptance:** restart-safe projection can reproduce allowed Evidence/Content inputs, reject unsafe content and
   trace every field to target/run/raw/evidence without provider SDK dependency.
 
-### R8-A — SafeFactProjection → Evidence Durable Handoff（Active — Implementation Review）
+### R8-A — SafeFactProjection → Evidence Durable Handoff（Completed）
 
 - **Current limitation:** READY factual projections are durable, but canonical Evidence has no durable per-revision
   handoff state or link to the factual source.

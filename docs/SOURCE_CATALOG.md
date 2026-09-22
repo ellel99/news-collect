@@ -83,7 +83,7 @@
 | `official_rss` | 政府、监管、公司官方 RSS | Polling | Official Evidence Layer；逐 Feed 审核 |
 | `event_registry_candidate` | NewsAPI.ai / Event Registry | Polling（未来评估） | future / blocked；不在当前 smoke 序列 |
 | `marketaux_candidate` | Marketaux | Polling（按授权） | adapter/runtime/scheduler PASS（当前批准范围）；multi-target production control plane pending |
-| `finnhub_candidate` | Finnhub | Polling（当前批准 quote operation） | adapter/runtime/scheduler PASS；Market Validation implementation 仍禁止 |
+| `finnhub_candidate` | Finnhub | Polling（当前批准 bounded quote 与 company_news operations） | adapter/runtime/scheduler PASS；尚未 production activation，Market Validation implementation 仍禁止 |
 
 公开网页不等于允许批量采集全文。CNBC、Reuters 公开线索等仍需逐来源确认 robots、条款、保留和 parser 合同。
 

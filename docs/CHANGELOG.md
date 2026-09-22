@@ -7,6 +7,10 @@
   missing/blocked/truncation semantics, and exact Finnhub/EIA numeric preservation.
 - Strengthen migration 0010 to a future-safe whole-row immutable guard for linked projections; only `updated_at`
   remains mutable bookkeeping.
+- Extend 0010 default-deny protection across LINKED association, Observation, canonical RawItem,
+  Evidence/Content and Source retention; LINKED lineage cannot be deleted.
+- Bind canonical Evidence/Content to first `(linked_at, link_id)` adoption and build packets in one repeatable-read,
+  read-only database snapshot without consulting mutable target contract revisions.
 - Add explicit canonical/current time provenance, retention/content policy validation, final UTF-8 packet-size
   accounting, and bounded scan/result pagination metadata.
 - Keep production authority legacy; no external request, activation, Event/Fact/Impact/AI or M2-C/D work.

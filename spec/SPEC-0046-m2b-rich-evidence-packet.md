@@ -29,12 +29,14 @@ provenance. RawItem payload storage is never read.
 
 ## Revision and budget semantics
 
-One canonical Evidence may have many linked projections. Revisions sort by `(observed_at, projection_id)`;
+One canonical Evidence may have many linked projections. Canonical Evidence/Content bind to the first durable
+adoption ordered by `(linked_at, link_id)` and never change. Revisions sort by `(observed_at, projection_id)`;
 the greatest key is current. Equal timestamps therefore have a stable UUID tie-breaker. Revision history is
 bounded (default 50, hard maximum 500). Batch reads use stable Evidence UUID keysets with separate bounded
-scan and result budgets: `limit` is returned packets, `scan_limit` is inspected Evidence, and the cursor is the
-last scanned UUID. `scanned_count`, `returned_count`, `scan_exhausted`, and `has_more` make sparse post-filter
-pages explicit without starvation or unbounded scans. Canonical serialized bytes are bounded (default 256 KiB,
+scan and result budgets: `limit` is returned packets, `scan_limit` (hard maximum 500) is inspected Evidence, and
+the cursor is the last scanned UUID. `scanned_count`, `returned_count`, `scan_exhausted`, and `has_more` make
+sparse post-filter pages explicit without starvation or unbounded scans. A malformed packet fails the page
+closed rather than being silently skipped. Canonical serialized bytes are bounded (default 256 KiB,
 hard maximum 2 MiB). Truncation retains the
 current revision, reports total/included counts and an explicit reason, and never upgrades partial data to
 complete. Revisions are not cross-source contradictions; M2-C owns association and contradiction semantics.
@@ -55,10 +57,16 @@ Content; SEC requires official-release, unavailable body and a linked validated 
 
 ## Database protection
 
-Migration 0010 (parent 0009) adds a PostgreSQL trigger. Once a READY projection is referenced by a LINKED handoff,
-DELETE fails closed. A whole-row comparison removes only `updated_at` before comparison, so every current and
-future column defaults immutable. Linked projection status remains READY, error/retry remain null, and
-`processed_at` remains non-null and immutable. `updated_at` is the sole bookkeeping allowlist field.
+Migration 0010 (parent 0009) adds stopped-writer PostgreSQL guards for the full durable lineage. A LINKED
+association cannot be deleted and is whole-row immutable except `updated_at`; its Projection, Observation,
+canonical RawItem and Evidence cannot be deleted or rewritten. Linked Content is whole-row immutable except
+`updated_at`, and Source retention cannot change while linked lineage exists. Linked projection status remains
+READY, error/retry remain null, and `processed_at` remains non-null and immutable. Future columns default
+immutable. Non-linked worker recovery/cleanup remains legal. Downgrade fails closed while any LINKED state exists.
+
+Each packet is built inside one PostgreSQL repeatable-read, read-only transaction. Historical target revision and
+contract values come from frozen Observation/Run lineage; current mutable target versions, pause or retirement do
+not invalidate historical packets. Target is consulted only for stable target/source/account/operation identity.
 Existing linked Evidence/Content/link immutability remains in force. Downgrade refuses while linked state exists;
 it never deletes factual data.
 
