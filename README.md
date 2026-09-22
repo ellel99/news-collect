@@ -3,6 +3,8 @@
 M2-A is complete in main. M2-B is implemented in a Draft PR as a deterministic, typed, bounded Rich Evidence
 Packet read boundary over linked READY safe factual projections. It does not persist a second factual payload,
 call external services, or activate the unified control plane. Production authority remains `legacy`.
+Draft M2-B persists independent canonical Evidence and canonical Content adoption identities, so a later safe
+Content revision can be adopted without rewriting an earlier partial Evidence revision.
 
 Historical M2-A implementation: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
 first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.

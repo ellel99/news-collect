@@ -3,6 +3,8 @@
 M2-A is merged and complete. M2-B is implemented in a Draft PR as a read-only Rich Evidence Packet boundary;
 review remains pending. It reads only linked READY factual projections and never reads raw payload storage.
 Production authority remains `legacy`; M2-C/D and real AI remain unauthorized.
+Draft M2-B uses separate durable canonical Evidence/Content adoption markers, value-free migration preflight,
+compatible lineage locks, and an explicit test-only PostgreSQL database gate.
 
 Historical PR #46 M2-A summary: explicit fixed/rolling windows, pre-request durable run/config/window-bound lineage,
 atomic empty-completion cleanup, exact operation continuation codecs, keyset continuation,

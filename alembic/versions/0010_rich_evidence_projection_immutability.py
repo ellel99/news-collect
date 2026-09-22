@@ -61,6 +61,9 @@ def upgrade() -> None:
             OR c.reply_to_external_id IS NOT NULL OR c.quote_external_id IS NOT NULL
             OR c.repost_external_id IS NOT NULL OR c.deleted_status <> 'unknown'
             OR c.metadata - ARRAY['provider','operation_key','retention'] <> '{}'::jsonb
+            OR (p.provider='marketaux' AND c.language IS DISTINCT FROM
+                p.factual_payload->>'language')
+            OR (p.provider IN ('finnhub','sec_edgar') AND c.language IS NOT NULL)
           ))
         )
       ) THEN RAISE EXCEPTION 'migration_0010_existing_linked_content_invalid'; END IF;
@@ -194,7 +197,11 @@ def upgrade() -> None:
              OR c.repost_external_id IS NOT NULL OR c.deleted_status <> 'unknown'
              OR c.metadata - ARRAY['provider','operation_key','retention'] <> '{}'::jsonb
              OR c.metadata->>'provider' IS DISTINCT FROM provider_key
-             OR c.metadata->>'operation_key' IS DISTINCT FROM operation_identity THEN
+             OR c.metadata->>'operation_key' IS DISTINCT FROM operation_identity
+             OR (provider_key='marketaux' AND c.language IS DISTINCT FROM
+                 (SELECT factual_payload->>'language' FROM safe_fact_projections
+                  WHERE id=NEW.safe_fact_projection_id))
+             OR (provider_key IN ('finnhub','sec_edgar') AND c.language IS NOT NULL) THEN
             RAISE EXCEPTION 'linked_content_field_policy_invalid';
           END IF;
         END IF;
