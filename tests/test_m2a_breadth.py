@@ -650,56 +650,9 @@ async def seed(factory, provider, operation, pages=3):
 
 
 async def cleanup(factory, ids):
-    source, _account, _target = ids
+    _source, _account, _target = ids
     async with factory.begin() as session:
-        await session.execute(
-            text(
-                "DELETE FROM audit_logs WHERE target_id IN (SELECT id FROM collection_targets WHERE source_id=:source)"
-            ),
-            {"source": source},
-        )
-        await session.execute(
-            text(
-                "DELETE FROM evidence_projection_links WHERE safe_fact_projection_id IN (SELECT p.id FROM safe_fact_projections p JOIN raw_items r ON r.id=p.raw_item_id WHERE r.source_id=:source)"
-            ),
-            {"source": source},
-        )
-        await session.execute(
-            text(
-                "DELETE FROM notifications WHERE content_item_id IN (SELECT id FROM content_items WHERE source_id=:source)"
-            ),
-            {"source": source},
-        )
-        for table in ("evidence_items", "content_items"):
-            await session.execute(
-                text(f"DELETE FROM {table} WHERE source_id=:source"), {"source": source}
-            )
-        await session.execute(
-            text(
-                "DELETE FROM safe_fact_projections WHERE raw_item_id IN (SELECT id FROM raw_items WHERE source_id=:source)"
-            ),
-            {"source": source},
-        )
-        for table in ("raw_item_observations", "raw_items"):
-            await session.execute(
-                text(f"DELETE FROM {table} WHERE source_id=:source"), {"source": source}
-            )
-        await session.execute(
-            text(
-                "DELETE FROM collection_cursors WHERE target_id IN (SELECT id FROM collection_targets WHERE source_id=:source) OR source_account_id IN (SELECT id FROM source_accounts WHERE source_id=:source)"
-            ),
-            {"source": source},
-        )
-        await session.execute(
-            text("DELETE FROM collection_runs WHERE source_id=:source"), {"source": source}
-        )
-        await session.execute(
-            text("DELETE FROM collection_targets WHERE source_id=:source"), {"source": source}
-        )
-        await session.execute(
-            text("DELETE FROM source_accounts WHERE source_id=:source"), {"source": source}
-        )
-        await session.execute(text("DELETE FROM sources WHERE id=:source"), {"source": source})
+        await session.execute(text("TRUNCATE TABLE sources CASCADE"))
 
 
 @pytest.mark.asyncio

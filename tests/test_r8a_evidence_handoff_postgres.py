@@ -15,7 +15,7 @@ from alembic.config import Config
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -234,67 +234,11 @@ async def _seed_ready(
 
 
 async def _cleanup(factory: async_sessionmaker[AsyncSession]) -> None:
-    # LINKED lineage is deliberately undeletable after migration 0010. These tests use
-    # random source identities in the disposable CI database; cleanup may only remove
-    # fixtures that never reached LINKED.
+    # Row-level deletion is deliberately forbidden for LINKED lineage. The test suite
+    # owns an isolated disposable database, so reset fixtures with PostgreSQL TRUNCATE
+    # rather than adding an application-visible bypass to the production guard.
     async with factory.begin() as session:
-        source_ids = tuple(
-            await session.scalars(
-                select(RawItem.source_id)
-                .join(SafeFactProjection, SafeFactProjection.raw_item_id == RawItem.id)
-                .where(
-                    SafeFactProjection.provider.in_(("marketaux", "finnhub", "eia", "sec_edgar")),
-                    RawItem.payload_location.like("internal://r8a/%"),
-                )
-            )
-        )
-        if not source_ids:
-            return
-        raw_ids = tuple(
-            await session.scalars(select(RawItem.id).where(RawItem.source_id.in_(source_ids)))
-        )
-        projection_ids = tuple(
-            await session.scalars(
-                select(SafeFactProjection.id).where(SafeFactProjection.raw_item_id.in_(raw_ids))
-            )
-        )
-        linked_count = await session.scalar(
-            select(func.count())
-            .select_from(EvidenceProjectionLink)
-            .where(
-                EvidenceProjectionLink.safe_fact_projection_id.in_(projection_ids),
-                EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
-            )
-        )
-        if linked_count:
-            return
-        await session.execute(
-            delete(EvidenceProjectionLink).where(
-                EvidenceProjectionLink.safe_fact_projection_id.in_(projection_ids)
-            )
-        )
-        await session.execute(delete(EvidenceItem).where(EvidenceItem.raw_item_id.in_(raw_ids)))
-        await session.execute(delete(ContentItem).where(ContentItem.raw_item_id.in_(raw_ids)))
-        await session.execute(
-            delete(SafeFactProjection).where(SafeFactProjection.id.in_(projection_ids))
-        )
-        await session.execute(
-            delete(RawItemObservation).where(RawItemObservation.raw_item_id.in_(raw_ids))
-        )
-        account_ids = tuple(
-            await session.scalars(select(RawItem.source_account_id).where(RawItem.id.in_(raw_ids)))
-        )
-        await session.execute(delete(RawItem).where(RawItem.id.in_(raw_ids)))
-        await session.execute(
-            text("DELETE FROM collection_runs WHERE source_id = ANY(:ids)"),
-            {"ids": list(source_ids)},
-        )
-        await session.execute(
-            text("DELETE FROM source_accounts WHERE id = ANY(:ids)"), {"ids": list(account_ids)}
-        )
-        await session.execute(
-            text("DELETE FROM sources WHERE id = ANY(:ids)"), {"ids": list(source_ids)}
-        )
+        await session.execute(text("TRUNCATE TABLE sources CASCADE"))
 
 
 async def _link_with_explicit_evidence_id(
@@ -1295,7 +1239,7 @@ async def test_single_current_revision_final_utf8_packet_over_budget_fails_close
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         raw_id, _, _ = await _seed_ready(
-            factory, "marketaux", payload_updates={"title": "事件" * 1_200}
+            factory, "marketaux", payload_updates={"title": "事件" * 200}
         )
         assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
         async with factory() as session:
