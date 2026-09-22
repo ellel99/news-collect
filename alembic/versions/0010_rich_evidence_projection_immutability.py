@@ -63,6 +63,18 @@ def upgrade() -> None:
             OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
               AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
               AND e.source_type='disclosure' AND e.access_level='link_only')
+            OR (e.provider_item_id ~ '^provider-item:[0-9a-f]{64}$'
+              AND p.provider IN ('finnhub','eia')
+              AND e.access_level='link_only'
+              AND (
+                (p.provider='finnhub' AND p.operation_key='quote'
+                  AND e.provider_item_type='finnhub_quote'
+                  AND e.evidence_kind='market_data' AND e.source_type='market_data')
+                OR (p.provider='eia' AND p.operation_key='electricity_retail_sales'
+                  AND e.provider_item_type='eia_energy_timeseries'
+                  AND e.evidence_kind='energy_official'
+                  AND e.source_type='official_energy')
+              ))
           )
         )
       ) THEN RAISE EXCEPTION 'migration_0010_existing_linked_lineage_invalid'; END IF;
@@ -227,6 +239,18 @@ def upgrade() -> None:
               OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
                 AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
                 AND e.source_type='disclosure' AND e.access_level='link_only')
+              OR (e.provider_item_id ~ '^provider-item:[0-9a-f]{64}$'
+                AND p.provider IN ('finnhub','eia')
+                AND e.access_level='link_only'
+                AND (
+                  (p.provider='finnhub' AND p.operation_key='quote'
+                    AND e.provider_item_type='finnhub_quote'
+                    AND e.evidence_kind='market_data' AND e.source_type='market_data')
+                  OR (p.provider='eia' AND p.operation_key='electricity_retail_sales'
+                    AND e.provider_item_type='eia_energy_timeseries'
+                    AND e.evidence_kind='energy_official'
+                    AND e.source_type='official_energy')
+                ))
             )
         ) THEN RAISE EXCEPTION 'linked_operation_policy_invalid'; END IF;
         IF EXISTS (SELECT 1 FROM evidence_projection_links

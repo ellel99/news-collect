@@ -255,17 +255,34 @@ class EvidenceProjectionHandoffWorker:
                     )
                 except (ProjectionContractError, ValueError) as exc:
                     raise HandoffConflict("evidence_projection_contract_invalid") from exc
-                run = await session.get(CollectionRun, observation.collection_run_id)
-                source = await session.get(Source, raw.source_id)
+                run = await session.get(
+                    CollectionRun,
+                    observation.collection_run_id,
+                    with_for_update=True,
+                    populate_existing=True,
+                )
+                source = await session.get(
+                    Source, raw.source_id, with_for_update=True, populate_existing=True
+                )
                 account = (
                     None
                     if raw.source_account_id is None
-                    else await session.get(SourceAccount, raw.source_account_id)
+                    else await session.get(
+                        SourceAccount,
+                        raw.source_account_id,
+                        with_for_update=True,
+                        populate_existing=True,
+                    )
                 )
                 target = (
                     None
                     if observation.target_id is None
-                    else await session.get(CollectionTarget, observation.target_id)
+                    else await session.get(
+                        CollectionTarget,
+                        observation.target_id,
+                        with_for_update=True,
+                        populate_existing=True,
+                    )
                 )
                 if (
                     run is None
@@ -275,6 +292,8 @@ class EvidenceProjectionHandoffWorker:
                     or observation.provider != projection.provider
                     or observation.operation_key != projection.operation_key
                     or observation.projection_hash != projection.projection_hash
+                    or observation.source_id != raw.source_id
+                    or observation.source_account_id != raw.source_account_id
                     or run.source_id != raw.source_id
                     or run.source_account_id != raw.source_account_id
                     or run.target_id != observation.target_id
