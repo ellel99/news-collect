@@ -1677,3 +1677,67 @@ async def test_0010_migration_roundtrip_and_linked_state_guard() -> None:
         await connection.run_sync(roundtrip)
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0010_upgrade_accepts_existing_finnhub_company_news_lineage() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
+
+    def downgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.downgrade()
+
+    def upgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.upgrade()
+
+    try:
+        await _cleanup(factory)
+        async with engine.begin() as connection:
+            await connection.run_sync(downgrade)
+        raw_id, projection_id, _ = await _seed_ready(
+            factory,
+            "finnhub",
+            operation_payload=_extra_operation_payload("company_news"),
+        )
+        async with factory.begin() as session:
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert projection is not None
+            observation = await session.get(RawItemObservation, projection.observation_id)
+            raw = await session.get(RawItem, raw_id)
+            assert observation is not None and raw is not None
+            content = await handoff_module._content(session, projection, raw)
+            evidence = await handoff_module._evidence(
+                session, projection, observation, raw, content
+            )
+            assert content is not None
+            await session.execute(
+                text("""
+                INSERT INTO evidence_projection_links(
+                  safe_fact_projection_id,evidence_item_id,content_item_id,status,
+                  attempt_count,linked_at
+                ) VALUES (:projection,:evidence,:content,'linked',1,:linked_at)
+                """),
+                {
+                    "projection": projection.id,
+                    "evidence": evidence.id,
+                    "content": content.id,
+                    "linked_at": datetime.now(UTC),
+                },
+            )
+        async with engine.begin() as connection:
+            await connection.run_sync(upgrade)
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert link is not None
+            assert link.canonical_evidence is True
+            assert link.canonical_content is True
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
