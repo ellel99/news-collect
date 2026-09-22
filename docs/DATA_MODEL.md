@@ -550,7 +550,9 @@ Entity 与 Asset 通过稳定映射关联，避免仅靠文本代码识别。
 ## R8-A Evidence projection handoff
 
 `evidence_projection_links` is the durable state and lineage boundary from one READY SafeFactProjection to one
-canonical EvidenceItem. `safe_fact_projection_id` is unique; revision projections for the same RawItem/provider
+canonical EvidenceItem. `safe_fact_projection_id` is unique; independent `canonical_evidence` and
+`canonical_content` markers identify the one immutable originating association for each canonical row. A partial
+Evidence revision may therefore precede the first safe Content revision. Revision projections for the same RawItem/provider
 may share an EvidenceItem while retaining their distinct projection hashes and factual payloads. The link may also
 reference the allowlisted Marketaux or SEC ContentItem created/adopted in the same transaction. PostgreSQL guards
 enforce null-safe raw/source/account/provider provenance. The link never copies factual payload and Finnhub/EIA do

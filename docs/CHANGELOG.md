@@ -2,6 +2,8 @@
 
 ## Unreleased — M2-B Rich Evidence Packet
 
+- Persist independent canonical Evidence/Content adoption identities, add value-free 0010 existing-state
+  preflight and compatible advisory locking, and require explicit test-only PostgreSQL isolation.
 - Add SPEC-0046 and a typed provider-neutral packet contract for six approved operation paths.
 - Add deterministic, bounded, read-only packet construction with keyset listing, revision lineage, explicit
   missing/blocked/truncation semantics, and exact Finnhub/EIA numeric preservation.

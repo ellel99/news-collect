@@ -1165,7 +1165,10 @@ async def test_content_adoption_can_follow_partial_evidence_adoption(provider: s
             operation_payload=operation_payload,
             payload_updates={"title": None, "canonical_url": None},
         )
-        await _seed_ready(factory, provider, raw_id=raw_id, operation_payload=operation_payload)
+        complete_payload = (
+            _extra_operation_payload("company_news") if provider == "finnhub" else None
+        )
+        await _seed_ready(factory, provider, raw_id=raw_id, operation_payload=complete_payload)
         assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 2
         async with factory() as session:
             links = tuple(
@@ -1181,7 +1184,7 @@ async def test_content_adoption_can_follow_partial_evidence_adoption(provider: s
         assert next(link for link in links if link.canonical_evidence).content_item_id is None
         assert next(link for link in links if link.canonical_content).content_item_id is not None
         packet = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
-        assert packet.content.content_id is not None
+        assert packet.content.content_item_id is not None
     finally:
         await _cleanup(factory)
         await engine.dispose()

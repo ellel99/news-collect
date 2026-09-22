@@ -29,8 +29,11 @@ provenance. RawItem payload storage is never read.
 
 ## Revision and budget semantics
 
-One canonical Evidence may have many linked projections. Canonical Evidence/Content bind to the first durable
-adoption ordered by `(linked_at, link_id)` and never change. Revisions sort by `(observed_at, projection_id)`;
+One canonical Evidence may have many linked projections. Migration 0010 persists separate unique
+`canonical_evidence` and `canonical_content` markers on the exact handoff association; neither identity is
+inferred from timestamps, insertion order or random UUIDs, and neither may change. Evidence may be adopted from
+an earlier partial revision while the first later safe Content revision becomes canonical Content. Revisions
+sort by `(observed_at, projection_id)`;
 the greatest key is current. Equal timestamps therefore have a stable UUID tie-breaker. Revision history is
 bounded (default 50, hard maximum 500). Batch reads use stable Evidence UUID keysets with separate bounded
 scan and result budgets: `limit` is returned packets, `scan_limit` (hard maximum 500) is inspected Evidence, and
@@ -69,6 +72,11 @@ contract values come from frozen Observation/Run lineage; current mutable target
 not invalidate historical packets. Target is consulted only for stable target/source/account/operation identity.
 Existing linked Evidence/Content/link immutability remains in force. Downgrade refuses while linked state exists;
 it never deletes factual data.
+
+Handoff and mutation triggers share the fixed advisory-lock order `Source -> RawItem`; handoff then locks
+Projection, Observation, downstream canonical rows and the association. Concurrent mutation therefore commits
+before linking or loses to immutable LINKED state. Migration 0010 first performs a value-free, fail-closed audit
+of existing LINKED lineage. Destructive PostgreSQL integration tests require an explicit test-only database name.
 
 ## Acceptance
 
