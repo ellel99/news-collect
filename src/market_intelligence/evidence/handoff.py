@@ -159,7 +159,7 @@ class EvidenceProjectionHandoffWorker:
     async def _link_one(self, identity: UUID, now: datetime) -> str:
         try:
             async with self._factory.begin() as session:
-                link = await session.get(EvidenceProjectionLink, identity, with_for_update=True)
+                link = await session.get(EvidenceProjectionLink, identity)
                 if link is None or link.status is not EvidenceProjectionLinkStatus.PROCESSING:
                     return "blocked"
                 projection = await session.get(SafeFactProjection, link.safe_fact_projection_id)
@@ -185,6 +185,40 @@ class EvidenceProjectionHandoffWorker:
                 observation = await session.get(RawItemObservation, projection.observation_id)
                 if raw is None or observation is None:
                     raise HandoffConflict("evidence_projection_provenance_missing")
+                # Global order: Source, RawItem identity, Projection, Observation,
+                # downstream canonical rows, then association. Matching trigger-side
+                # advisory locks close the visibility gap before LINKED becomes visible.
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                    {"key": f"source:{raw.source_id}"},
+                )
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                    {"key": f"raw:{raw.id}"},
+                )
+                raw = await session.get(
+                    RawItem, raw.id, with_for_update=True, populate_existing=True
+                )
+                projection = await session.get(
+                    SafeFactProjection, projection.id, with_for_update=True, populate_existing=True
+                )
+                observation = await session.get(
+                    RawItemObservation,
+                    observation.id,
+                    with_for_update=True,
+                    populate_existing=True,
+                )
+                link = await session.get(
+                    EvidenceProjectionLink, identity, with_for_update=True, populate_existing=True
+                )
+                if (
+                    raw is None
+                    or projection is None
+                    or observation is None
+                    or link is None
+                    or link.status is not EvidenceProjectionLinkStatus.PROCESSING
+                ):
+                    raise HandoffConflict("evidence_projection_concurrent_change")
                 try:
                     factual_operation_policy(
                         projection.provider,
@@ -195,8 +229,26 @@ class EvidenceProjectionHandoffWorker:
                     raise HandoffConflict("evidence_projection_contract_invalid") from exc
                 content = await _content(session, projection, raw)
                 evidence = await _evidence(session, projection, observation, raw, content)
+                prior_evidence_link = await session.scalar(
+                    select(EvidenceProjectionLink.id).where(
+                        EvidenceProjectionLink.evidence_item_id == evidence.id,
+                        EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
+                    )
+                )
+                prior_content_link = (
+                    None
+                    if content is None
+                    else await session.scalar(
+                        select(EvidenceProjectionLink.id).where(
+                            EvidenceProjectionLink.content_item_id == content.id,
+                            EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
+                        )
+                    )
+                )
                 link.evidence_item_id = evidence.id
                 link.content_item_id = None if content is None else content.id
+                link.canonical_evidence = prior_evidence_link is None
+                link.canonical_content = content is not None and prior_content_link is None
                 link.status = EvidenceProjectionLinkStatus.LINKED
                 link.linked_at = now
                 link.safe_error_code = None

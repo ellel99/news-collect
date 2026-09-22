@@ -264,7 +264,14 @@ class RichEvidencePacketBuilder:
         allowed_retention = _RETENTION_POLICY.get((evidence.provider, current.operation_key))
         if allowed_retention is None or raw.retention_class not in allowed_retention:
             raise RichEvidenceError("rich_evidence_retention_policy_invalid")
-        canonical = min(revisions, key=lambda item: (item[0].linked_at, item[0].link_id.hex))[0]
+        canonical_rows = [
+            revision
+            for revision, _run, _target in revisions
+            if next(row[0] for row in rows if row[0].id == revision.link_id).canonical_evidence
+        ]
+        if len(canonical_rows) != 1:
+            raise RichEvidenceError("rich_evidence_canonical_adoption_invalid")
+        canonical = canonical_rows[0]
         if (
             evidence.event_time is None
             or _utc(evidence.event_time) != _facts_published_at(canonical.facts)
@@ -278,7 +285,6 @@ class RichEvidencePacketBuilder:
             evidence,
             rows,
             tuple(item[0] for item in revisions),
-            canonical,
             current.operation_key,
             current.provider_contract_version,
         )
@@ -373,7 +379,6 @@ class RichEvidencePacketBuilder:
         evidence: EvidenceItem,
         rows: Sequence[Any],
         revisions: tuple[EvidenceRevision, ...],
-        canonical: EvidenceRevision,
         operation: str,
         provider_contract_version: int,
     ) -> ContentReference:
@@ -385,6 +390,13 @@ class RichEvidencePacketBuilder:
         if not content_ids:
             return ContentReference(None, None, False, "unavailable", False)
         content = await session.get(ContentItem, next(iter(content_ids)))
+        canonical_content_links = [row[0] for row in rows if row[0].canonical_content]
+        if len(canonical_content_links) != 1:
+            raise RichEvidenceError("rich_evidence_content_adoption_invalid")
+        canonical_content_link = canonical_content_links[0]
+        canonical_content_revision = next(
+            revision for revision in revisions if revision.link_id == canonical_content_link.id
+        )
         try:
             policy = factual_operation_policy(
                 evidence.provider, operation, provider_contract_version
@@ -398,13 +410,25 @@ class RichEvidencePacketBuilder:
             or content.source_account_id != evidence.source_account_id
             or policy.content != content.content_kind.value
             or content.body_availability.value != "unavailable"
+            or content.body is not None
+            or content.source_summary is not None
+            or content.author is not None
+            or content.content_hash is not None
+            or content.source_updated_at is not None
+            or content.reply_to_external_id is not None
+            or content.quote_external_id is not None
+            or content.repost_external_id is not None
+            or content.deleted_status.value != "unknown"
+            or set(content.metadata_) - {"provider", "operation_key", "retention"}
+            or content.metadata_.get("provider") != evidence.provider
+            or content.metadata_.get("operation_key") != operation
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         if evidence.provider in {"eia"} or (
             evidence.provider == "finnhub" and operation == "quote"
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
-        facts = canonical.facts
+        facts = canonical_content_revision.facts
         if evidence.provider in {"marketaux", "finnhub"} and not (
             isinstance(facts, (MarketauxNewsFacts, FinnhubCompanyNewsFacts))
             and facts.title == content.title
@@ -412,8 +436,8 @@ class RichEvidencePacketBuilder:
             and content.original_url == facts.canonical_url
             and content.source_published_at is not None
             and _utc(content.source_published_at) == _facts_published_at(facts)
-            and content.body is None
-            and content.source_summary is None
+            and content.language
+            == (facts.language if isinstance(facts, MarketauxNewsFacts) else None)
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         if evidence.provider == "sec_edgar" and not (
@@ -422,8 +446,7 @@ class RichEvidencePacketBuilder:
             and content.original_url == facts.official_url
             and content.source_published_at is not None
             and _utc(content.source_published_at) == _facts_published_at(facts)
-            and content.body is None
-            and content.source_summary is None
+            and content.language is None
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         return ContentReference(

@@ -1125,6 +1125,26 @@ class EvidenceProjectionLink(Base):
             "AND content_item_id IS NULL AND linked_at IS NULL)",
             name="ck_evidence_projection_links_linked_state",
         ),
+        CheckConstraint(
+            "NOT canonical_evidence OR status = 'linked'",
+            name="ck_evidence_projection_links_canonical_evidence_linked",
+        ),
+        CheckConstraint(
+            "NOT canonical_content OR (status = 'linked' AND content_item_id IS NOT NULL)",
+            name="ck_evidence_projection_links_canonical_content_linked",
+        ),
+        Index(
+            "uq_evidence_projection_links_canonical_evidence",
+            "evidence_item_id",
+            unique=True,
+            postgresql_where=text("canonical_evidence"),
+        ),
+        Index(
+            "uq_evidence_projection_links_canonical_content",
+            "content_item_id",
+            unique=True,
+            postgresql_where=text("canonical_content"),
+        ),
         Index(
             "ix_evidence_projection_links_claim",
             "status",
@@ -1158,6 +1178,8 @@ class EvidenceProjectionLink(Base):
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     safe_error_code: Mapped[str | None] = mapped_column(String(100))
     linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    canonical_evidence: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    canonical_content: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )

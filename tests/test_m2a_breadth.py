@@ -62,6 +62,7 @@ from market_intelligence.providers.credentials import RuntimeCredential
 from market_intelligence.providers.transport import MockProviderTransport
 from market_intelligence.providers.windows import resolve_window
 from market_intelligence.safe_projection.worker import SafeFactProjectionWorker
+from market_intelligence.test_database import isolated_test_database_url
 
 
 def rolling_config(operation="news_all"):
@@ -125,10 +126,10 @@ def empty_page(provider, operation):
     }
 
 
-DB = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
-)
+try:
+    DB = isolated_test_database_url(os.environ.get("TEST_DATABASE_URL"))
+except ValueError as exc:
+    pytest.skip(str(exc), allow_module_level=True)
 NOW = datetime(2026, 1, 3, tzinfo=UTC)
 CONFIGS = {
     ("marketaux", "news_all"): {

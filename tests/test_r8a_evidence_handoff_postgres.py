@@ -61,11 +61,12 @@ from market_intelligence.safe_projection.contracts import (
     canonical_projection_hash,
     normalize_and_classify_factual_payload,
 )
+from market_intelligence.test_database import isolated_test_database_url
 
-POSTGRES_TEST_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence",
-)
+try:
+    POSTGRES_TEST_URL = isolated_test_database_url(os.environ.get("TEST_DATABASE_URL"))
+except ValueError as exc:
+    pytest.skip(str(exc), allow_module_level=True)
 
 
 def _payload(provider: str, marker: str) -> tuple[str, dict[str, object]]:
@@ -271,6 +272,8 @@ async def _link_with_explicit_evidence_id(
                 next_retry_at=None,
                 safe_error_code=None,
                 linked_at=datetime.now(UTC),
+                canonical_evidence=True,
+                canonical_content=content is not None,
             )
         )
 
@@ -1106,6 +1109,79 @@ async def test_rich_evidence_revision_is_deterministic_and_preserves_numeric_val
             101.25,
             102.5,
         }
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revision_count", [2, 5, 50])
+async def test_canonical_evidence_adoption_is_explicit_with_shared_link_time(
+    revision_count: int,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, _, _ = await _seed_ready(factory, "finnhub")
+        for index in range(1, revision_count):
+            await _seed_ready(
+                factory,
+                "finnhub",
+                raw_id=raw_id,
+                payload_updates={"c": 101.25 + index},
+            )
+        assert (
+            await EvidenceProjectionHandoffWorker(factory).process_batch(limit=100)
+        ).linked == revision_count
+        async with factory() as session:
+            links = tuple(
+                await session.scalars(
+                    select(EvidenceProjectionLink)
+                    .join(EvidenceItem)
+                    .where(EvidenceItem.raw_item_id == raw_id)
+                )
+            )
+            evidence_id = links[0].evidence_item_id
+        assert sum(link.canonical_evidence for link in links) == 1
+        assert len({link.linked_at for link in links}) == 1
+        first = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        second = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        assert first.packet_digest == second.packet_digest
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["marketaux", "finnhub"])
+async def test_content_adoption_can_follow_partial_evidence_adoption(provider: str) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    operation_payload = _extra_operation_payload("company_news") if provider == "finnhub" else None
+    try:
+        raw_id, _, _ = await _seed_ready(
+            factory,
+            provider,
+            operation_payload=operation_payload,
+            payload_updates={"title": None, "canonical_url": None},
+        )
+        await _seed_ready(factory, provider, raw_id=raw_id, operation_payload=operation_payload)
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 2
+        async with factory() as session:
+            links = tuple(
+                await session.scalars(
+                    select(EvidenceProjectionLink)
+                    .join(EvidenceItem)
+                    .where(EvidenceItem.raw_item_id == raw_id)
+                )
+            )
+            evidence_id = links[0].evidence_item_id
+        assert sum(link.canonical_evidence for link in links) == 1
+        assert sum(link.canonical_content for link in links) == 1
+        assert next(link for link in links if link.canonical_evidence).content_item_id is None
+        assert next(link for link in links if link.canonical_content).content_item_id is not None
+        packet = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
+        assert packet.content.content_id is not None
     finally:
         await _cleanup(factory)
         await engine.dispose()
