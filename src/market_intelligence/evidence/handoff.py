@@ -85,12 +85,13 @@ class EvidenceProjectionHandoffWorker:
                 INSERT INTO evidence_projection_links(safe_fact_projection_id,status)
                 SELECT p.id,'pending'::evidence_projection_link_status
                 FROM safe_fact_projections p
+                JOIN raw_item_observations o ON o.id=p.observation_id
                 WHERE p.processing_status='ready'
                   AND NOT EXISTS (
                     SELECT 1 FROM evidence_projection_links l
                     WHERE l.safe_fact_projection_id=p.id
                   )
-                ORDER BY p.created_at,p.id
+                ORDER BY o.observed_at,p.id
                 LIMIT :limit
                 ON CONFLICT (safe_fact_projection_id) DO NOTHING
                 """),
@@ -129,6 +130,10 @@ class EvidenceProjectionHandoffWorker:
                 await session.scalars(
                     select(EvidenceProjectionLink)
                     .join(SafeFactProjection)
+                    .join(
+                        RawItemObservation,
+                        RawItemObservation.id == SafeFactProjection.observation_id,
+                    )
                     .where(
                         SafeFactProjection.processing_status
                         == SafeProjectionProcessingStatus.READY,
@@ -143,7 +148,11 @@ class EvidenceProjectionHandoffWorker:
                             EvidenceProjectionLink.next_retry_at <= now,
                         ),
                     )
-                    .order_by(EvidenceProjectionLink.created_at, EvidenceProjectionLink.id)
+                    .order_by(
+                        RawItemObservation.observed_at,
+                        SafeFactProjection.id,
+                        EvidenceProjectionLink.id,
+                    )
                     .limit(limit)
                     .with_for_update(skip_locked=True)
                 )
@@ -295,30 +304,44 @@ async def _content(
     payload = projection.factual_payload
     policy = factual_operation_policy(projection.provider, projection.operation_key)
     if policy.content == "article":
+        kind = ContentKind.ARTICLE
+        existing: ContentItem | None = await session.scalar(
+            select(ContentItem).where(ContentItem.raw_item_id == raw.id)
+        )
+        if existing is not None:
+            if (
+                existing.source_id != raw.source_id
+                or existing.source_account_id != raw.source_account_id
+                or existing.content_kind is not kind
+                or existing.external_id != payload["provider_item_id"]
+            ):
+                raise HandoffConflict("evidence_content_identity_conflict")
+            return existing
         if not all(
             isinstance(payload.get(k), str) and payload[k]
             for k in ("title", "canonical_url", "source_identity")
         ):
             return None
-        kind = ContentKind.ARTICLE
         title = payload["title"]
         url = payload["canonical_url"]
     elif policy.content == "official_release":
         kind = ContentKind.OFFICIAL_RELEASE
+        existing = await session.scalar(
+            select(ContentItem).where(ContentItem.raw_item_id == raw.id)
+        )
+        if existing is not None:
+            if (
+                existing.source_id != raw.source_id
+                or existing.source_account_id != raw.source_account_id
+                or existing.content_kind is not kind
+                or existing.external_id != payload["provider_item_id"]
+            ):
+                raise HandoffConflict("evidence_content_identity_conflict")
+            return existing
         title = f"SEC {payload['form']} filing"
         url = payload["official_url"]
     else:
         return None
-    existing = await session.scalar(select(ContentItem).where(ContentItem.raw_item_id == raw.id))
-    if existing is not None:
-        if (
-            existing.source_id != raw.source_id
-            or existing.source_account_id != raw.source_account_id
-            or existing.content_kind is not kind
-            or existing.external_id != payload["provider_item_id"]
-        ):
-            raise HandoffConflict("evidence_content_identity_conflict")
-        return existing
     item = ContentItem(
         raw_item_id=raw.id,
         source_id=raw.source_id,
