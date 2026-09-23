@@ -624,9 +624,15 @@ async def seed(factory, provider, operation, pages=3):
     async with factory.begin() as session:
         source = await session.scalar(
             text(
-                "INSERT INTO sources(code,name,source_type,access_method,authorization_status,retention_class,enabled) VALUES (:code,'M2 test','api',:provider,'authorized','metadata_only',true) RETURNING id"
+                "INSERT INTO sources(code,name,source_type,access_method,authorization_status,retention_class,enabled) VALUES (:code,'M2 test','api',:provider,'authorized',:retention,true) RETURNING id"
             ),
-            {"code": "m2-" + marker, "provider": provider},
+            {
+                "code": "m2-" + marker,
+                "provider": provider,
+                "retention": (
+                    "link_only" if provider in {"marketaux", "sec_edgar"} else "metadata_only"
+                ),
+            },
         )
         account = await session.scalar(
             text(
