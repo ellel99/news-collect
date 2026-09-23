@@ -387,10 +387,10 @@ async def test_revision_and_concurrent_reconciliation_are_idempotent() -> None:
 @pytest.mark.parametrize(
     "table,assignment",
     [
-        ("safe_fact_projections", "projection_hash=repeat('0',64)"),
+        ("safe_fact_projections", "quality_status='partial'"),
         ("raw_item_observations", "projection_hash=repeat('0',64)"),
-        ("raw_items", "retention_class='metadata_only'"),
-        ("sources", "retention_class='metadata_only'"),
+        ("raw_items", "retention_class='link_only'"),
+        ("sources", "retention_class='link_only'"),
     ],
 )
 async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(

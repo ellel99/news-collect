@@ -40,7 +40,7 @@ async def validate_0010_pre_migration(engine: AsyncEngine) -> tuple[dict[str, ob
                             JOIN safe_fact_projections p ON p.id=l.safe_fact_projection_id
                             JOIN raw_item_observations o ON o.id=p.observation_id
                             WHERE l.status='linked'
-                              AND (:cursor IS NULL OR p.id::text > :cursor)
+                              AND (CAST(:cursor AS text) IS NULL OR p.id::text > :cursor)
                             ORDER BY p.id::text
                             LIMIT :limit
                             """),
