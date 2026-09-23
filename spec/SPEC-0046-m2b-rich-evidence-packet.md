@@ -85,6 +85,10 @@ Concurrent mutation therefore commits
 before linking or loses to immutable LINKED state. Migration 0010 first performs a value-free, fail-closed audit
 of existing LINKED lineage. A validated legacy opaque Finnhub quote/EIA retail Evidence identity may be adopted
 without rewriting it; newly created Evidence must satisfy the current operation-specific access policy.
+Because PostgreSQL cannot safely reproduce the Python typed normalizers, deployment must run
+`scripts/m2b_pre_migration_validator.py` against revision 0009 and receive `PASS` before applying 0010. The
+validator uses a repeatable-read, read-only bounded keyset scan and emits only counts and stable safe error codes;
+0010 then performs the complementary relational fail-closed audit. Neither stage repairs factual data.
 Destructive PostgreSQL integration tests require an explicit PostgreSQL URL, allowlisted test database/user and
 local/CI host (or an explicit disposable isolation token).
 

@@ -63,6 +63,7 @@ from market_intelligence.safe_projection.contracts import (
     normalize_and_classify_factual_payload,
 )
 from market_intelligence.test_database import isolated_test_database_url
+from scripts.m2b_pre_migration_validator import validate as validate_0010_pre_migration
 
 try:
     POSTGRES_TEST_URL = isolated_test_database_url(os.environ.get("TEST_DATABASE_URL"))
@@ -1811,6 +1812,30 @@ async def test_0010_upgrade_accepts_existing_finnhub_company_news_lineage() -> N
                     "linked_at": datetime.now(UTC),
                 },
             )
+        report, exit_code = await validate_0010_pre_migration(engine)
+        assert exit_code == 0
+        assert report == {
+            "status": "PASS",
+            "checked_linked_projection_count": 1,
+            "safe_errors": [],
+        }
+        async with factory.begin() as session:
+            await session.execute(
+                text(
+                    "UPDATE safe_fact_projections SET projection_hash=repeat('0',64) WHERE id=:id"
+                ),
+                {"id": projection_id},
+            )
+        blocked, blocked_code = await validate_0010_pre_migration(engine)
+        assert blocked_code == 2
+        assert blocked["status"] == "BLOCKED"
+        assert blocked["safe_errors"] == ["migration_0010_projection_contract_invalid"]
+        async with factory.begin() as session:
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert projection is not None
+            observation = await session.get(RawItemObservation, projection.observation_id)
+            assert observation is not None
+            projection.projection_hash = observation.projection_hash
         async with engine.begin() as connection:
             await connection.run_sync(upgrade)
         async with factory() as session:

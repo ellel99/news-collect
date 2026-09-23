@@ -8,6 +8,7 @@
   adoption without rewriting factual rows.
 - Replaced packet-per-Evidence lineage loading with bounded set-based prefetch and explicit 1/50/500 query gates.
 - Tightened destructive PostgreSQL test URL validation to explicit database, user and host/isolation rules.
+- Added a mandatory read-only, value-free typed projection validator before migration 0010.
 
 ## Unreleased — M2-B Rich Evidence Packet
 

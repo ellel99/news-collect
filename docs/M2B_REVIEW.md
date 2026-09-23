@@ -19,6 +19,8 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
   and 36 at the hard maximum 500, including the repeatable-read snapshot statement.
 - Migration compatibility accepts only deterministically recognizable legacy opaque Finnhub quote/EIA retail
   Evidence identities; it never rewrites historical Evidence or relaxes new Evidence policy.
+- Applying 0010 requires the read-only, value-free `m2b_pre_migration_validator.py` typed-contract PASS first;
+  migration SQL remains the complementary relational audit and does not pretend to reproduce Python normalization.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions
