@@ -13,7 +13,12 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
   canonical-adoption markers written in the handoff transaction; historical target versions come from frozen
   observation/run lineage.
 - Migration 0010 performs value-free fail-closed existing-state preflight. Handoff and mutation guards share
-  `Source -> RawItem` advisory locking. Destructive integration tests require an explicit test-only database URL.
+  `Source -> RawItem` advisory locking, followed by row locks and complete locked-state contract/provenance
+  revalidation. Destructive integration tests require an explicit allowlisted PostgreSQL test database URL.
+- Batch packet reads use bounded 100-row set-based prefetch. Query gates are 8 statements at scan sizes 1/50
+  and 36 at the hard maximum 500, including the repeatable-read snapshot statement.
+- Migration compatibility accepts only deterministically recognizable legacy opaque Finnhub quote/EIA retail
+  Evidence identities; it never rewrites historical Evidence or relaxes new Evidence policy.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions

@@ -44,6 +44,10 @@ hard maximum 2 MiB). Truncation retains the
 current revision, reports total/included counts and an explicit reason, and never upgrades partial data to
 complete. Revisions are not cross-source contradictions; M2-C owns association and contradiction semantics.
 
+The builder prefetches each bounded 100-Evidence chunk with set-based lineage loads. Including the transaction
+snapshot statement, the query-count gate is 8 statements for scans of 1 or 50 and 36 for the maximum scan of
+500; query count grows by bounded chunks rather than approximately one packet at a time.
+
 ## Missing, coverage and access semantics
 
 `None` remains missing/unknown; blocked coverage remains blocked. Absence is never reconstructed as zero, false
@@ -74,9 +78,15 @@ Existing linked Evidence/Content/link immutability remains in force. Downgrade r
 it never deletes factual data.
 
 Handoff and mutation triggers share the fixed advisory-lock order `Source -> RawItem`; handoff then locks
-Projection, Observation, downstream canonical rows and the association. Concurrent mutation therefore commits
+Projection, Observation, Run, Target, SourceAccount, downstream canonical rows and the association. After the
+complete lock set is held, handoff reloads and revalidates typed normalization, hash, quality, operation contract,
+provenance, retention and access policy; no value inspected before locking is used to create downstream state.
+Concurrent mutation therefore commits
 before linking or loses to immutable LINKED state. Migration 0010 first performs a value-free, fail-closed audit
-of existing LINKED lineage. Destructive PostgreSQL integration tests require an explicit test-only database name.
+of existing LINKED lineage. A validated legacy opaque Finnhub quote/EIA retail Evidence identity may be adopted
+without rewriting it; newly created Evidence must satisfy the current operation-specific access policy.
+Destructive PostgreSQL integration tests require an explicit PostgreSQL URL, allowlisted test database/user and
+local/CI host (or an explicit disposable isolation token).
 
 ## Acceptance
 

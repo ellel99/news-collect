@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — M2-B concentrated correction
+
+- Revalidated the complete SafeFactProjection handoff contract and provenance only after the ordered database
+  lock set is held, while preserving value-free blocked/retry outcomes.
+- Corrected operation-specific 0010 policy for Finnhub company news and validated legacy opaque Evidence
+  adoption without rewriting factual rows.
+- Replaced packet-per-Evidence lineage loading with bounded set-based prefetch and explicit 1/50/500 query gates.
+- Tightened destructive PostgreSQL test URL validation to explicit database, user and host/isolation rules.
+
 ## Unreleased — M2-B Rich Evidence Packet
 
 - Persist independent canonical Evidence/Content adoption identities, add value-free 0010 existing-state
