@@ -58,12 +58,12 @@ from market_intelligence.rich_evidence.contracts import (
     MarketauxNewsFacts,
     SecFilingFacts,
 )
+from market_intelligence.rich_evidence.migration_preflight import validate_0010_pre_migration
 from market_intelligence.safe_projection.contracts import (
     canonical_projection_hash,
     normalize_and_classify_factual_payload,
 )
 from market_intelligence.test_database import isolated_test_database_url
-from scripts.m2b_pre_migration_validator import validate as validate_0010_pre_migration
 
 try:
     POSTGRES_TEST_URL = isolated_test_database_url(os.environ.get("TEST_DATABASE_URL"))
