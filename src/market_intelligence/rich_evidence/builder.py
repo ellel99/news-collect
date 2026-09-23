@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import math
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -68,6 +69,28 @@ _RETENTION_POLICY = {
     ("sec_edgar", "submissions_recent"): frozenset({"link_only", "metadata_only"}),
 }
 
+_PREFETCH_CHUNK_SIZE = 100
+_QUERIES_PER_PREFETCH_CHUNK = 7
+
+
+def packet_query_budget(scan_limit: int) -> int:
+    """Return the fixed upper query gate for a bounded packet scan."""
+    if not 1 <= scan_limit <= 500:
+        raise ValueError("rich_evidence_scan_limit_invalid")
+    # One statement establishes the read-only repeatable-read snapshot; each
+    # subsequent bounded chunk uses one evidence scan plus six set-based loads.
+    return 1 + math.ceil(scan_limit / _PREFETCH_CHUNK_SIZE) * _QUERIES_PER_PREFETCH_CHUNK
+
+
+@dataclasses.dataclass(frozen=True)
+class _PacketInputs:
+    rows: Mapping[uuid.UUID, tuple[Any, ...]]
+    raws: Mapping[uuid.UUID, RawItem]
+    sources: Mapping[uuid.UUID, Source]
+    accounts: Mapping[uuid.UUID, SourceAccount]
+    first_runs: Mapping[uuid.UUID, CollectionRun]
+    contents: Mapping[uuid.UUID, ContentItem]
+
 
 class RichEvidencePacketBuilder:
     """Build packets without mutating the database or reading RawItem payload storage."""
@@ -124,7 +147,7 @@ class RichEvidencePacketBuilder:
             cursor = after_evidence_id
             more = False
             while len(packets) < limit and scanned < effective_scan_limit:
-                take = min(100, effective_scan_limit - scanned)
+                take = min(_PREFETCH_CHUNK_SIZE, effective_scan_limit - scanned)
                 statement = (
                     select(EvidenceItem)
                     .join(EvidenceProjectionLink)
@@ -143,10 +166,11 @@ class RichEvidencePacketBuilder:
                 if not page_rows:
                     more = False
                     break
+                inputs = await self._load_inputs(session, page_rows)
                 for evidence in page_rows:
                     scanned += 1
                     cursor = evidence.id
-                    packet = await self._build(session, evidence)
+                    packet = await self._build(session, evidence, inputs)
                     if quality is None or packet.quality == quality:
                         packets.append(packet)
                         if len(packets) == limit:
@@ -164,8 +188,11 @@ class RichEvidencePacketBuilder:
                 more or exhausted,
             )
 
-    async def _build(self, session: AsyncSession, evidence: EvidenceItem) -> RichEvidencePacket:
-        rows = (
+    async def _load_inputs(
+        self, session: AsyncSession, evidences: Sequence[EvidenceItem]
+    ) -> _PacketInputs:
+        evidence_ids = tuple(item.id for item in evidences)
+        result_rows = (
             await session.execute(
                 select(
                     EvidenceProjectionLink,
@@ -185,19 +212,80 @@ class RichEvidencePacketBuilder:
                 .join(CollectionRun, CollectionRun.id == RawItemObservation.collection_run_id)
                 .outerjoin(CollectionTarget, CollectionTarget.id == RawItemObservation.target_id)
                 .where(
-                    EvidenceProjectionLink.evidence_item_id == evidence.id,
+                    EvidenceProjectionLink.evidence_item_id.in_(evidence_ids),
                     EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
                     SafeFactProjection.processing_status == SafeProjectionProcessingStatus.READY,
                 )
             )
         ).all()
+        grouped: dict[uuid.UUID, list[Any]] = {identity: [] for identity in evidence_ids}
+        for row in result_rows:
+            grouped[row[0].evidence_item_id].append(row)
+        raw_ids = {item.raw_item_id for item in evidences}
+        source_ids = {item.source_id for item in evidences}
+        account_ids = {
+            item.source_account_id for item in evidences if item.source_account_id is not None
+        }
+        raws = {
+            item.id: item
+            for item in await session.scalars(select(RawItem).where(RawItem.id.in_(raw_ids)))
+        }
+        sources = {
+            item.id: item
+            for item in await session.scalars(select(Source).where(Source.id.in_(source_ids)))
+        }
+        accounts = {
+            item.id: item
+            for item in await session.scalars(
+                select(SourceAccount).where(SourceAccount.id.in_(account_ids))
+            )
+        }
+        first_run_ids = {item.collection_run_id for item in raws.values()}
+        first_runs = {
+            item.id: item
+            for item in await session.scalars(
+                select(CollectionRun).where(CollectionRun.id.in_(first_run_ids))
+            )
+        }
+        content_ids = {
+            identity
+            for item in evidences
+            for identity in (item.content_item_id,)
+            if identity is not None
+        }
+        content_ids.update(
+            row[0].content_item_id for row in result_rows if row[0].content_item_id is not None
+        )
+        contents = {
+            item.id: item
+            for item in await session.scalars(
+                select(ContentItem).where(ContentItem.id.in_(content_ids))
+            )
+        }
+        return _PacketInputs(
+            {identity: tuple(rows) for identity, rows in grouped.items()},
+            raws,
+            sources,
+            accounts,
+            first_runs,
+            contents,
+        )
+
+    async def _build(
+        self,
+        session: AsyncSession,
+        evidence: EvidenceItem,
+        inputs: _PacketInputs | None = None,
+    ) -> RichEvidencePacket:
+        loaded = inputs or await self._load_inputs(session, (evidence,))
+        rows = loaded.rows.get(evidence.id, ())
         if not rows:
             raise RichEvidenceError("rich_evidence_linked_projection_missing")
-        raw = await session.get(RawItem, evidence.raw_item_id)
-        source = await session.get(Source, evidence.source_id)
-        first_run = await session.get(CollectionRun, raw.collection_run_id) if raw else None
+        raw = loaded.raws.get(evidence.raw_item_id)
+        source = loaded.sources.get(evidence.source_id)
+        first_run = loaded.first_runs.get(raw.collection_run_id) if raw else None
         account = (
-            await session.get(SourceAccount, evidence.source_account_id)
+            loaded.accounts.get(evidence.source_account_id)
             if evidence.source_account_id is not None
             else None
         )
@@ -287,6 +375,7 @@ class RichEvidencePacketBuilder:
             tuple(item[0] for item in revisions),
             current.operation_key,
             current.provider_contract_version,
+            loaded.contents,
         )
         missing, blocked = _availability(current.facts)
         packet = self._assemble(
@@ -381,6 +470,7 @@ class RichEvidencePacketBuilder:
         revisions: tuple[EvidenceRevision, ...],
         operation: str,
         provider_contract_version: int,
+        contents: Mapping[uuid.UUID, ContentItem],
     ) -> ContentReference:
         content_ids = {row[0].content_item_id for row in rows if row[0].content_item_id is not None}
         if evidence.content_item_id is not None:
@@ -389,7 +479,7 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_content_conflict")
         if not content_ids:
             return ContentReference(None, None, False, "unavailable", False)
-        content = await session.get(ContentItem, next(iter(content_ids)))
+        content = contents.get(next(iter(content_ids)))
         canonical_content_links = [row[0] for row in rows if row[0].canonical_content]
         if len(canonical_content_links) != 1:
             raise RichEvidenceError("rich_evidence_content_adoption_invalid")

@@ -15,7 +15,7 @@ from alembic.config import Config
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import func, select, text
+from sqlalchemy import event, func, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -49,6 +49,7 @@ from market_intelligence.rich_evidence import (
     RichEvidencePacketBuilder,
     canonical_packet_bytes,
 )
+from market_intelligence.rich_evidence.builder import packet_query_budget
 from market_intelligence.rich_evidence.contracts import (
     EiaRetailFacts,
     EiaRtoFacts,
@@ -1646,19 +1647,35 @@ async def test_packet_scan_budget_crosses_sparse_quality_rows_without_starvation
             payload_updates={"unit": "dollars_per_megawatthour"},
         )
         await _link_with_explicit_evidence_id(factory, complete_projection, uuid.UUID(int=20_000))
-        page = await RichEvidencePacketBuilder(factory).list_packets(
-            after_evidence_id=uuid.UUID(int=9_999),
-            limit=1,
-            quality="complete",
-            scan_limit=20,
-        )
+        query_count = 0
+
+        def count_query(*_args: object) -> None:
+            nonlocal query_count
+            query_count += 1
+
+        event.listen(engine.sync_engine, "before_cursor_execute", count_query)
+        try:
+            page = await RichEvidencePacketBuilder(factory).list_packets(
+                after_evidence_id=uuid.UUID(int=9_999),
+                limit=1,
+                quality="complete",
+                scan_limit=20,
+            )
+        finally:
+            event.remove(engine.sync_engine, "before_cursor_execute", count_query)
         assert page.returned_count == 1
         assert page.scanned_count == 9
         assert page.packets[0].quality == "complete"
         assert page.scan_exhausted is False
+        assert query_count <= packet_query_budget(20)
     finally:
         await _cleanup(factory)
         await engine.dispose()
+
+
+@pytest.mark.parametrize("scan_limit,maximum", [(1, 8), (50, 8), (500, 36)])
+def test_packet_prefetch_query_budget_is_bounded(scan_limit: int, maximum: int) -> None:
+    assert packet_query_budget(scan_limit) == maximum
 
 
 @pytest.mark.asyncio
