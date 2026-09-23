@@ -383,6 +383,73 @@ async def test_revision_and_concurrent_reconciliation_are_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "table,assignment",
+    [
+        ("safe_fact_projections", "projection_hash=repeat('0',64)"),
+        ("raw_item_observations", "projection_hash=repeat('0',64)"),
+        ("raw_items", "retention_class='metadata_only'"),
+        ("sources", "retention_class='metadata_only'"),
+    ],
+)
+async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(
+    table: str, assignment: str
+) -> None:
+    """A second transaction may change pre-lock state, but it cannot be consumed."""
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    mutator = factory()
+    transaction = await mutator.begin()
+    try:
+        raw_id, projection_id, _ = await _seed_ready(factory, "marketaux")
+        projection = await mutator.get(SafeFactProjection, projection_id)
+        raw = await mutator.get(RawItem, raw_id)
+        assert projection is not None and raw is not None
+        identities = {
+            "safe_fact_projections": projection_id,
+            "raw_item_observations": projection.observation_id,
+            "raw_items": raw_id,
+            "sources": raw.source_id,
+        }
+        await mutator.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+            {"key": f"source:{raw.source_id}"},
+        )
+        await mutator.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+            {"key": f"raw:{raw.id}"},
+        )
+        await mutator.execute(
+            text(f"UPDATE {table} SET {assignment} WHERE id=:id"),
+            {"id": identities[table]},
+        )
+        handoff = asyncio.create_task(
+            EvidenceProjectionHandoffWorker(factory).process_batch(limit=1)
+        )
+        await asyncio.sleep(0.05)
+        assert not handoff.done()
+        await transaction.commit()
+        report = await asyncio.wait_for(handoff, timeout=5)
+        assert report.blocked == 1
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert link is not None
+            assert link.status is EvidenceProjectionLinkStatus.BLOCKED
+            assert link.evidence_item_id is None
+            assert link.content_item_id is None
+    finally:
+        if transaction.is_active:
+            await transaction.rollback()
+        await mutator.close()
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_non_ready_is_not_discovered_and_stale_is_recovered() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
