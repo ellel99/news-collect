@@ -261,7 +261,7 @@ def upgrade() -> None:
             AND e.raw_item_id=r.id AND e.source_id=r.source_id
             AND e.source_account_id IS NOT DISTINCT FROM r.source_account_id
             AND e.provider=p.provider AND e.processing_status='validated'
-            AND e.event_time IS NOT NULL AND e.observed_at=o.observed_at
+            AND e.event_time IS NOT NULL
             AND e.official_source_flag=(p.provider IN ('eia','sec_edgar'))
             AND e.market_data_flag=(p.provider='finnhub' AND p.operation_key='quote')
             AND e.disclosure_flag=(p.provider='sec_edgar')

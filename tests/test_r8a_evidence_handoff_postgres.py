@@ -604,8 +604,10 @@ async def test_identity_conflict_blocks_and_rolls_back_new_content() -> None:
         await engine.dispose()
 
 
-def _legacy_envelope(provider: str, payload: dict[str, object]) -> object:
-    context: dict[str, object] = {"observed_at": datetime.now(UTC)}
+def _legacy_envelope(
+    provider: str, payload: dict[str, object], *, observed_at: datetime | None = None
+) -> object:
+    context: dict[str, object] = {"observed_at": observed_at or datetime.now(UTC)}
     if provider == "marketaux":
         return map_marketaux_news_to_evidence(
             {
@@ -654,10 +656,15 @@ async def test_real_legacy_mapper_evidence_is_adopted(provider: str) -> None:
         raw_id, projection_id, payload = await _seed_ready(factory, provider)
         async with factory.begin() as session:
             raw = await session.get(RawItem, raw_id)
-            assert raw is not None
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert raw is not None and projection is not None
+            observation = await session.get(RawItemObservation, projection.observation_id)
+            assert observation is not None
             outcome = await EvidenceWriteService(session).write_one(
                 EvidenceWriteRequest(
-                    envelope=_legacy_envelope(provider, payload),  # type: ignore[arg-type]
+                    envelope=_legacy_envelope(  # type: ignore[arg-type]
+                        provider, payload, observed_at=observation.observed_at
+                    ),
                     source_id=raw.source_id,
                     source_account_id=raw.source_account_id,
                     raw_item_id=raw.id,

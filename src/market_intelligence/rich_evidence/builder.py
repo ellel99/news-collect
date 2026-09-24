@@ -466,7 +466,12 @@ class RichEvidencePacketBuilder:
             or expected_access != evidence.access_level
             or evidence.provider_item_id
             not in {str(projection.factual_payload.get("provider_item_id")), legacy_identity}
-            or (evidence.provider_item_id == legacy_identity and not adopted_legacy)
+            or (
+                legacy_allowed
+                and legacy_identity != str(projection.factual_payload.get("provider_item_id"))
+                and evidence.provider_item_id == legacy_identity
+                and not adopted_legacy
+            )
             or evidence.processing_status != "validated"
             or evidence.official_source_flag != (projection.provider in {"eia", "sec_edgar"})
             or evidence.market_data_flag != is_market
