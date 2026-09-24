@@ -36,8 +36,11 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         raise pytest.UsageError("postgres_integration_database_required")
     token = uuid.uuid4().hex
     database = f"news_collect_test_{token}"
-    _ADMIN_URL = str(parsed.set(database=parsed.database))
-    _DISPOSABLE_URL = str(parsed.set(database=database))
+    # URL.__str__ intentionally redacts passwords as ``***``. Test database
+    # creation needs a connectable URL while the value remains process-local
+    # and is never logged.
+    _ADMIN_URL = parsed.set(database=parsed.database).render_as_string(hide_password=False)
+    _DISPOSABLE_URL = parsed.set(database=database).render_as_string(hide_password=False)
     asyncio.run(_database_ddl(_ADMIN_URL, f'CREATE DATABASE "{database}"'))
     os.environ["NEWS_COLLECT_TEST_ISOLATION_TOKEN"] = token
     os.environ["TEST_DATABASE_URL"] = _DISPOSABLE_URL
