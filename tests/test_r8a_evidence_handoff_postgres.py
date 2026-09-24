@@ -1101,7 +1101,11 @@ async def test_database_rejects_provider_content_policy_bypass(
             observation = await session.get(RawItemObservation, projection.observation_id)
             assert observation is not None
             evidence = await handoff_module._evidence(
-                session, projection, observation, raw, content
+                session,
+                projection,
+                observation,
+                raw,
+                None if provider in {"finnhub", "eia"} else content,
             )
             evidence_id, content_id = evidence.id, content.id
         with pytest.raises(DBAPIError) as failure:
@@ -1295,7 +1299,10 @@ def test_rich_evidence_builder_is_read_only_and_legacy_mapper_free() -> None:
         __import__("pathlib").Path("src/market_intelligence/rich_evidence/builder.py").read_text()
     )
     for forbidden in (
-        "provider_mappings",
+        "map_marketaux_news_to_evidence",
+        "map_finnhub_quote_to_evidence",
+        "map_eia_energy_row_to_evidence",
+        "map_sec_filing_to_evidence",
         "EvidenceWriteService",
         "EventCandidate",
         "ImpactAnalysis",

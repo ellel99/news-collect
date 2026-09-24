@@ -346,14 +346,16 @@ def upgrade() -> None:
              OR (provider_key='finnhub' AND operation_identity='quote'
                  AND evidence_row.access_level='link_only'
                  AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
-                   '["'||canonical_payload->>'symbol'||'",'||
-                   canonical_payload->>'provider_timestamp'||']','UTF8'),'sha256'),'hex'))
+                   concat('["',(canonical_payload->>'symbol'),'",',
+                          (canonical_payload->>'provider_timestamp'),']'),
+                   'UTF8'),'sha256'),'hex'))
              OR (provider_key='eia' AND operation_identity='electricity_retail_sales'
                  AND evidence_row.access_level='link_only'
                  AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
-                   '["'||canonical_payload->>'period'||'","'||
-                   canonical_payload->>'geography'||'","'||
-                   canonical_payload->>'sector'||'"]','UTF8'),'sha256'),'hex'))
+                   concat('["',(canonical_payload->>'period'),'","',
+                          (canonical_payload->>'geography'),'","',
+                          (canonical_payload->>'sector'),'"]'),
+                   'UTF8'),'sha256'),'hex'))
            ) THEN
           RAISE EXCEPTION 'linked_evidence_identity_policy_invalid';
         END IF;
