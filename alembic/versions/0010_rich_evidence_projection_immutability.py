@@ -412,7 +412,7 @@ def upgrade() -> None:
              OR (canonical_provider='sec_edgar' AND
                  (content_row.content_kind <> 'official_release' OR
                   content_row.title IS DISTINCT FROM
-                    ('SEC '||canonical_payload->>'form'||' filing'))) THEN
+                    concat('SEC ',(canonical_payload->>'form'),' filing'))) THEN
             RAISE EXCEPTION 'linked_content_field_policy_invalid';
           END IF;
         ELSIF provider_key='marketaux' AND operation_identity='news_all'
