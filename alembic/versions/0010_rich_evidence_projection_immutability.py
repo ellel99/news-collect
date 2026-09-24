@@ -66,17 +66,35 @@ def upgrade() -> None:
             OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
               AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
               AND e.source_type='disclosure' AND e.access_level='link_only')
-            OR (e.provider_item_id ~ '^provider-item:[0-9a-f]{64}$'
-              AND p.provider IN ('finnhub','eia')
-              AND e.access_level='link_only'
-              AND (
-                (p.provider='finnhub' AND p.operation_key='quote'
+            OR (e.access_level='link_only' AND (
+                (p.provider='marketaux' AND p.operation_key='news_all'
+                  AND e.provider_item_type='marketaux_news'
+                  AND e.evidence_kind='news' AND e.source_type='news'
+                  AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                    concat('"',p.factual_payload->>'provider_item_id','"'),
+                    'UTF8'),'sha256'),'hex'))
+                OR (p.provider='finnhub' AND p.operation_key='quote'
                   AND e.provider_item_type='finnhub_quote'
-                  AND e.evidence_kind='market_data' AND e.source_type='market_data')
+                  AND e.evidence_kind='market_data' AND e.source_type='market_data'
+                  AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                    concat('["',p.factual_payload->>'symbol','",',
+                           p.factual_payload->>'provider_timestamp',']'),
+                    'UTF8'),'sha256'),'hex'))
                 OR (p.provider='eia' AND p.operation_key='electricity_retail_sales'
                   AND e.provider_item_type='eia_energy_timeseries'
                   AND e.evidence_kind='energy_official'
-                  AND e.source_type='official_energy')
+                  AND e.source_type='official_energy'
+                  AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                    concat('["',p.factual_payload->>'period','","',
+                           p.factual_payload->>'geography','","',
+                           p.factual_payload->>'sector','"]'),
+                    'UTF8'),'sha256'),'hex'))
+                OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
+                  AND e.provider_item_type='sec_filing'
+                  AND e.evidence_kind='disclosure' AND e.source_type='disclosure'
+                  AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                    concat('"',p.factual_payload->>'accession_number','"'),
+                    'UTF8'),'sha256'),'hex'))
               ))
           )
         )
@@ -287,10 +305,13 @@ def upgrade() -> None:
                 AND e.provider_item_type='sec_filing' AND e.evidence_kind='disclosure'
                 AND e.source_type='disclosure' AND e.access_level='link_only')
               OR (e.provider_item_id ~ '^provider-item:[0-9a-f]{64}$'
-                AND p.provider IN ('finnhub','eia')
+                AND p.provider IN ('marketaux','finnhub','eia','sec_edgar')
                 AND e.access_level='link_only'
                 AND (
-                  (p.provider='finnhub' AND p.operation_key='quote'
+                  (p.provider='marketaux' AND p.operation_key='news_all'
+                    AND e.provider_item_type='marketaux_news'
+                    AND e.evidence_kind='news' AND e.source_type='news')
+                  OR (p.provider='finnhub' AND p.operation_key='quote'
                     AND e.provider_item_type='finnhub_quote'
                     AND e.evidence_kind='market_data' AND e.source_type='market_data'
                     AND e.content_item_id IS NULL AND NEW.content_item_id IS NULL)
@@ -299,6 +320,9 @@ def upgrade() -> None:
                     AND e.evidence_kind='energy_official'
                     AND e.source_type='official_energy'
                     AND e.content_item_id IS NULL AND NEW.content_item_id IS NULL)
+                  OR (p.provider='sec_edgar' AND p.operation_key='submissions_recent'
+                    AND e.provider_item_type='sec_filing'
+                    AND e.evidence_kind='disclosure' AND e.source_type='disclosure')
                 ))
             )
         ) THEN RAISE EXCEPTION 'linked_operation_policy_invalid'; END IF;
@@ -343,6 +367,11 @@ def upgrade() -> None:
              (evidence_row.provider_item_id IS NOT DISTINCT FROM
                 canonical_payload->>'provider_item_id'
               AND evidence_row.provider_item_hash=canonical_hash)
+             OR (provider_key='marketaux' AND operation_identity='news_all'
+                 AND evidence_row.access_level='link_only'
+                 AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
+                   concat('"',canonical_payload->>'provider_item_id','"'),
+                   'UTF8'),'sha256'),'hex'))
              OR (provider_key='finnhub' AND operation_identity='quote'
                  AND evidence_row.access_level='link_only'
                  AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
@@ -355,6 +384,11 @@ def upgrade() -> None:
                    concat('["',(canonical_payload->>'period'),'","',
                           (canonical_payload->>'geography'),'","',
                           (canonical_payload->>'sector'),'"]'),
+                   'UTF8'),'sha256'),'hex'))
+             OR (provider_key='sec_edgar' AND operation_identity='submissions_recent'
+                 AND evidence_row.access_level='link_only'
+                 AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
+                   concat('"',canonical_payload->>'accession_number','"'),
                    'UTF8'),'sha256'),'hex'))
            ) THEN
           RAISE EXCEPTION 'linked_evidence_identity_policy_invalid';

@@ -406,6 +406,16 @@ async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(
     transaction = await mutator.begin()
     try:
         raw_id, projection_id, _ = await _seed_ready(factory, "marketaux")
+        # Materialize the durable pending handoff before the mutator wins a
+        # source-row lock. This tests post-claim revalidation rather than
+        # allowing discovery to skip an in-flight projection altogether.
+        async with factory.begin() as session:
+            session.add(
+                EvidenceProjectionLink(
+                    safe_fact_projection_id=projection_id,
+                    status=EvidenceProjectionLinkStatus.PENDING,
+                )
+            )
         projection = await mutator.get(SafeFactProjection, projection_id)
         raw = await mutator.get(RawItem, raw_id)
         assert projection is not None and raw is not None
