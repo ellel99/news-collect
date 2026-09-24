@@ -160,6 +160,7 @@ class RichEvidencePacket:
     evidence_kind: str
     provider_item_type: str
     access_level: str
+    identity_mode: Literal["canonical", "adopted_legacy_opaque"]
     retention_class: str
     canonical_event_time: datetime | None
     canonical_observed_at: datetime

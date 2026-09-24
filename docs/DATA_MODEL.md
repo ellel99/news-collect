@@ -6,6 +6,10 @@ Migration 0010 protects the whole linked association and its Projection→Observ
 lineage against UPDATE or DELETE. Association/projection/content exclude only `updated_at`; status/error/retry,
 canonical time, first persistence run, retention, facts and future columns therefore remain immutable while
 explicit worker bookkeeping fields remain mutable. Downgrade fails closed when linked state exists.
+LINKED transition, handoff revalidation, migration preflight and packet reads use the same operation-specific
+Evidence/Content/retention contract. Packet `identity_mode` distinguishes current canonical identity from the
+narrow Finnhub-quote/EIA-retail adopted legacy opaque identity. Mutation triggers preserve immutability without
+acquiring advisory locks after row locks.
 
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows

@@ -5,8 +5,10 @@ Packet read boundary over linked READY safe factual projections. It does not per
 call external services, or activate the unified control plane. Production authority remains `legacy`.
 Draft M2-B persists independent canonical Evidence and canonical Content adoption identities, so a later safe
 Content revision can be adopted without rewriting an earlier partial Evidence revision.
-It also performs complete locked-state handoff revalidation and bounded set-based packet prefetch; Implementation
-Review remains pending and no production consumer is enabled.
+It also performs complete operation-specific locked-state handoff revalidation, bounded row-lock concurrency
+retry, controlled 0009→0010 deployment gating, disposable PostgreSQL isolation and bounded set-based packet
+prefetch; Implementation Review remains pending and no production consumer is enabled. This is not AI-ready:
+M2-C/D, production migration/consumer, backfill and live Provider acceptance remain incomplete.
 
 Historical M2-A implementation: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
 first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.

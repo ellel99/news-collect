@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.db.models import (
@@ -172,6 +172,13 @@ class EvidenceProjectionHandoffWorker:
     async def _link_one(self, identity: UUID, now: datetime) -> str:
         try:
             async with self._factory.begin() as session:
+                # Mutation triggers deliberately do not acquire advisory locks: a
+                # BEFORE trigger runs after PostgreSQL has acquired the row lock,
+                # so mixing row->advisory and advisory->row orders can deadlock.
+                # Handoff instead uses a short, local row-lock timeout and a fixed
+                # row order. A concurrent writer either finishes first or this
+                # item becomes a bounded, value-free retry.
+                await session.execute(text("SET LOCAL lock_timeout = '2s'"))
                 link = await session.get(EvidenceProjectionLink, identity)
                 if link is None or link.status is not EvidenceProjectionLinkStatus.PROCESSING:
                     return "blocked"
@@ -198,28 +205,56 @@ class EvidenceProjectionHandoffWorker:
                 observation = await session.get(RawItemObservation, projection.observation_id)
                 if raw is None or observation is None:
                     raise HandoffConflict("evidence_projection_provenance_missing")
-                # Global order: Source, RawItem identity, Projection, Observation,
-                # downstream canonical rows, then association. Matching trigger-side
-                # advisory locks close the visibility gap before LINKED becomes visible.
-                await session.execute(
-                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
-                    {"key": f"source:{raw.source_id}"},
-                )
-                await session.execute(
-                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
-                    {"key": f"raw:{raw.id}"},
+                raw_id = raw.id
+                source_id = raw.source_id
+                source_account_id = raw.source_account_id
+                projection_id = projection.id
+                observation_id = observation.id
+                run_id = observation.collection_run_id
+                target_id = observation.target_id
+                # Fixed handoff row order. Ordinary mutations lock only their own
+                # row and never wait on a later advisory lock, eliminating the
+                # reverse-wait cycle that existed in 0010's original triggers.
+                source = await session.get(
+                    Source, source_id, with_for_update=True, populate_existing=True
                 )
                 raw = await session.get(
-                    RawItem, raw.id, with_for_update=True, populate_existing=True
+                    RawItem, raw_id, with_for_update=True, populate_existing=True
                 )
                 projection = await session.get(
-                    SafeFactProjection, projection.id, with_for_update=True, populate_existing=True
+                    SafeFactProjection, projection_id, with_for_update=True, populate_existing=True
                 )
                 observation = await session.get(
                     RawItemObservation,
-                    observation.id,
+                    observation_id,
                     with_for_update=True,
                     populate_existing=True,
+                )
+                run = await session.get(
+                    CollectionRun,
+                    run_id,
+                    with_for_update=True,
+                    populate_existing=True,
+                )
+                account = (
+                    None
+                    if source_account_id is None
+                    else await session.get(
+                        SourceAccount,
+                        source_account_id,
+                        with_for_update=True,
+                        populate_existing=True,
+                    )
+                )
+                target = (
+                    None
+                    if target_id is None
+                    else await session.get(
+                        CollectionTarget,
+                        target_id,
+                        with_for_update=True,
+                        populate_existing=True,
+                    )
                 )
                 link = await session.get(
                     EvidenceProjectionLink, identity, with_for_update=True, populate_existing=True
@@ -255,35 +290,6 @@ class EvidenceProjectionHandoffWorker:
                     )
                 except (ProjectionContractError, ValueError) as exc:
                     raise HandoffConflict("evidence_projection_contract_invalid") from exc
-                run = await session.get(
-                    CollectionRun,
-                    observation.collection_run_id,
-                    with_for_update=True,
-                    populate_existing=True,
-                )
-                source = await session.get(
-                    Source, raw.source_id, with_for_update=True, populate_existing=True
-                )
-                account = (
-                    None
-                    if raw.source_account_id is None
-                    else await session.get(
-                        SourceAccount,
-                        raw.source_account_id,
-                        with_for_update=True,
-                        populate_existing=True,
-                    )
-                )
-                target = (
-                    None
-                    if observation.target_id is None
-                    else await session.get(
-                        CollectionTarget,
-                        observation.target_id,
-                        with_for_update=True,
-                        populate_existing=True,
-                    )
-                )
                 if (
                     run is None
                     or source is None
@@ -292,11 +298,13 @@ class EvidenceProjectionHandoffWorker:
                     or observation.provider != projection.provider
                     or observation.operation_key != projection.operation_key
                     or observation.projection_hash != projection.projection_hash
+                    or observation.collection_run_id != run.id
                     or observation.source_id != raw.source_id
                     or observation.source_account_id != raw.source_account_id
                     or run.source_id != raw.source_id
                     or run.source_account_id != raw.source_account_id
                     or run.target_id != observation.target_id
+                    or source.id != raw.source_id
                     or source.access_method != projection.provider
                     or source.retention_class != raw.retention_class
                     or (raw.source_account_id is not None and account is None)
@@ -310,7 +318,7 @@ class EvidenceProjectionHandoffWorker:
                         )
                     )
                     or (target is None and observation.target_id is not None)
-                    or policy.access not in {"link_only", "licensed", "public_summary"}
+                    or raw.retention_class not in policy.retention
                 ):
                     raise HandoffConflict("evidence_projection_provenance_invalid")
                 content = await _content(session, projection, raw)
@@ -346,6 +354,10 @@ class EvidenceProjectionHandoffWorker:
             return "blocked"
         except IntegrityError:
             return await self._retry(identity, "evidence_handoff_integrity_conflict", now)
+        except DBAPIError as exc:
+            if _is_retryable_database_concurrency(exc):
+                return await self._retry(identity, "evidence_handoff_concurrent_write", now)
+            return await self._retry(identity, "evidence_handoff_database_error", now)
 
     async def _terminal(self, identity: UUID, code: str, now: datetime) -> None:
         async with self._factory.begin() as session:
@@ -375,6 +387,13 @@ class EvidenceProjectionHandoffWorker:
             return result
 
 
+def _is_retryable_database_concurrency(exc: DBAPIError) -> bool:
+    """Classify PostgreSQL concurrency failures without exposing DB details."""
+    original = exc.orig
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    return sqlstate in {"40P01", "40001", "55P03", "57014"}
+
+
 async def _content(
     session: AsyncSession, projection: SafeFactProjection, raw: RawItem
 ) -> ContentItem | None:
@@ -383,16 +402,10 @@ async def _content(
     if policy.content == "article":
         kind = ContentKind.ARTICLE
         existing: ContentItem | None = await session.scalar(
-            select(ContentItem).where(ContentItem.raw_item_id == raw.id)
+            select(ContentItem).where(ContentItem.raw_item_id == raw.id).with_for_update()
         )
         if existing is not None:
-            if (
-                existing.source_id != raw.source_id
-                or existing.source_account_id != raw.source_account_id
-                or existing.content_kind is not kind
-                or existing.external_id != payload["provider_item_id"]
-            ):
-                raise HandoffConflict("evidence_content_identity_conflict")
+            await _validate_existing_content(session, existing, projection, raw, kind)
             return existing
         if not all(
             isinstance(payload.get(k), str) and payload[k]
@@ -404,16 +417,10 @@ async def _content(
     elif policy.content == "official_release":
         kind = ContentKind.OFFICIAL_RELEASE
         existing = await session.scalar(
-            select(ContentItem).where(ContentItem.raw_item_id == raw.id)
+            select(ContentItem).where(ContentItem.raw_item_id == raw.id).with_for_update()
         )
         if existing is not None:
-            if (
-                existing.source_id != raw.source_id
-                or existing.source_account_id != raw.source_account_id
-                or existing.content_kind is not kind
-                or existing.external_id != payload["provider_item_id"]
-            ):
-                raise HandoffConflict("evidence_content_identity_conflict")
+            await _validate_existing_content(session, existing, projection, raw, kind)
             return existing
         title = f"SEC {payload['form']} filing"
         url = payload["official_url"]
@@ -444,12 +451,69 @@ async def _content(
         metadata_={
             "provider": projection.provider,
             "operation_key": projection.operation_key,
-            "retention": "metadata_only" if projection.provider == "marketaux" else "link_only",
+            "retention": raw.retention_class,
         },
     )
     session.add(item)
     await session.flush()
     return item
+
+
+async def _validate_existing_content(
+    session: AsyncSession,
+    content: ContentItem,
+    projection: SafeFactProjection,
+    raw: RawItem,
+    kind: ContentKind,
+) -> None:
+    """Validate adopted canonical content against its originating projection."""
+    canonical_projection = await session.scalar(
+        select(SafeFactProjection)
+        .join(EvidenceProjectionLink)
+        .where(
+            EvidenceProjectionLink.content_item_id == content.id,
+            EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
+            EvidenceProjectionLink.canonical_content.is_(True),
+        )
+    )
+    origin = canonical_projection or projection
+    payload = origin.factual_payload
+    expected_url = payload.get("canonical_url") or payload.get("official_url")
+    expected_title = (
+        payload.get("title")
+        if origin.provider != "sec_edgar"
+        else f"SEC {payload.get('form')} filing"
+    )
+    expected_language = payload.get("language") if origin.provider == "marketaux" else None
+    expected_metadata = {
+        "provider": origin.provider,
+        "operation_key": origin.operation_key,
+        "retention": raw.retention_class,
+    }
+    if (
+        content.source_id != raw.source_id
+        or content.source_account_id != raw.source_account_id
+        or content.raw_item_id != raw.id
+        or content.content_kind is not kind
+        or content.external_id != payload.get("provider_item_id")
+        or content.title != expected_title
+        or content.original_url != expected_url
+        or content.canonical_url != expected_url
+        or content.source_published_at != datetime.fromisoformat(str(payload["published_at"]))
+        or content.language != expected_language
+        or content.body_availability is not BodyAvailability.UNAVAILABLE
+        or content.body is not None
+        or content.source_summary is not None
+        or content.author is not None
+        or content.content_hash is not None
+        or content.source_updated_at is not None
+        or content.reply_to_external_id is not None
+        or content.quote_external_id is not None
+        or content.repost_external_id is not None
+        or content.deleted_status is not DeletedStatus.UNKNOWN
+        or content.metadata_ != expected_metadata
+    ):
+        raise HandoffConflict("evidence_content_policy_invalid")
 
 
 async def _evidence(
@@ -466,30 +530,101 @@ async def _evidence(
         policy.source_type,
     )
     provider_item_id = str(projection.factual_payload["provider_item_id"])
-    legacy_item_id = (
-        provider_item_id
-        if projection.operation_key in {"company_news", "electricity_rto_region_data"}
-        else legacy_provider_item_identity(projection.provider, projection.factual_payload)
-    )
     existing = tuple(
         await session.scalars(
-            select(EvidenceItem).where(
+            select(EvidenceItem)
+            .where(
                 EvidenceItem.raw_item_id == raw.id,
                 EvidenceItem.provider == projection.provider,
             )
+            .with_for_update()
         )
     )
     if len(existing) > 1:
         raise HandoffConflict("evidence_canonical_not_unique")
     if existing:
         item = existing[0]
+        canonical_row = (
+            await session.execute(
+                select(SafeFactProjection, RawItemObservation)
+                .join(
+                    EvidenceProjectionLink,
+                    EvidenceProjectionLink.safe_fact_projection_id == SafeFactProjection.id,
+                )
+                .join(
+                    RawItemObservation,
+                    RawItemObservation.id == SafeFactProjection.observation_id,
+                )
+                .where(
+                    EvidenceProjectionLink.evidence_item_id == item.id,
+                    EvidenceProjectionLink.status == EvidenceProjectionLinkStatus.LINKED,
+                    EvidenceProjectionLink.canonical_evidence.is_(True),
+                )
+            )
+        ).one_or_none()
+        origin_projection, origin_observation = (
+            canonical_row if canonical_row is not None else (projection, observation)
+        )
+        if (
+            origin_projection.provider != projection.provider
+            or origin_projection.operation_key != projection.operation_key
+            or origin_projection.factual_payload.get("provider_item_id")
+            != projection.factual_payload.get("provider_item_id")
+        ):
+            raise HandoffConflict("evidence_canonical_identity_conflict")
+        origin_payload = origin_projection.factual_payload
+        origin_plain_id = str(origin_payload["provider_item_id"])
+        origin_legacy_id = (
+            origin_plain_id
+            if projection.operation_key in {"company_news", "electricity_rto_region_data"}
+            else legacy_provider_item_identity(projection.provider, origin_payload)
+        )
+        legacy_identity = (
+            item.provider_item_id == origin_legacy_id and origin_legacy_id != origin_plain_id
+        )
+        expected_access = (
+            "link_only"
+            if legacy_identity
+            and (projection.provider, projection.operation_key)
+            in {("finnhub", "quote"), ("eia", "electricity_retail_sales")}
+            else policy.access
+        )
+        payload = origin_payload
+        is_market = projection.operation_key == "quote"
+        is_official = projection.provider in {"eia", "sec_edgar"}
+        is_disclosure = projection.provider == "sec_edgar"
+        is_news = policy.evidence_kind == "news"
         if (
             item.provider_item_type != item_type
             or item.source_id != raw.source_id
             or item.source_account_id != raw.source_account_id
-            or item.provider_item_id not in {provider_item_id, legacy_item_id}
+            or item.provider_item_id not in {origin_plain_id, origin_legacy_id}
             or (content is not None and item.content_item_id not in (None, content.id))
             or (content is None and item.content_item_id is not None)
+            or item.evidence_kind != evidence_kind
+            or item.source_type != source_type
+            or item.access_level != expected_access
+            or item.event_time != datetime.fromisoformat(str(payload["published_at"]))
+            or item.observed_at != origin_observation.observed_at
+            or item.processing_status != "validated"
+            or item.official_source_flag != is_official
+            or item.market_data_flag != is_market
+            or item.disclosure_flag != is_disclosure
+            or item.news_signal_flag != is_news
+            or item.content_presence
+            != {
+                "has_title": bool(payload.get("title")),
+                "has_body": False,
+                "has_url": bool(payload.get("canonical_url") or payload.get("official_url")),
+                "has_snippet": False,
+                "has_description": False,
+            }
+            or item.numeric_presence
+            != {
+                "has_numeric_value": is_market or projection.provider == "eia",
+                "numeric_field_count": 7 if is_market else 1 if projection.provider == "eia" else 0,
+                "nullable_allowed": projection.provider == "eia",
+            }
         ):
             raise HandoffConflict("evidence_canonical_identity_conflict")
         return item
@@ -508,7 +643,7 @@ async def _evidence(
     is_official = projection.provider in {"eia", "sec_edgar"}
     is_disclosure = projection.provider == "sec_edgar"
     is_news = policy.evidence_kind == "news"
-    payload: dict[str, Any] = projection.factual_payload
+    new_payload: dict[str, Any] = projection.factual_payload
     item = EvidenceItem(
         evidence_version=1,
         provider=projection.provider,
@@ -521,7 +656,7 @@ async def _evidence(
         content_item_id=None if content is None else content.id,
         provider_item_id=provider_item_id,
         provider_item_hash=projection.projection_hash,
-        event_time=datetime.fromisoformat(payload["published_at"]),
+        event_time=datetime.fromisoformat(new_payload["published_at"]),
         observed_at=observation.observed_at,
         access_level=policy.access,
         processing_status="validated",
@@ -530,9 +665,9 @@ async def _evidence(
         disclosure_flag=is_disclosure,
         news_signal_flag=is_news,
         content_presence={
-            "has_title": bool(payload.get("title")),
+            "has_title": bool(new_payload.get("title")),
             "has_body": False,
-            "has_url": bool(payload.get("canonical_url") or payload.get("official_url")),
+            "has_url": bool(new_payload.get("canonical_url") or new_payload.get("official_url")),
             "has_snippet": False,
             "has_description": False,
         },

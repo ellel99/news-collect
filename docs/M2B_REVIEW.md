@@ -12,15 +12,16 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
 - Packet reads use a single repeatable-read/read-only snapshot. Evidence and Content use separate durable unique
   canonical-adoption markers written in the handoff transaction; historical target versions come from frozen
   observation/run lineage.
-- Migration 0010 performs value-free fail-closed existing-state preflight. Handoff and mutation guards share
-  `Source -> RawItem` advisory locking, followed by row locks and complete locked-state contract/provenance
-  revalidation. Destructive integration tests require an explicit allowlisted PostgreSQL test database URL.
+- Migration 0010 performs value-free fail-closed existing-state preflight. Handoff uses fixed row locks and a
+  bounded timeout; mutation triggers take no post-row-lock advisory locks. Concurrency failures are value-free,
+  bounded per-item retries. Tests run in a random token-bound disposable PostgreSQL database per pytest process.
 - Batch packet reads use bounded 100-row set-based prefetch. Query gates are 8 statements at scan sizes 1/50
   and 36 at the hard maximum 500, including the repeatable-read snapshot statement.
 - Migration compatibility accepts only deterministically recognizable legacy opaque Finnhub quote/EIA retail
   Evidence identities; it never rewrites historical Evidence or relaxes new Evidence policy.
-- Applying 0010 requires the read-only, value-free `m2b_pre_migration_validator.py` typed-contract PASS first;
-  migration SQL remains the complementary relational audit and does not pretend to reproduce Python normalization.
+- Applying 0010 requires the controlled `m2b_controlled_upgrade.py` maintenance-lock entry, which verifies 0009,
+  writers-stopped acknowledgement, typed preflight and unchanged state before upgrading. Bare production Alembic
+  upgrade is prohibited; migration SQL remains the complementary relational audit.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions

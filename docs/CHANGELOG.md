@@ -2,6 +2,12 @@
 
 ## Unreleased — M2-B concentrated correction
 
+- Removes trigger row-to-advisory lock inversion; handoff now uses fixed row locks, bounded PostgreSQL concurrency
+  retries and per-item batch isolation.
+- Completes operation-specific Evidence, Content and retention validation and reports narrowly adopted legacy
+  opaque identity explicitly in Rich Evidence packets.
+- Adds a controlled 0009→0010 deployment gate and random token-bound disposable PostgreSQL test databases.
+
 - Revalidated the complete SafeFactProjection handoff contract and provenance only after the ordered database
   lock set is held, while preserving value-free blocked/retry outcomes.
 - Corrected operation-specific 0010 policy for Finnhub company news and validated legacy opaque Evidence

@@ -4,8 +4,10 @@ M2-A is merged and complete. M2-B is implemented in a Draft PR as a read-only Ri
 review remains pending. It reads only linked READY factual projections and never reads raw payload storage.
 Production authority remains `legacy`; M2-C/D and real AI remain unauthorized.
 Draft M2-B uses separate durable canonical Evidence/Content adoption markers, value-free migration preflight,
-complete post-lock contract/provenance validation, bounded set-based packet prefetch, compatible lineage locks,
-and an explicit test-only PostgreSQL database gate.
+complete operation-specific post-lock contract/provenance validation, bounded set-based packet prefetch,
+row-lock timeout/retry without trigger advisory inversion, a controlled 0009→0010 upgrade gate, and a random
+token-bound disposable PostgreSQL database per pytest process. M2-C/D, production consumer/migration, backfill,
+live Provider acceptance and AI remain unauthorized.
 
 Historical PR #46 M2-A summary: explicit fixed/rolling windows, pre-request durable run/config/window-bound lineage,
 atomic empty-completion cleanup, exact operation continuation codecs, keyset continuation,

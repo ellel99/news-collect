@@ -58,6 +58,7 @@ from market_intelligence.rich_evidence.contracts import (
     MarketauxNewsFacts,
     SecFilingFacts,
 )
+from market_intelligence.rich_evidence.migration_gate import controlled_upgrade_0010
 from market_intelligence.rich_evidence.migration_preflight import validate_0010_pre_migration
 from market_intelligence.safe_projection.contracts import (
     canonical_projection_hash,
@@ -151,12 +152,13 @@ async def _seed_ready(
     projection_hash = canonical_projection_hash(payload)
     async with factory.begin() as session:
         if raw_id is None:
+            retention = "link_only" if provider in {"marketaux", "sec_edgar"} else "metadata_only"
             source_id = await session.scalar(
                 text("""
                 INSERT INTO sources(code,name,source_type,access_method,authorization_status,retention_class,enabled)
-                VALUES (:code,'R8A synthetic','api',:provider,'authorized','metadata_only',true) RETURNING id
+                VALUES (:code,'R8A synthetic','api',:provider,'authorized',:retention,true) RETURNING id
             """),
-                {"code": f"r8a-{marker}", "provider": provider},
+                {"code": f"r8a-{marker}", "provider": provider, "retention": retention},
             )
             account_id = await session.scalar(
                 text("""
@@ -175,7 +177,7 @@ async def _seed_ready(
             raw_id = await session.scalar(
                 text("""
                 INSERT INTO raw_items(source_id,source_account_id,collection_run_id,external_id,fetched_at,http_status,content_type,payload_location,payload_hash,retention_class,parse_status)
-                VALUES (:source,:account,:run,:external,:now,200,'application/json',:location,:hash,'metadata_only','pending') RETURNING id
+                VALUES (:source,:account,:run,:external,:now,200,'application/json',:location,:hash,:retention,'pending') RETURNING id
             """),
                 {
                     "source": source_id,
@@ -185,6 +187,7 @@ async def _seed_ready(
                     "now": datetime.now(UTC),
                     "location": f"internal://r8a/{marker}",
                     "hash": marker.ljust(64, "0")[:64],
+                    "retention": retention,
                 },
             )
         else:
@@ -389,6 +392,8 @@ async def test_revision_and_concurrent_reconciliation_are_idempotent() -> None:
     [
         ("safe_fact_projections", "quality_status='partial'"),
         ("raw_item_observations", "projection_hash=repeat('0',64)"),
+        ("raw_items", "retention_class='metadata_only'"),
+        ("sources", "retention_class='metadata_only'"),
     ],
 )
 async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(
@@ -410,14 +415,8 @@ async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(
             "raw_items": raw_id,
             "sources": raw.source_id,
         }
-        await mutator.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
-            {"key": f"source:{raw.source_id}"},
-        )
-        await mutator.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
-            {"key": f"raw:{raw.id}"},
-        )
+        # The mutation obtains the target row lock first through ordinary SQL.
+        # No test-only advisory ordering is allowed to hide row/advisory inversion.
         await mutator.execute(
             text(f"UPDATE {table} SET {assignment} WHERE id=:id"),
             {"id": identities[table]},
@@ -813,6 +812,8 @@ async def _unsafe_content(
     raw: RawItem,
     payload: dict[str, object],
     *,
+    provider: str,
+    operation: str,
     kind: ContentKind,
     availability: BodyAvailability = BodyAvailability.UNAVAILABLE,
     url: str | None = None,
@@ -823,12 +824,16 @@ async def _unsafe_content(
         source_account_id=raw.source_account_id,
         content_kind=kind,
         external_id=str(payload["provider_item_id"]),
-        title="Synthetic",
+        title=(
+            f"SEC {payload['form']} filing"
+            if provider == "sec_edgar"
+            else str(payload.get("title"))
+        ),
         source_summary=None,
         body=None,
         body_availability=availability,
         author=None,
-        language=None,
+        language=payload.get("language") if provider == "marketaux" else None,
         original_url=url,
         canonical_url=url,
         source_published_at=datetime.fromisoformat(str(payload["published_at"])),
@@ -839,11 +844,209 @@ async def _unsafe_content(
         quote_external_id=None,
         repost_external_id=None,
         deleted_status=DeletedStatus.UNKNOWN,
-        metadata_={},
+        metadata_={
+            "provider": provider,
+            "operation_key": operation,
+            "retention": raw.retention_class,
+        },
     )
     session.add(item)
     await session.flush()
     return item
+
+
+async def _prepare_direct_marketaux_link(
+    factory: async_sessionmaker[AsyncSession],
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Build an otherwise-valid direct LINKED transition fixture."""
+    raw_id, projection_id, payload = await _seed_ready(factory, "marketaux")
+    async with factory.begin() as session:
+        raw = await session.get(RawItem, raw_id)
+        projection = await session.get(SafeFactProjection, projection_id)
+        assert raw is not None and projection is not None
+        observation = await session.get(RawItemObservation, projection.observation_id)
+        assert observation is not None
+        content = await _unsafe_content(
+            session,
+            raw,
+            payload,
+            provider="marketaux",
+            operation="news_all",
+            kind=ContentKind.ARTICLE,
+            availability=BodyAvailability.UNAVAILABLE,
+            url=str(payload["canonical_url"]),
+        )
+        evidence = await handoff_module._evidence(session, projection, observation, raw, content)
+        return raw.id, raw.source_id, projection.id, evidence.id, content.id
+
+
+async def _insert_canonical_link(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    projection_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    content_id: uuid.UUID,
+) -> None:
+    async with factory.begin() as session:
+        await session.execute(
+            text("""
+            INSERT INTO evidence_projection_links(
+              safe_fact_projection_id,evidence_item_id,content_item_id,status,linked_at,
+              canonical_evidence,canonical_content
+            ) VALUES (:projection,:evidence,:content,'linked',:now,true,true)
+            """),
+            {
+                "projection": projection_id,
+                "evidence": evidence_id,
+                "content": content_id,
+                "now": datetime.now(UTC),
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_database_accepts_complete_marketaux_link_policy_control() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, _, projection_id, evidence_id, content_id = await _prepare_direct_marketaux_link(factory)
+        await _insert_canonical_link(
+            factory,
+            projection_id=projection_id,
+            evidence_id=evidence_id,
+            content_id=content_id,
+        )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("assignment", "parameters"),
+    [
+        ("content_kind='official_release'", {}),
+        ("body_availability='full'", {}),
+        ("title='wrong'", {}),
+        ("original_url='https://example.com/wrong'", {}),
+        ("canonical_url='https://example.com/wrong'", {}),
+        ("source_published_at=source_published_at + interval '1 second'", {}),
+        ("language='fr'", {}),
+        ("metadata=metadata || '{\"extra\":true}'::jsonb", {}),
+        ("metadata=jsonb_set(metadata,'{provider}','\"finnhub\"'::jsonb)", {}),
+        ("metadata=jsonb_set(metadata,'{operation_key}','\"quote\"'::jsonb)", {}),
+        ("metadata=jsonb_set(metadata,'{retention}','\"metadata_only\"'::jsonb)", {}),
+    ],
+)
+async def test_database_content_policy_guard_rejects_single_field_mutation(
+    assignment: str, parameters: dict[str, object]
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, _, projection_id, evidence_id, content_id = await _prepare_direct_marketaux_link(factory)
+        async with factory.begin() as session:
+            await session.execute(
+                text(f"UPDATE content_items SET {assignment} WHERE id=:id"),
+                {"id": content_id, **parameters},
+            )
+        with pytest.raises(DBAPIError) as failure:
+            await _insert_canonical_link(
+                factory,
+                projection_id=projection_id,
+                evidence_id=evidence_id,
+                content_id=content_id,
+            )
+        assert "linked_content_field_policy_invalid" in str(failure.value.orig)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("assignment", "expected"),
+    [
+        ("access_level='public_summary'", "linked_operation_policy_invalid"),
+        ("provider_item_hash=repeat('0',64)", "linked_evidence_identity_policy_invalid"),
+        (
+            "event_time=event_time + interval '1 second'",
+            "linked_evidence_identity_policy_invalid",
+        ),
+    ],
+)
+async def test_database_evidence_policy_guard_rejects_single_field_mutation(
+    assignment: str, expected: str
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, _, projection_id, evidence_id, content_id = await _prepare_direct_marketaux_link(factory)
+        async with factory.begin() as session:
+            await session.execute(
+                text(f"UPDATE evidence_items SET {assignment} WHERE id=:id"),
+                {"id": evidence_id},
+            )
+        with pytest.raises(DBAPIError) as failure:
+            await _insert_canonical_link(
+                factory,
+                projection_id=projection_id,
+                evidence_id=evidence_id,
+                content_id=content_id,
+            )
+        assert expected in str(failure.value.orig)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_evidence_flag_constraint_is_specific() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, _, _, evidence_id, _ = await _prepare_direct_marketaux_link(factory)
+        with pytest.raises(DBAPIError) as failure:
+            async with factory.begin() as session:
+                await session.execute(
+                    text("UPDATE evidence_items SET market_data_flag=true WHERE id=:id"),
+                    {"id": evidence_id},
+                )
+        assert "ck_evidence_items_flags_consistent" in str(failure.value.orig)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("table", ["raw_items", "sources"])
+async def test_database_retention_policy_guard_rejects_disallowed_retention(table: str) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        (
+            raw_id,
+            source_id,
+            projection_id,
+            evidence_id,
+            content_id,
+        ) = await _prepare_direct_marketaux_link(factory)
+        async with factory.begin() as session:
+            await session.execute(
+                text(f"UPDATE {table} SET retention_class='full_content' WHERE id=:id"),
+                {"id": raw_id if table == "raw_items" else source_id},
+            )
+        with pytest.raises(DBAPIError) as failure:
+            await _insert_canonical_link(
+                factory,
+                projection_id=projection_id,
+                evidence_id=evidence_id,
+                content_id=content_id,
+            )
+        assert "linked_operation_policy_invalid" in str(failure.value.orig)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -876,25 +1079,39 @@ async def test_database_rejects_provider_content_policy_bypass(
             if url_mode == "wrong":
                 url = "https://www.sec.gov/Archives/edgar/data/320193/wrong.htm"
             content = await _unsafe_content(
-                session, raw, payload, kind=kind, availability=availability, url=url
+                session,
+                raw,
+                payload,
+                provider=provider,
+                operation=(
+                    "news_all"
+                    if provider == "marketaux"
+                    else "submissions_recent"
+                    if provider == "sec_edgar"
+                    else "quote"
+                    if provider == "finnhub"
+                    else "electricity_retail_sales"
+                ),
+                kind=kind,
+                availability=availability,
+                url=url,
             )
-            outcome = await EvidenceWriteService(session).write_one(
-                EvidenceWriteRequest(
-                    envelope=_legacy_envelope(provider, payload),  # type: ignore[arg-type]
-                    source_id=raw.source_id,
-                    source_account_id=raw.source_account_id,
-                    raw_item_id=raw.id,
-                )
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert projection is not None
+            observation = await session.get(RawItemObservation, projection.observation_id)
+            assert observation is not None
+            evidence = await handoff_module._evidence(
+                session, projection, observation, raw, content
             )
-            assert outcome.evidence_item_id is not None
-            evidence_id, content_id = outcome.evidence_item_id, content.id
-        with pytest.raises(DBAPIError):
+            evidence_id, content_id = evidence.id, content.id
+        with pytest.raises(DBAPIError) as failure:
             async with factory.begin() as session:
                 await session.execute(
                     text("""
                     INSERT INTO evidence_projection_links(
-                      safe_fact_projection_id,evidence_item_id,content_item_id,status,linked_at
-                    ) VALUES (:projection,:evidence,:content,'linked',:now)
+                      safe_fact_projection_id,evidence_item_id,content_item_id,status,linked_at,
+                      canonical_evidence,canonical_content
+                    ) VALUES (:projection,:evidence,:content,'linked',:now,true,true)
                     """),
                     {
                         "projection": projection_id,
@@ -903,6 +1120,12 @@ async def test_database_rejects_provider_content_policy_bypass(
                         "now": datetime.now(UTC),
                     },
                 )
+        expected = (
+            "linked_operation_policy_invalid"
+            if provider in {"finnhub", "eia"}
+            else "linked_content_field_policy_invalid"
+        )
+        assert expected in str(failure.value.orig)
     finally:
         await _cleanup(factory)
         await engine.dispose()
@@ -922,6 +1145,8 @@ async def test_database_rejects_market_observation_evidence_content(provider: st
                 session,
                 raw,
                 payload,
+                provider=provider,
+                operation="quote" if provider == "finnhub" else "electricity_retail_sales",
                 kind=ContentKind.ARTICLE,
                 availability=BodyAvailability.UNAVAILABLE,
             )
@@ -1744,6 +1969,59 @@ def test_packet_prefetch_query_budget_is_bounded(scan_limit: int, maximum: int) 
 
 
 @pytest.mark.asyncio
+async def test_packet_prefetch_query_count_is_measured_at_real_scale() -> None:
+    """Measure statements over real linked rows, including the 100-row boundary."""
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        for index in range(500):
+            _, projection_id, _ = await _seed_ready(factory, "marketaux")
+            await _link_with_explicit_evidence_id(
+                factory, projection_id, uuid.UUID(int=100_000 + index)
+            )
+        builder = RichEvidencePacketBuilder(factory, max_batch_size=500)
+        for size in (1, 50, 100, 101, 500):
+            query_count = 0
+
+            def count_query(*_args: object) -> None:
+                nonlocal query_count
+                query_count += 1
+
+            event.listen(engine.sync_engine, "before_cursor_execute", count_query)
+            try:
+                page = await builder.list_packets(
+                    after_evidence_id=uuid.UUID(int=99_999),
+                    limit=size,
+                    scan_limit=size,
+                )
+            finally:
+                event.remove(engine.sync_engine, "before_cursor_execute", count_query)
+            assert page.returned_count == size
+            assert page.scanned_count == size
+            assert len({packet.evidence_id for packet in page.packets}) == size
+            assert query_count <= packet_query_budget(size)
+            assert page.has_more is (size < 500)
+            if size == 500:
+                assert page.next_evidence_id is None
+            else:
+                assert page.next_evidence_id is not None
+        one = await builder.build_one(uuid.UUID(int=100_000))
+        assert (
+            one.packet_digest
+            == (
+                await builder.list_packets(
+                    after_evidence_id=uuid.UUID(int=99_999), limit=1, scan_limit=1
+                )
+            )
+            .packets[0]
+            .packet_digest
+        )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_0010_migration_roundtrip_and_linked_state_guard() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
@@ -1759,6 +2037,38 @@ async def test_0010_migration_roundtrip_and_linked_state_guard() -> None:
         await connection.run_sync(roundtrip)
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0010_controlled_gate_blocks_bare_state_and_applies_exact_upgrade() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
+
+    def downgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.downgrade()
+
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(downgrade)
+            await connection.execute(text("UPDATE alembic_version SET version_num='0009'"))
+        blocked = await controlled_upgrade_0010(engine, execute=False, writers_stopped=False)
+        assert blocked.status == "BLOCKED"
+        assert blocked.safe_errors == ("migration_0010_writers_not_stopped",)
+        dry_run = await controlled_upgrade_0010(engine, execute=False, writers_stopped=True)
+        assert dry_run.status == "DRY_RUN"
+        assert dry_run.database_revision == "0009"
+        applied = await controlled_upgrade_0010(
+            engine,
+            execute=True,
+            writers_stopped=True,
+        )
+        assert applied.status == "PASS"
+        assert applied.database_revision == "0010"
+        assert applied.migration_executed is True
+        assert applied.safe_errors == ()
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

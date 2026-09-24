@@ -77,8 +77,10 @@ not invalidate historical packets. Target is consulted only for stable target/so
 Existing linked Evidence/Content/link immutability remains in force. Downgrade refuses while linked state exists;
 it never deletes factual data.
 
-Handoff and mutation triggers share the fixed advisory-lock order `Source -> RawItem`; handoff then locks
-Projection, Observation, Run, Target, SourceAccount, downstream canonical rows and the association. After the
+Handoff uses a fixed PostgreSQL row-lock order and bounded local lock timeout. Mutation triggers do not acquire
+advisory locks after PostgreSQL has already taken the mutated row lock. Deadlock, serialization, lock-unavailable
+and timeout outcomes become classified, value-free per-item retries; one conflicted item cannot end the batch.
+Handoff locks Projection, Observation, Run, Target, SourceAccount, downstream canonical rows and association. After the
 complete lock set is held, handoff reloads and revalidates typed normalization, hash, quality, operation contract,
 provenance, retention and access policy; no value inspected before locking is used to create downstream state.
 Concurrent mutation therefore commits
@@ -86,11 +88,14 @@ before linking or loses to immutable LINKED state. Migration 0010 first performs
 of existing LINKED lineage. A validated legacy opaque Finnhub quote/EIA retail Evidence identity may be adopted
 without rewriting it; newly created Evidence must satisfy the current operation-specific access policy.
 Because PostgreSQL cannot safely reproduce the Python typed normalizers, deployment must run
-`scripts/m2b_pre_migration_validator.py` against revision 0009 and receive `PASS` before applying 0010. The
+`scripts/m2b_controlled_upgrade.py --writers-stopped` against revision 0009 and receive `DRY_RUN`, then use that
+same entry with `--execute --writers-stopped`. It holds the maintenance lock, runs the typed validator, rejects
+intervening state drift and applies exactly 0010. Bare production `alembic upgrade 0010` is prohibited. The
 validator uses a repeatable-read, read-only bounded keyset scan and emits only counts and stable safe error codes;
 0010 then performs the complementary relational fail-closed audit. Neither stage repairs factual data.
-Destructive PostgreSQL integration tests require an explicit PostgreSQL URL, allowlisted test database/user and
-local/CI host (or an explicit disposable isolation token).
+PostgreSQL integration tests create a random `news_collect_test_<token>` disposable database per pytest process,
+bind the token to that exact database, migrate it, and drop only that database. A skipped PostgreSQL integration
+module must be reported as skipped and is not a full PostgreSQL PASS.
 
 ## Acceptance
 

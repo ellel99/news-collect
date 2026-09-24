@@ -9,7 +9,7 @@ import math
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -28,6 +28,7 @@ from market_intelligence.db.models import (
     Source,
     SourceAccount,
 )
+from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
 from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.rich_evidence.contracts import (
     ContentReference,
@@ -58,15 +59,6 @@ _EXPECTED_TYPE = {
     ("eia", "electricity_retail_sales"): "eia_energy_timeseries",
     ("eia", "electricity_rto_region_data"): "eia_energy_timeseries",
     ("sec_edgar", "submissions_recent"): "sec_filing",
-}
-
-_RETENTION_POLICY = {
-    ("marketaux", "news_all"): frozenset({"link_only", "metadata_only"}),
-    ("finnhub", "quote"): frozenset({"metadata_only"}),
-    ("finnhub", "company_news"): frozenset({"link_only", "metadata_only"}),
-    ("eia", "electricity_retail_sales"): frozenset({"metadata_only"}),
-    ("eia", "electricity_rto_region_data"): frozenset({"metadata_only"}),
-    ("sec_edgar", "submissions_recent"): frozenset({"link_only", "metadata_only"}),
 }
 
 _PREFETCH_CHUNK_SIZE = 100
@@ -349,8 +341,10 @@ class RichEvidencePacketBuilder:
             raise RichEvidenceError("rich_evidence_operation_conflict")
         revisions.sort(key=lambda item: (item[0].observed_at, item[0].projection_id.hex))
         current, current_run, current_target = revisions[-1]
-        allowed_retention = _RETENTION_POLICY.get((evidence.provider, current.operation_key))
-        if allowed_retention is None or raw.retention_class not in allowed_retention:
+        current_policy = factual_operation_policy(
+            evidence.provider, current.operation_key, current.provider_contract_version
+        )
+        if raw.retention_class not in current_policy.retention:
             raise RichEvidenceError("rich_evidence_retention_policy_invalid")
         canonical_rows = [
             revision
@@ -371,6 +365,7 @@ class RichEvidencePacketBuilder:
         content = await self._content_reference(
             session,
             evidence,
+            raw.retention_class,
             rows,
             tuple(item[0] for item in revisions),
             current.operation_key,
@@ -431,13 +426,60 @@ class RichEvidencePacketBuilder:
             )
         except ValueError:
             raise RichEvidenceError("rich_evidence_contract_version_invalid") from None
+        legacy_allowed = (projection.provider, projection.operation_key) in {
+            ("finnhub", "quote"),
+            ("eia", "electricity_retail_sales"),
+        }
+        legacy_identity = (
+            legacy_provider_item_identity(projection.provider, projection.factual_payload)
+            if legacy_allowed
+            else str(projection.factual_payload.get("provider_item_id"))
+        )
+        adopted_legacy = (
+            evidence.provider_item_id == legacy_identity
+            and evidence.provider_item_id != str(projection.factual_payload.get("provider_item_id"))
+            and legacy_allowed
+        )
+        expected_access = "link_only" if adopted_legacy else policy.access
+        is_market = projection.operation_key == "quote"
+        expected_content = {
+            "has_title": bool(projection.factual_payload.get("title")),
+            "has_body": False,
+            "has_url": bool(
+                projection.factual_payload.get("canonical_url")
+                or projection.factual_payload.get("official_url")
+            ),
+            "has_snippet": False,
+            "has_description": False,
+        }
+        expected_numeric = {
+            "has_numeric_value": is_market or projection.provider == "eia",
+            "numeric_field_count": 7 if is_market else 1 if projection.provider == "eia" else 0,
+            "nullable_allowed": projection.provider == "eia",
+        }
         if (
             expected_type is None
             or expected_type != evidence.provider_item_type
             or policy.item_type != evidence.provider_item_type
             or policy.evidence_kind != evidence.evidence_kind
             or policy.source_type != evidence.source_type
-            or policy.access != evidence.access_level
+            or expected_access != evidence.access_level
+            or evidence.provider_item_id
+            not in {str(projection.factual_payload.get("provider_item_id")), legacy_identity}
+            or (evidence.provider_item_id == legacy_identity and not adopted_legacy)
+            or evidence.processing_status != "validated"
+            or evidence.official_source_flag != (projection.provider in {"eia", "sec_edgar"})
+            or evidence.market_data_flag != is_market
+            or evidence.disclosure_flag != (projection.provider == "sec_edgar")
+            or evidence.news_signal_flag
+            != (projection.operation_key in {"news_all", "company_news"})
+            or (link.canonical_evidence and evidence.content_presence != expected_content)
+            or (link.canonical_evidence and evidence.numeric_presence != expected_numeric)
+            or (
+                link.canonical_evidence
+                and not adopted_legacy
+                and evidence.provider_item_hash != projection.projection_hash
+            )
             or projection.provider != evidence.provider
             or projection.raw_item_id != raw.id
             or observation.raw_item_id != raw.id
@@ -466,6 +508,7 @@ class RichEvidencePacketBuilder:
         self,
         session: AsyncSession,
         evidence: EvidenceItem,
+        retention_class: str,
         rows: Sequence[Any],
         revisions: tuple[EvidenceRevision, ...],
         operation: str,
@@ -512,6 +555,7 @@ class RichEvidencePacketBuilder:
             or set(content.metadata_) - {"provider", "operation_key", "retention"}
             or content.metadata_.get("provider") != evidence.provider
             or content.metadata_.get("operation_key") != operation
+            or content.metadata_.get("retention") != retention_class
         ):
             raise RichEvidenceError("rich_evidence_content_invalid")
         if evidence.provider in {"eia"} or (
@@ -575,6 +619,7 @@ class RichEvidencePacketBuilder:
             evidence_kind=evidence.evidence_kind,
             provider_item_type=evidence.provider_item_type,
             access_level=evidence.access_level,
+            identity_mode=_identity_mode(evidence, current),
             retention_class=raw.retention_class,
             canonical_event_time=evidence.event_time,
             canonical_observed_at=evidence.observed_at,
@@ -617,6 +662,23 @@ def _typed_facts(provider: str, operation: str, payload: Mapping[str, Any]) -> T
     if (provider, operation) == ("sec_edgar", "submissions_recent"):
         return SecFilingFacts(**data)
     raise RichEvidenceError("rich_evidence_operation_unknown")
+
+
+def _identity_mode(
+    evidence: EvidenceItem, current: EvidenceRevision
+) -> Literal["canonical", "adopted_legacy_opaque"]:
+    if (evidence.provider, current.operation_key) not in {
+        ("finnhub", "quote"),
+        ("eia", "electricity_retail_sales"),
+    }:
+        return "canonical"
+    expected = legacy_provider_item_identity(evidence.provider, dataclasses.asdict(current.facts))
+    return (
+        "adopted_legacy_opaque"
+        if evidence.provider_item_id == expected
+        and evidence.provider_item_id != current.facts.provider_item_id
+        else "canonical"
+    )
 
 
 def _availability(facts: TypedFacts) -> tuple[tuple[str, ...], tuple[str, ...]]:
