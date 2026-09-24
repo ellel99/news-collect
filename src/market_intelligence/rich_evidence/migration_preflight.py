@@ -125,7 +125,12 @@ async def validate_0010_pre_migration(engine: AsyncEngine) -> tuple[dict[str, ob
                             or row["retention_class"] != row["source_retention"]
                             or row["retention_class"] not in policy.retention
                             or row["provider_item_id"] not in {plain_identity, legacy_identity}
-                            or (row["provider_item_id"] == legacy_identity and not adopted_legacy)
+                            or (
+                                legacy_allowed
+                                and legacy_identity != plain_identity
+                                and row["provider_item_id"] == legacy_identity
+                                and not adopted_legacy
+                            )
                             or row["provider_item_type"] != policy.item_type
                             or row["evidence_kind"] != policy.evidence_kind
                             or row["source_type"] != policy.source_type

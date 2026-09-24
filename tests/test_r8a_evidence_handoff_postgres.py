@@ -932,7 +932,7 @@ async def test_database_accepts_complete_marketaux_link_policy_control() -> None
         ("canonical_url='https://example.com/wrong'", {}),
         ("source_published_at=source_published_at + interval '1 second'", {}),
         ("language='fr'", {}),
-        ("metadata=metadata || '{\"extra\":true}'::jsonb", {}),
+        ("metadata=metadata || jsonb_build_object('extra',true)", {}),
         ("metadata=jsonb_set(metadata,'{provider}','\"finnhub\"'::jsonb)", {}),
         ("metadata=jsonb_set(metadata,'{operation_key}','\"quote\"'::jsonb)", {}),
         ("metadata=jsonb_set(metadata,'{retention}','\"metadata_only\"'::jsonb)", {}),

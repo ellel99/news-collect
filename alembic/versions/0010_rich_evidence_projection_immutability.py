@@ -208,7 +208,8 @@ def upgrade() -> None:
             operation_identity text; current_payload jsonb;
             canonical_payload jsonb; canonical_provider text; canonical_operation text;
             canonical_hash text; canonical_observed_at timestamptz;
-            c content_items%ROWTYPE; e evidence_items%ROWTYPE;
+            content_row content_items%ROWTYPE;
+            evidence_row evidence_items%ROWTYPE;
     BEGIN
       IF NEW.status='linked' AND (TG_OP='INSERT' OR OLD.status IS DISTINCT FROM 'linked') THEN
         SELECT p.raw_item_id,r.source_id,p.provider,p.operation_key,p.factual_payload
@@ -323,33 +324,33 @@ def upgrade() -> None:
             AND l.canonical_evidence
           LIMIT 1;
         END IF;
-        SELECT * INTO e FROM evidence_items WHERE id=NEW.evidence_item_id;
-        IF e.event_time IS DISTINCT FROM
+        SELECT * INTO evidence_row FROM evidence_items WHERE id=NEW.evidence_item_id;
+        IF evidence_row.event_time IS DISTINCT FROM
              (canonical_payload->>'published_at')::timestamptz
-           OR e.observed_at IS DISTINCT FROM canonical_observed_at
-           OR e.content_presence IS DISTINCT FROM jsonb_build_object(
+           OR evidence_row.observed_at IS DISTINCT FROM canonical_observed_at
+           OR evidence_row.content_presence IS DISTINCT FROM jsonb_build_object(
                 'has_title',COALESCE(canonical_payload->>'title','') <> '',
                 'has_body',false,
                 'has_url',COALESCE(canonical_payload->>'canonical_url','') <> ''
                            OR COALESCE(canonical_payload->>'official_url','') <> '',
                 'has_snippet',false,'has_description',false)
-           OR e.numeric_presence IS DISTINCT FROM jsonb_build_object(
+           OR evidence_row.numeric_presence IS DISTINCT FROM jsonb_build_object(
                 'has_numeric_value',(operation_identity='quote' OR provider_key='eia'),
                 'numeric_field_count',CASE WHEN operation_identity='quote' THEN 7
                                            WHEN provider_key='eia' THEN 1 ELSE 0 END,
                 'nullable_allowed',(provider_key='eia'))
            OR NOT (
-             (e.provider_item_id IS NOT DISTINCT FROM
+             (evidence_row.provider_item_id IS NOT DISTINCT FROM
                 canonical_payload->>'provider_item_id'
-              AND e.provider_item_hash=canonical_hash)
+              AND evidence_row.provider_item_hash=canonical_hash)
              OR (provider_key='finnhub' AND operation_identity='quote'
-                 AND e.access_level='link_only'
-                 AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                 AND evidence_row.access_level='link_only'
+                 AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
                    '["'||canonical_payload->>'symbol'||'",'||
                    canonical_payload->>'provider_timestamp'||']','UTF8'),'sha256'),'hex'))
              OR (provider_key='eia' AND operation_identity='electricity_retail_sales'
-                 AND e.access_level='link_only'
-                 AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
+                 AND evidence_row.access_level='link_only'
+                 AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
                    '["'||canonical_payload->>'period'||'","'||
                    canonical_payload->>'geography'||'","'||
                    canonical_payload->>'sector'||'"]','UTF8'),'sha256'),'hex'))
@@ -360,7 +361,7 @@ def upgrade() -> None:
           RAISE EXCEPTION 'canonical_content_adoption_invalid';
         END IF;
         IF NEW.content_item_id IS NOT NULL THEN
-          SELECT * INTO c FROM content_items WHERE id=NEW.content_item_id;
+          SELECT * INTO content_row FROM content_items WHERE id=NEW.content_item_id;
           IF (EXISTS (SELECT 1 FROM evidence_projection_links
                       WHERE content_item_id=NEW.content_item_id AND status='linked'))
                IS DISTINCT FROM (NOT NEW.canonical_content) THEN
@@ -379,31 +380,36 @@ def upgrade() -> None:
               AND l.canonical_content
             LIMIT 1;
           END IF;
-          IF c.body IS NOT NULL OR c.source_summary IS NOT NULL OR c.author IS NOT NULL
-             OR c.content_hash IS NOT NULL OR c.source_updated_at IS NOT NULL
-             OR c.reply_to_external_id IS NOT NULL OR c.quote_external_id IS NOT NULL
-             OR c.repost_external_id IS NOT NULL OR c.deleted_status <> 'unknown'
-             OR c.metadata - ARRAY['provider','operation_key','retention'] <> '{}'::jsonb
-             OR c.metadata->>'provider' IS DISTINCT FROM canonical_provider
-             OR c.metadata->>'operation_key' IS DISTINCT FROM canonical_operation
-             OR c.metadata->>'retention' IS DISTINCT FROM
+          IF content_row.body IS NOT NULL OR content_row.source_summary IS NOT NULL
+             OR content_row.author IS NOT NULL OR content_row.content_hash IS NOT NULL
+             OR content_row.source_updated_at IS NOT NULL
+             OR content_row.reply_to_external_id IS NOT NULL
+             OR content_row.quote_external_id IS NOT NULL
+             OR content_row.repost_external_id IS NOT NULL
+             OR content_row.deleted_status <> 'unknown'
+             OR content_row.metadata - ARRAY['provider','operation_key','retention'] <> '{}'::jsonb
+             OR content_row.metadata->>'provider' IS DISTINCT FROM canonical_provider
+             OR content_row.metadata->>'operation_key' IS DISTINCT FROM canonical_operation
+             OR content_row.metadata->>'retention' IS DISTINCT FROM
                 (SELECT retention_class FROM raw_items WHERE id=raw_identity)
-             OR (canonical_provider='marketaux' AND c.language IS DISTINCT FROM
+             OR (canonical_provider='marketaux' AND content_row.language IS DISTINCT FROM
                  canonical_payload->>'language')
-             OR (canonical_provider IN ('finnhub','sec_edgar') AND c.language IS NOT NULL)
-             OR c.body_availability <> 'unavailable'
-             OR c.source_published_at IS DISTINCT FROM
+             OR (canonical_provider IN ('finnhub','sec_edgar')
+                 AND content_row.language IS NOT NULL)
+             OR content_row.body_availability <> 'unavailable'
+             OR content_row.source_published_at IS DISTINCT FROM
                 (canonical_payload->>'published_at')::timestamptz
-             OR c.original_url IS DISTINCT FROM COALESCE(canonical_payload->>'canonical_url',
-                                                          canonical_payload->>'official_url')
-             OR c.canonical_url IS DISTINCT FROM c.original_url
-             OR c.external_id IS DISTINCT FROM canonical_payload->>'provider_item_id'
+             OR content_row.original_url IS DISTINCT FROM
+                COALESCE(canonical_payload->>'canonical_url',
+                         canonical_payload->>'official_url')
+             OR content_row.canonical_url IS DISTINCT FROM content_row.original_url
+             OR content_row.external_id IS DISTINCT FROM canonical_payload->>'provider_item_id'
              OR (canonical_provider IN ('marketaux','finnhub') AND
-                 (c.content_kind <> 'article' OR
-                  c.title IS DISTINCT FROM canonical_payload->>'title'))
+                 (content_row.content_kind <> 'article' OR
+                  content_row.title IS DISTINCT FROM canonical_payload->>'title'))
              OR (canonical_provider='sec_edgar' AND
-                 (c.content_kind <> 'official_release' OR
-                  c.title IS DISTINCT FROM
+                 (content_row.content_kind <> 'official_release' OR
+                  content_row.title IS DISTINCT FROM
                     ('SEC '||canonical_payload->>'form'||' filing'))) THEN
             RAISE EXCEPTION 'linked_content_field_policy_invalid';
           END IF;
