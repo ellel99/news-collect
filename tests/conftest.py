@@ -46,6 +46,9 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     os.environ["TEST_DATABASE_URL"] = _DISPOSABLE_URL
     os.environ["DATABASE_URL"] = _DISPOSABLE_URL
     get_settings.cache_clear()
+    # Test database provisioning owns DBA prerequisites. Business migrations
+    # deliberately never install extensions.
+    asyncio.run(_database_ddl(_DISPOSABLE_URL, "CREATE EXTENSION pgcrypto"))
     command.upgrade(Config("alembic.ini"), "head")
 
 
