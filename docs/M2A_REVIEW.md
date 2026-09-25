@@ -14,12 +14,12 @@ is substituted for stored numeric facts. Canonical Evidence/Content are never ov
 Known boundaries: v1 remains compatibility-only; fixed/manual or rolling windows are explicitly configured;
 upstream pagination is not a transactional snapshot; keysets plus bounded overlap handle changing arrays.
 Production deployment requires separate stopped-writer review because the observation uniqueness conflict target
-changes. No activation is possible merely by selecting an environment setting. M2-B is implemented in its Draft
-review PR; M2-C/D remain unimplemented.
+changes. No activation is possible merely by selecting an environment setting. M2-B is completed in main;
+M2-C is implemented in a separate Draft review PR and M2-D remains unimplemented.
 
 Validation results and exact reviewed commit/changed-file count are recorded in the Draft PR body after execution.
 
-## M2-B follow-on implementation self-check ledger（independent M2-B review pending）
+## Historical M2-B follow-on implementation self-check ledger（review completed）
 
 - VERIFIED_FIXED: provider-only Evidence dispatch now resolves exact operation/version; company-news has its
   own news type and RTO has its own typed factual contract.
@@ -29,8 +29,9 @@ Validation results and exact reviewed commit/changed-file count are recorded in 
   downgrade refuses incompatible operation/observation state.
 - INTENTIONAL_BOUNDARY: explicit frozen windows, bounded responses/requests, blocked body/summary fields,
   v1 compatibility paths, legacy authority and no production activation.
-- ACTIVE_REVIEW: linked-payload immutability enhancement/Rich Evidence Packet (M2-B).
-- DEFERRED: Event Bundle (M2-C), machine readiness gate (M2-D), and separately authorized stopped-writer
+- COMPLETED: linked-payload immutability enhancement/Rich Evidence Packet (M2-B).
+- ACTIVE_REVIEW: Event Bundle (M2-C).
+- DEFERRED: machine readiness gate (M2-D), and separately authorized stopped-writer
   deployment/production verification.
 
 Coverage follows the repository review protocol: contracts/config → request/continuation → persistence and

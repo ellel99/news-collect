@@ -1,13 +1,15 @@
 # AI Context
 
-M2-A is merged and complete. M2-B is implemented in a Draft PR as a read-only Rich Evidence Packet boundary;
-review remains pending. It reads only linked READY factual projections and never reads raw payload storage.
-Production authority remains `legacy`; M2-C/D and real AI remain unauthorized.
-Draft M2-B uses separate durable canonical Evidence/Content adoption markers, value-free migration preflight,
+M2-A and M2-B are merged and complete. M2-C is implemented in this Draft PR as the deterministic durable
+Event Evidence Bundle consumer of the read-only Rich Evidence Packet boundary. It reads only linked READY
+factual projections through packets and never reads raw payload storage. Production authority remains `legacy`;
+M2-D and real AI remain unauthorized.
+Completed M2-B uses separate durable canonical Evidence/Content adoption markers, value-free migration preflight,
 complete operation-specific post-lock contract/provenance validation, bounded set-based packet prefetch,
 row-lock timeout/retry without trigger advisory inversion, a controlled 0009→0010 upgrade gate, and a random
-token-bound disposable PostgreSQL database per pytest process. M2-C/D, production consumer/migration, backfill,
-live Provider acceptance and AI remain unauthorized.
+token-bound disposable PostgreSQL database per pytest process. M2-C adds only an authority-neutral bounded
+consumer and additive migration 0011; production migration/activation, backfill, live Provider acceptance and AI
+remain unauthorized.
 Legacy Evidence adoption is limited to the real historical mapper operations (Marketaux news, Finnhub quote,
 EIA retail and SEC submissions); company-news/RTO/new operations fail closed. It proves deterministic identity
 and relational policy/provenance, not reconstruction of an otherwise unverifiable historical provider hash.
@@ -17,7 +19,8 @@ Historical PR #46 M2-A summary: explicit fixed/rolling windows, pre-request dura
 atomic empty-completion cleanup, exact operation continuation codecs, keyset continuation,
 NULL v2 legacy identity and traceable rejected-row audit. v2 cannot inherit a v1 legacy cursor. Production
 rollback-window guard remains installed; tests simulate future eligibility only in a disposable database.
-Original c4c1313 CI failed; PR #46 was subsequently reviewed, passed and merged. No M2-C/D or activation authorization.
+Original c4c1313 CI failed; PR #46 was subsequently reviewed, passed and merged. M2-C is now the only authorized
+Draft implementation; no M2-D or activation authorization exists.
 The current review fix scopes legacy cursor uniqueness to target-less rows, preserves target/version/mode cursor
 identity, blocks ordinary revision with pending continuation, and enforces exact continuation values plus
 pre-request RUNNING/PARTIAL/FAILED lineage in PostgreSQL. Same-page identity conflicts fail closed without retry.
@@ -37,10 +40,10 @@ PAUSED-only locked/CAS/value-free-audit operation and never changes cursor posit
 - 当前阶段：Event Intelligence foundation
 - Phase 1 原则：Content First
 - Phase 2 起才使用 Event First
-- 当前 Active SPEC：SPEC-0046 — M2-B Rich Evidence Packet（Implementation Review）
-- M2-A operation breadth and migration 0009 are completed in main. The current command authorizes M2-B typed
-  read-boundary implementation and migration 0010; M2-C/D, production migration/activation/cutover and live
-  requests remain unauthorized. R8-A was merged in PR #45.
+- 当前 Active SPEC：SPEC-0047 — M2-C Event Evidence Bundle（Draft Implementation Review）
+- M2-A operation breadth and M2-B typed Rich Evidence Packet are completed in main. The current command
+  authorizes M2-C durable Event Evidence Bundle and migration 0011; M2-D, production
+  migration/activation/cutover and live requests remain unauthorized. R8-A was merged in PR #45.
 - 最近完成：SPEC-0039（Implementation Review approved）
 - 当前工作状态：SPEC-0039 Docs/Implementation Review 已 PASS 并 Completed；EventCandidate persistence、
   deterministic clustering、provenance、importance scoring 与 mock-only ImpactAnalyzer 已完成。
@@ -54,7 +57,7 @@ PAUSED-only locked/CAS/value-free-audit operation and never changes cursor posit
   PR #39/SPEC-0040 保持独立 Draft，
   不由本分支修改、merge、rebase 或扩展。
 - Foundation governance：v2.3-FROZEN 仅允许 R1–R8 分别进入独立 SPEC/Review。当前 Active SPEC 为
-  `spec/SPEC-0046-m2b-rich-evidence-packet.md`；Migration B、production activation、
+  `spec/SPEC-0047-m2c-event-evidence-bundle.md`；Migration B、production activation、
   cutover 与 historical replay 仍禁止。
 - R2 boundary：collection transaction 原子持久化 canonical RawItem、RawItemObservation 与 PENDING
   SafeFactProjection；不创建 Content/Evidence/Event/Fact/Impact/Notification。四个 v1 typed projection 保存

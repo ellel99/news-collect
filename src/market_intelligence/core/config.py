@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     EVIDENCE_HANDOFF_BATCH_LIMIT: int = Field(default=100, ge=1, le=500)
     EVIDENCE_HANDOFF_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
     EVIDENCE_HANDOFF_STALE_AFTER_SECONDS: int = Field(default=600, ge=30, le=86400)
+    EVENT_BUNDLE_RECONCILE_INTERVAL_SECONDS: int = Field(default=60, ge=10, le=3600)
+    EVENT_BUNDLE_BATCH_LIMIT: int = Field(default=100, ge=1, le=500)
+    EVENT_BUNDLE_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    EVENT_BUNDLE_STALE_AFTER_SECONDS: int = Field(default=600, ge=30, le=86400)
 
     @field_validator("DATABASE_URL")
     @classmethod

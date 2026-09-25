@@ -4,6 +4,7 @@ import pytest
 
 from market_intelligence.tasks import (
     collection,
+    event_evidence_bundle,
     evidence_handoff,
     marketaux_telegram,
     multi_provider_scheduler,
@@ -33,6 +34,7 @@ def test_collection_tasks_and_beat_entries_are_registered() -> None:
         "multi_provider.telegram.run",
         "safe_projection.validate_pending",
         "evidence_projection.handoff_ready",
+        "event_evidence.reconcile",
     } <= set(celery_app.tasks)
     assert {entry["task"] for entry in celery_app.conf.beat_schedule.values()} == {
         "collection.dispatch_due_targets",
@@ -40,6 +42,7 @@ def test_collection_tasks_and_beat_entries_are_registered() -> None:
         "multi_provider.telegram.run",
         "safe_projection.validate_pending",
         "evidence_projection.handoff_ready",
+        "event_evidence.reconcile",
     }
 
 
@@ -50,6 +53,7 @@ def test_authority_schedules_keep_shadow_read_only_and_default_legacy() -> None:
     assert shadow_tasks == legacy_tasks | {"collection.control_plane.shadow_audit"}
     assert "safe_projection.validate_pending" in legacy_tasks & shadow_tasks & unified_tasks
     assert "evidence_projection.handoff_ready" in legacy_tasks & shadow_tasks & unified_tasks
+    assert "event_evidence.reconcile" in legacy_tasks & shadow_tasks & unified_tasks
     assert "collection.control_plane.dispatch" not in shadow_tasks
     assert "multi_provider.telegram.run" not in unified_tasks
     assert celery_app.conf.beat_schedule == legacy_schedule
@@ -82,6 +86,35 @@ def test_evidence_handoff_task_returns_value_free_counts(
     assert evidence_handoff.handoff_ready_safe_projections.run() == {
         "claimed": 2,
         "linked": 1,
+        "blocked": 0,
+        "retried": 1,
+        "recovered": 0,
+    }
+
+
+def test_event_evidence_task_returns_value_free_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_process(settings: object) -> dict[str, int]:
+        del settings
+        return {
+            "discovered": 2,
+            "claimed": 2,
+            "ready": 1,
+            "partial": 0,
+            "unchanged": 0,
+            "blocked": 0,
+            "retried": 1,
+            "recovered": 0,
+        }
+
+    monkeypatch.setattr(event_evidence_bundle, "_process", fake_process)
+    assert event_evidence_bundle.reconcile_event_evidence_bundles.run() == {
+        "discovered": 2,
+        "claimed": 2,
+        "ready": 1,
+        "partial": 0,
+        "unchanged": 0,
         "blocked": 0,
         "retried": 1,
         "recovered": 0,

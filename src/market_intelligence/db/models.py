@@ -123,6 +123,27 @@ class EventCandidateStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class EventEvidenceBundleStatus(enum.StrEnum):
+    READY = "ready"
+    PARTIAL = "partial"
+
+
+class EventEvidenceRelation(enum.StrEnum):
+    SUPPORTING = "supporting"
+    DUPLICATE = "duplicate"
+    CONTRADICTING = "contradicting"
+    SUPERSEDING = "superseding"
+
+
+class EventEvidenceBundleJobStatus(enum.StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    PARTIAL = "partial"
+    RETRY = "retry"
+    BLOCKED = "blocked"
+
+
 class CollectionTargetStatus(enum.StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
@@ -1310,6 +1331,194 @@ class EventCandidateEvidence(Base):
 
     event_candidate: Mapped[EventCandidate] = relationship(back_populates="evidence_links")
     evidence_item: Mapped[EvidenceItem] = relationship(back_populates="event_candidate_links")
+
+
+class EventEvidenceBundle(Base):
+    __tablename__ = "event_evidence_bundles"
+    __table_args__ = (
+        UniqueConstraint("event_candidate_id", "revision", name="uq_event_bundle_revision"),
+        CheckConstraint("revision > 0", name="ck_event_bundle_revision_positive"),
+        CheckConstraint("bundle_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_digest"),
+        CheckConstraint("evidence_count > 0", name="ck_event_bundle_evidence_positive"),
+        CheckConstraint("source_count > 0", name="ck_event_bundle_source_positive"),
+        CheckConstraint("provider_count > 0", name="ck_event_bundle_provider_positive"),
+        CheckConstraint("operation_count > 0", name="ck_event_bundle_operation_positive"),
+        CheckConstraint("last_event_time >= first_event_time", name="ck_event_bundle_time_order"),
+        CheckConstraint(
+            "jsonb_typeof(provider_coverage)='array'", name="ck_event_bundle_providers_array"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(operation_coverage)='array'", name="ck_event_bundle_operations_array"
+        ),
+        CheckConstraint("jsonb_typeof(reason_codes)='array'", name="ck_event_bundle_reasons_array"),
+        CheckConstraint(
+            'reason_codes <@ \'["event_bundle_partial_packet",'
+            '"event_bundle_packet_truncated"]\'::jsonb',
+            name="ck_event_bundle_reason_allowlist",
+        ),
+        CheckConstraint(
+            "(status='ready' AND reason_codes='[]'::jsonb) OR "
+            "(status='partial' AND jsonb_array_length(reason_codes)>0)",
+            name="ck_event_bundle_status_reasons",
+        ),
+        Index("ix_event_bundle_event_revision", "event_candidate_id", "revision"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT")
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    bundle_version: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
+    status: Mapped[EventEvidenceBundleStatus] = mapped_column(
+        Enum(
+            EventEvidenceBundleStatus,
+            name="event_evidence_bundle_status",
+            values_callable=enum_values,
+        )
+    )
+    bundle_digest: Mapped[str] = mapped_column(CHAR(64), unique=True)
+    evidence_count: Mapped[int] = mapped_column(Integer)
+    source_count: Mapped[int] = mapped_column(Integer)
+    provider_count: Mapped[int] = mapped_column(Integer)
+    operation_count: Mapped[int] = mapped_column(Integer)
+    provider_coverage: Mapped[list[Any]] = mapped_column(JSONB)
+    operation_coverage: Mapped[list[Any]] = mapped_column(JSONB)
+    reason_codes: Mapped[list[Any]] = mapped_column(JSONB)
+    first_event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class EventEvidenceBundleItem(Base):
+    __tablename__ = "event_evidence_bundle_items"
+    __table_args__ = (
+        UniqueConstraint("bundle_id", "event_candidate_evidence_id", name="uq_event_bundle_item"),
+        CheckConstraint("packet_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_item_packet"),
+        CheckConstraint(
+            "projection_hash ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_item_projection"
+        ),
+        CheckConstraint(
+            "fact_identity_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_item_fact_identity"
+        ),
+        CheckConstraint(
+            "fact_value_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_item_fact_value"
+        ),
+        CheckConstraint("rule_version > 0", name="ck_event_bundle_item_rule_version"),
+        CheckConstraint(
+            "relation_rule='m2c_relation_v1' AND rule_version=1",
+            name="ck_event_bundle_item_rule_exact",
+        ),
+        Index("ix_event_bundle_item_evidence", "evidence_item_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    bundle_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_evidence_bundles.id", ondelete="RESTRICT")
+    )
+    event_candidate_evidence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidate_evidence.id", ondelete="RESTRICT")
+    )
+    evidence_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("evidence_items.id", ondelete="RESTRICT")
+    )
+    packet_digest: Mapped[str] = mapped_column(CHAR(64))
+    projection_hash: Mapped[str] = mapped_column(CHAR(64))
+    fact_identity_digest: Mapped[str] = mapped_column(CHAR(64))
+    fact_value_digest: Mapped[str] = mapped_column(CHAR(64))
+    relation: Mapped[EventEvidenceRelation] = mapped_column(
+        Enum(EventEvidenceRelation, name="event_evidence_relation", values_callable=enum_values)
+    )
+    relation_rule: Mapped[str] = mapped_column(String(100))
+    rule_version: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(50))
+    operation_key: Mapped[str] = mapped_column(String(100))
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT")
+    )
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class EventEvidenceBundleHead(Base):
+    __tablename__ = "event_evidence_bundle_heads"
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT"), primary_key=True
+    )
+    current_bundle_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_evidence_bundles.id", ondelete="RESTRICT"),
+        unique=True,
+    )
+    canonical_bundle_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_evidence_bundles.id", ondelete="RESTRICT"),
+        unique=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class EventEvidenceBundleJob(Base):
+    __tablename__ = "event_evidence_bundle_jobs"
+    __table_args__ = (
+        CheckConstraint("attempt_count >= 0", name="ck_event_bundle_job_attempt_nonnegative"),
+        CheckConstraint(
+            "(status='processing' AND processing_started_at IS NOT NULL "
+            "AND claim_token IS NOT NULL) OR (status<>'processing' "
+            "AND processing_started_at IS NULL AND claim_token IS NULL)",
+            name="ck_event_bundle_job_processing_state",
+        ),
+        CheckConstraint(
+            "(status='retry' AND safe_error_code IS NOT NULL AND next_retry_at IS NOT NULL) OR "
+            "(status<>'retry' AND next_retry_at IS NULL)",
+            name="ck_event_bundle_job_retry_state",
+        ),
+        CheckConstraint(
+            "status<>'blocked' OR safe_error_code IS NOT NULL",
+            name="ck_event_bundle_job_blocked_error",
+        ),
+        CheckConstraint(
+            "status NOT IN ('pending','processing','ready','partial') OR safe_error_code IS NULL",
+            name="ck_event_bundle_job_success_error_empty",
+        ),
+        Index("ix_event_bundle_job_due", "status", "next_retry_at", "updated_at"),
+    )
+    event_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_candidates.id", ondelete="RESTRICT"), primary_key=True
+    )
+    status: Mapped[EventEvidenceBundleJobStatus] = mapped_column(
+        Enum(
+            EventEvidenceBundleJobStatus,
+            name="event_evidence_bundle_job_status",
+            values_callable=enum_values,
+        )
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    safe_error_code: Mapped[str | None] = mapped_column(String(100))
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    latest_bundle_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_evidence_bundles.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
 
 
 class Notification(Base):
