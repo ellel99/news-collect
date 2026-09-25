@@ -1,14 +1,11 @@
 # Market Intelligence Collector
 
-M2-A is complete in main. M2-B is implemented in a Draft PR as a deterministic, typed, bounded Rich Evidence
-Packet read boundary over linked READY safe factual projections. It does not persist a second factual payload,
-call external services, or activate the unified control plane. Production authority remains `legacy`.
-Draft M2-B persists independent canonical Evidence and canonical Content adoption identities, so a later safe
-Content revision can be adopted without rewriting an earlier partial Evidence revision.
-It also performs complete operation-specific locked-state handoff revalidation, bounded row-lock concurrency
-retry, controlled 0009→0010 deployment gating, disposable PostgreSQL isolation and bounded set-based packet
-prefetch; Implementation Review remains pending and no production consumer is enabled. This is not AI-ready:
-M2-C/D, production migration/consumer, backfill and live Provider acceptance remain incomplete.
+M2-A and M2-B are complete in main. M2-C is implemented in this Draft PR as the first production-code consumer
+of the deterministic, typed Rich Evidence Packet boundary. It creates immutable Event Evidence Bundle revisions
+from existing EventCandidate membership, records descriptive supporting/duplicate/contradicting/superseding
+relations, and never copies factual payload or uses AI to decide truth. Authority-neutral bounded reconciliation
+is wired for every scheduler authority, while production collection authority remains `legacy`.
+This is not AI-ready: M2-D, production migration/activation, backfill and live acceptance remain incomplete.
 Legacy opaque adoption is limited to Marketaux news, Finnhub quote, EIA retail and SEC submissions; it verifies
 deterministic identity and provenance/policy but does not claim to reconstruct an unverifiable historical
 provider hash. Migration 0010 requires DBA-installed `pgcrypto`; controlled preflight checks it and the migration
@@ -49,7 +46,7 @@ Foundation v2.1-FROZEN 的原始安全基线经 v2.2 继承，并继续由 v2.3 
 - Foundation：v2.3-FROZEN
 - 状态：Frozen
 - 当前阶段：Event Intelligence foundation（Phase 1 core path Completed 且继续运行）
-- 当前 Active SPEC：SPEC-0046 — M2-B Rich Evidence Packet（Implementation Review）；
+- 当前 Active SPEC：SPEC-0047 — M2-C Event Evidence Bundle（Draft Implementation Review）；
   [M2 milestone](spec/SPEC-0044-m2-ai-ready-evidence-data-plane.md) 定义后续 Packet/Bundle/Readiness 门禁。
   R1/R2/R8-A 已进入 main，但 production authority 仍为 `legacy`，unified authority 尚未 activation。
   R8-A 增加 canonical Evidence identity 与 durable projection lineage；handoff 会重跑 R2 contract/hash
@@ -113,7 +110,7 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 - Foundation：v2.3-FROZEN
 - 当前阶段：Event Intelligence foundation；Phase 1 core path Completed/operational
-- Active SPEC：SPEC-0046（M2-B Rich Evidence Packet Implementation Review）。
+- Active SPEC：SPEC-0047（M2-C Event Evidence Bundle Draft Implementation Review）。
   R1/R2 已完成批准范围；Migration B/production activation/cutover 仍未授权。
 
 统一 runtime verification：

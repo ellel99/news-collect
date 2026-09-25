@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — M2-C Event Evidence Bundle
+
+- Add SPEC-0047 and migration 0011 for immutable, append-only Event Evidence Bundle revisions, ordered Evidence
+  association snapshots, current/canonical heads and bounded durable reconciliation jobs.
+- Add a deterministic RichEvidencePacket consumer with source/provider/operation diversity, time coverage,
+  stable digest and descriptive supporting/duplicate/contradicting/superseding relations. Conflict is expressed,
+  never judged by AI.
+- Add authority-neutral Celery reconciliation with bounded discovery, `SKIP LOCKED` claim, finite retry, stale
+  recovery and value-free counts; production collection authority remains `legacy`.
+- Add value-free existing-state preflight and fail-closed nonempty downgrade. No production migration,
+  activation, historical replay or external request is performed.
+
 ## Unreleased — M2-B concentrated correction
 
 - Unify handoff, typed preflight, packet reads and PostgreSQL guards on the exact four-operation historical
