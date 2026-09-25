@@ -9,6 +9,10 @@ It also performs complete operation-specific locked-state handoff revalidation, 
 retry, controlled 0009→0010 deployment gating, disposable PostgreSQL isolation and bounded set-based packet
 prefetch; Implementation Review remains pending and no production consumer is enabled. This is not AI-ready:
 M2-C/D, production migration/consumer, backfill and live Provider acceptance remain incomplete.
+Legacy opaque adoption is limited to Marketaux news, Finnhub quote, EIA retail and SEC submissions; it verifies
+deterministic identity and provenance/policy but does not claim to reconstruct an unverifiable historical
+provider hash. Migration 0010 requires DBA-installed `pgcrypto`; controlled preflight checks it and the migration
+does not install extensions.
 
 Historical M2-A implementation: v2 targets use NULL legacy identity; fixed/rolling windows freeze durably before the
 first request with exact run/config/window-bound recovery lineage, and legal empty completion clears it atomically.
@@ -89,13 +93,14 @@ foundation，不授权真实 AI、Portfolio、Holding、Investment Plan、Candid
 
 ## 文档阅读顺序
 
-1. [`AI_CONTEXT.md`](AI_CONTEXT.md)
-2. [`docs/FOUNDATION.md`](docs/FOUNDATION.md)
-3. [`docs/ROADMAP.md`](docs/ROADMAP.md)
-4. [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md)
-5. [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md)
-6. [`docs/AI_RULES.md`](docs/AI_RULES.md)
-7. 当前 [`spec/`](spec/) 中的 Active SPEC
+1. [`docs/AI_ENGINEERING_PROTOCOL.md`](docs/AI_ENGINEERING_PROTOCOL.md)
+2. [`AI_CONTEXT.md`](AI_CONTEXT.md)
+3. [`docs/FOUNDATION.md`](docs/FOUNDATION.md)
+4. [`docs/ROADMAP.md`](docs/ROADMAP.md)
+5. [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md)
+6. [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md)
+7. [`docs/AI_RULES.md`](docs/AI_RULES.md)
+8. 当前 [`spec/`](spec/) 中的 Active SPEC
 
 来源、术语、历史决策和开发流程分别记录在：
 

@@ -28,7 +28,10 @@ from market_intelligence.db.models import (
     Source,
     SourceAccount,
 )
-from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
+from market_intelligence.evidence.provider_mappings import (
+    LEGACY_OPAQUE_IDENTITY_OPERATIONS,
+    legacy_provider_item_identity,
+)
 from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.rich_evidence.contracts import (
     ContentReference,
@@ -426,12 +429,14 @@ class RichEvidencePacketBuilder:
             )
         except ValueError:
             raise RichEvidenceError("rich_evidence_contract_version_invalid") from None
-        legacy_allowed = (projection.provider, projection.operation_key) in {
-            ("finnhub", "quote"),
-            ("eia", "electricity_retail_sales"),
-        }
+        legacy_allowed = (
+            projection.provider,
+            projection.operation_key,
+        ) in LEGACY_OPAQUE_IDENTITY_OPERATIONS
         legacy_identity = (
-            legacy_provider_item_identity(projection.provider, projection.factual_payload)
+            legacy_provider_item_identity(
+                projection.provider, projection.operation_key, projection.factual_payload
+            )
             if legacy_allowed
             else str(projection.factual_payload.get("provider_item_id"))
         )
@@ -672,12 +677,11 @@ def _typed_facts(provider: str, operation: str, payload: Mapping[str, Any]) -> T
 def _identity_mode(
     evidence: EvidenceItem, current: EvidenceRevision
 ) -> Literal["canonical", "adopted_legacy_opaque"]:
-    if (evidence.provider, current.operation_key) not in {
-        ("finnhub", "quote"),
-        ("eia", "electricity_retail_sales"),
-    }:
+    if (evidence.provider, current.operation_key) not in LEGACY_OPAQUE_IDENTITY_OPERATIONS:
         return "canonical"
-    expected = legacy_provider_item_identity(evidence.provider, dataclasses.asdict(current.facts))
+    expected = legacy_provider_item_identity(
+        evidence.provider, current.operation_key, dataclasses.asdict(current.facts)
+    )
     return (
         "adopted_legacy_opaque"
         if evidence.provider_item_id == expected

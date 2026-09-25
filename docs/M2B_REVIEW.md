@@ -17,11 +17,15 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
   bounded per-item retries. Tests run in a random token-bound disposable PostgreSQL database per pytest process.
 - Batch packet reads use bounded 100-row set-based prefetch. Query gates are 8 statements at scan sizes 1/50
   and 36 at the hard maximum 500, including the repeatable-read snapshot statement.
-- Migration compatibility accepts only deterministically recognizable legacy opaque Finnhub quote/EIA retail
-  Evidence identities; it never rewrites historical Evidence or relaxes new Evidence policy.
+- Migration compatibility accepts only exact deterministic legacy opaque identities from the historical mapper
+  matrix: Marketaux news, Finnhub quote, EIA retail and SEC submissions. Finnhub company news, EIA RTO and new
+  operations are rejected. Adoption retains an unreconstructable historical provider hash without claiming full
+  hash equality; it never rewrites historical Evidence or relaxes new Evidence policy.
 - Applying 0010 requires the controlled `m2b_controlled_upgrade.py` maintenance-lock entry, which verifies 0009,
   writers-stopped acknowledgement, typed preflight and unchanged state before upgrading. Bare production Alembic
-  upgrade is prohibited; migration SQL remains the complementary relational audit.
+  upgrade is prohibited; migration SQL remains the complementary relational audit. DBA-installed `pgcrypto` is
+  a read-only checked prerequisite; 0010 does not install extensions and fails value-free before schema changes
+  when the prerequisite is absent.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions

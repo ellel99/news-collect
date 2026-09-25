@@ -34,6 +34,8 @@ from market_intelligence.db.models import (
 )
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
 from market_intelligence.evidence.provider_mappings import (
+    LEGACY_OPAQUE_IDENTITY_OPERATIONS,
+    legacy_provider_item_identity,
     map_eia_energy_row_to_evidence,
     map_finnhub_quote_to_evidence,
     map_marketaux_news_to_evidence,
@@ -657,31 +659,69 @@ def _legacy_envelope(
     )
 
 
+@pytest.mark.parametrize(
+    ("provider", "operation"),
+    sorted(LEGACY_OPAQUE_IDENTITY_OPERATIONS),
+)
+def test_legacy_opaque_identity_matrix_is_exact(provider: str, operation: str) -> None:
+    actual_operation, payload = _payload(provider, f"legacy-{provider}")
+    assert actual_operation == operation
+    identity = legacy_provider_item_identity(provider, operation, payload)
+    assert identity.startswith("provider-item:")
+    assert len(identity) == len("provider-item:") + 64
+
+
+@pytest.mark.parametrize(
+    ("provider", "operation"),
+    [
+        ("finnhub", "company_news"),
+        ("eia", "electricity_rto_region_data"),
+    ],
+)
+def test_new_operations_cannot_inherit_legacy_opaque_identity(
+    provider: str, operation: str
+) -> None:
+    _, payload = _extra_operation_payload(operation)
+    with pytest.raises(ValueError, match="legacy_provider_identity_unsupported"):
+        legacy_provider_item_identity(provider, operation, payload)
+
+
+async def _seed_legacy_evidence(
+    factory: async_sessionmaker[AsyncSession], provider: str
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, str]:
+    raw_id, projection_id, payload = await _seed_ready(factory, provider)
+    async with factory.begin() as session:
+        raw = await session.get(RawItem, raw_id)
+        projection = await session.get(SafeFactProjection, projection_id)
+        assert raw is not None and projection is not None
+        observation = await session.get(RawItemObservation, projection.observation_id)
+        assert observation is not None
+        outcome = await EvidenceWriteService(session).write_one(
+            EvidenceWriteRequest(
+                envelope=_legacy_envelope(  # type: ignore[arg-type]
+                    provider, payload, observed_at=observation.observed_at
+                ),
+                source_id=raw.source_id,
+                source_account_id=raw.source_account_id,
+                raw_item_id=raw.id,
+            )
+        )
+        assert outcome.status is EvidenceWriteStatus.INSERTED
+        assert outcome.evidence_item_id is not None
+        evidence = await session.get(EvidenceItem, outcome.evidence_item_id)
+        assert evidence is not None
+        return raw_id, projection_id, evidence.id, evidence.provider_item_hash
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["marketaux", "finnhub", "eia", "sec_edgar"])
 async def test_real_legacy_mapper_evidence_is_adopted(provider: str) -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        raw_id, projection_id, payload = await _seed_ready(factory, provider)
-        async with factory.begin() as session:
-            raw = await session.get(RawItem, raw_id)
-            projection = await session.get(SafeFactProjection, projection_id)
-            assert raw is not None and projection is not None
-            observation = await session.get(RawItemObservation, projection.observation_id)
-            assert observation is not None
-            outcome = await EvidenceWriteService(session).write_one(
-                EvidenceWriteRequest(
-                    envelope=_legacy_envelope(  # type: ignore[arg-type]
-                        provider, payload, observed_at=observation.observed_at
-                    ),
-                    source_id=raw.source_id,
-                    source_account_id=raw.source_account_id,
-                    raw_item_id=raw.id,
-                )
-            )
-            assert outcome.status is EvidenceWriteStatus.INSERTED
-            legacy_id = outcome.evidence_item_id
+        raw_id, projection_id, legacy_id, legacy_hash = await _seed_legacy_evidence(
+            factory, provider
+        )
         report = await EvidenceProjectionHandoffWorker(factory).process_batch(limit=1)
         assert report.linked == 1
         async with factory() as session:
@@ -691,6 +731,9 @@ async def test_real_legacy_mapper_evidence_is_adopted(provider: str) -> None:
                 )
             )
             assert link is not None and link.evidence_item_id == legacy_id
+            evidence = await session.get(EvidenceItem, legacy_id)
+            assert evidence is not None
+            assert evidence.provider_item_hash == legacy_hash
             assert (
                 await session.scalar(
                     select(func.count())
@@ -699,6 +742,75 @@ async def test_real_legacy_mapper_evidence_is_adopted(provider: str) -> None:
                 )
                 == 1
             )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["marketaux", "finnhub", "eia", "sec_edgar"])
+@pytest.mark.parametrize(
+    ("assignment", "safe_code"),
+    [
+        (
+            "provider_item_id='provider-item:'||repeat('0',64)",
+            "evidence_canonical_identity_conflict",
+        ),
+        ("access_level='public_summary'", "evidence_canonical_identity_conflict"),
+    ],
+)
+async def test_invalid_legacy_identity_or_access_is_blocked(
+    provider: str, assignment: str, safe_code: str
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _, projection_id, evidence_id, _ = await _seed_legacy_evidence(factory, provider)
+        async with factory.begin() as session:
+            await session.execute(
+                text(f"UPDATE evidence_items SET {assignment} WHERE id=:id"),
+                {"id": evidence_id},
+            )
+        report = await EvidenceProjectionHandoffWorker(factory).process_batch(limit=1)
+        assert report.blocked == 1
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert link is not None
+            assert link.status is EvidenceProjectionLinkStatus.BLOCKED
+            assert link.safe_error_code == safe_code
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["marketaux", "finnhub", "eia", "sec_edgar"])
+async def test_legacy_provider_hash_is_retained_not_reconstructed(provider: str) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    retained_hash = "a" * 64
+    try:
+        _, projection_id, evidence_id, _ = await _seed_legacy_evidence(factory, provider)
+        async with factory.begin() as session:
+            await session.execute(
+                text("UPDATE evidence_items SET provider_item_hash=:value WHERE id=:id"),
+                {"id": evidence_id, "value": retained_hash},
+            )
+        report = await EvidenceProjectionHandoffWorker(factory).process_batch(limit=1)
+        assert report.linked == 1
+        async with factory() as session:
+            evidence = await session.get(EvidenceItem, evidence_id)
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert evidence is not None and evidence.provider_item_hash == retained_hash
+            assert link is not None and link.evidence_item_id == evidence_id
     finally:
         await _cleanup(factory)
         await engine.dispose()
@@ -2064,6 +2176,42 @@ async def test_0010_migration_roundtrip_and_linked_state_guard() -> None:
 
 
 @pytest.mark.asyncio
+async def test_0010_missing_pgcrypto_fails_before_schema_changes() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
+
+    def downgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.downgrade()
+
+    def upgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.upgrade()
+
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            await connection.run_sync(downgrade)
+            await connection.execute(text("DROP EXTENSION pgcrypto"))
+            with pytest.raises(DBAPIError) as failure:
+                await connection.run_sync(upgrade)
+            assert "migration_0010_pgcrypto_required" in str(failure.value.orig)
+        finally:
+            await transaction.rollback()
+    await engine.dispose()
+
+
+def test_0010_never_installs_dba_managed_extension() -> None:
+    source = (
+        __import__("pathlib")
+        .Path("alembic/versions/0010_rich_evidence_projection_immutability.py")
+        .read_text()
+    )
+    assert "CREATE EXTENSION" not in source
+    assert "migration_0010_pgcrypto_required" in source
+
+
+@pytest.mark.asyncio
 async def test_0010_controlled_gate_blocks_bare_state_and_applies_exact_upgrade() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
@@ -2092,6 +2240,61 @@ async def test_0010_controlled_gate_blocks_bare_state_and_applies_exact_upgrade(
         assert applied.migration_executed is True
         assert applied.safe_errors == ()
     finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["marketaux", "finnhub", "eia", "sec_edgar"])
+async def test_0010_upgrade_accepts_exact_historical_legacy_identity(provider: str) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0010")
+
+    def downgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.downgrade()
+
+    def upgrade(connection: object) -> None:
+        with Operations.context(MigrationContext.configure(connection)):
+            revision.module.upgrade()
+
+    upgraded = False
+    try:
+        await _cleanup(factory)
+        async with engine.begin() as connection:
+            await connection.run_sync(downgrade)
+        _, projection_id, evidence_id, _ = await _seed_legacy_evidence(factory, provider)
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                INSERT INTO evidence_projection_links(
+                  safe_fact_projection_id,evidence_item_id,status,attempt_count,linked_at
+                ) VALUES (:projection,:evidence,'linked',1,:linked_at)
+                """),
+                {
+                    "projection": projection_id,
+                    "evidence": evidence_id,
+                    "linked_at": datetime.now(UTC),
+                },
+            )
+        report, exit_code = await validate_0010_pre_migration(engine)
+        assert exit_code == 0
+        assert report["safe_errors"] == []
+        async with engine.begin() as connection:
+            await connection.run_sync(upgrade)
+        upgraded = True
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert link is not None and link.canonical_evidence is True
+    finally:
+        if not upgraded:
+            async with engine.begin() as connection:
+                await connection.run_sync(upgrade)
+        await _cleanup(factory)
         await engine.dispose()
 
 

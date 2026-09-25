@@ -28,7 +28,10 @@ from market_intelligence.db.models import (
     Source,
     SourceAccount,
 )
-from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
+from market_intelligence.evidence.provider_mappings import (
+    LEGACY_OPAQUE_IDENTITY_OPERATIONS,
+    legacy_provider_item_identity,
+)
 from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.safe_projection.contracts import (
     ProjectionContractError,
@@ -574,19 +577,19 @@ async def _evidence(
             raise HandoffConflict("evidence_canonical_identity_conflict")
         origin_payload = origin_projection.factual_payload
         origin_plain_id = str(origin_payload["provider_item_id"])
-        origin_legacy_id = (
-            origin_plain_id
-            if projection.operation_key in {"company_news", "electricity_rto_region_data"}
-            else legacy_provider_item_identity(projection.provider, origin_payload)
-        )
+        try:
+            origin_legacy_id = legacy_provider_item_identity(
+                projection.provider, projection.operation_key, origin_payload
+            )
+        except ValueError:
+            origin_legacy_id = origin_plain_id
         legacy_identity = (
             item.provider_item_id == origin_legacy_id and origin_legacy_id != origin_plain_id
         )
         expected_access = (
             "link_only"
             if legacy_identity
-            and (projection.provider, projection.operation_key)
-            in {("finnhub", "quote"), ("eia", "electricity_retail_sales")}
+            and (projection.provider, projection.operation_key) in LEGACY_OPAQUE_IDENTITY_OPERATIONS
             else policy.access
         )
         payload = origin_payload

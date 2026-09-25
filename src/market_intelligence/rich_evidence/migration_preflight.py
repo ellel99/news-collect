@@ -7,7 +7,10 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from market_intelligence.evidence.provider_mappings import legacy_provider_item_identity
+from market_intelligence.evidence.provider_mappings import (
+    LEGACY_OPAQUE_IDENTITY_OPERATIONS,
+    legacy_provider_item_identity,
+)
 from market_intelligence.providers.operation_policy import factual_operation_policy
 from market_intelligence.safe_projection.contracts import (
     ProjectionContractError,
@@ -24,6 +27,18 @@ async def validate_0010_pre_migration(engine: AsyncEngine) -> tuple[dict[str, ob
     safe_errors: set[str] = set()
     canonical_candidates: dict[str, int] = {}
     async with engine.connect() as connection:
+        pgcrypto_available = bool(
+            await connection.scalar(
+                text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto')")
+            )
+        )
+        if not pgcrypto_available:
+            return {
+                "status": "BLOCKED",
+                "checked_linked_projection_count": 0,
+                "safe_errors": ["migration_0010_pgcrypto_required"],
+            }, 2
+        await connection.commit()
         transaction = await connection.begin()
         try:
             await connection.execute(
@@ -79,12 +94,14 @@ async def validate_0010_pre_migration(engine: AsyncEngine) -> tuple[dict[str, ob
                             row["provider_contract_version"],
                         )
                         plain_identity = str(normalized["provider_item_id"])
-                        legacy_allowed = (row["provider"], row["operation_key"]) in {
-                            ("finnhub", "quote"),
-                            ("eia", "electricity_retail_sales"),
-                        }
+                        legacy_allowed = (
+                            row["provider"],
+                            row["operation_key"],
+                        ) in LEGACY_OPAQUE_IDENTITY_OPERATIONS
                         legacy_identity = (
-                            legacy_provider_item_identity(row["provider"], normalized)
+                            legacy_provider_item_identity(
+                                row["provider"], row["operation_key"], normalized
+                            )
                             if legacy_allowed
                             else plain_identity
                         )

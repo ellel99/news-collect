@@ -8,6 +8,10 @@ complete operation-specific post-lock contract/provenance validation, bounded se
 row-lock timeout/retry without trigger advisory inversion, a controlled 0009→0010 upgrade gate, and a random
 token-bound disposable PostgreSQL database per pytest process. M2-C/D, production consumer/migration, backfill,
 live Provider acceptance and AI remain unauthorized.
+Legacy Evidence adoption is limited to the real historical mapper operations (Marketaux news, Finnhub quote,
+EIA retail and SEC submissions); company-news/RTO/new operations fail closed. It proves deterministic identity
+and relational policy/provenance, not reconstruction of an otherwise unverifiable historical provider hash.
+Migration 0010 requires DBA-installed `pgcrypto`, checked read-only before entry; it does not install extensions.
 
 Historical PR #46 M2-A summary: explicit fixed/rolling windows, pre-request durable run/config/window-bound lineage,
 atomic empty-completion cleanup, exact operation continuation codecs, keyset continuation,
@@ -23,7 +27,7 @@ PAUSED-only locked/CAS/value-free-audit operation and never changes cursor posit
 
 本文件是 AI 编码工具进入项目时的首要入口。
 
-所有架构、SPEC、PR、migration、Provider、数据完整性和 AI readiness 审核，开始前必须完整读取并遵守
+所有实施与审查工作开始前必须完整读取并遵守 `docs/AI_ENGINEERING_PROTOCOL.md`，并继续遵守
 `docs/REVIEW_PROTOCOL.md`。禁止在发现第一个普通问题后提前结束整轮审核；必须完成三遍审核、维护问题
 台账，并在完整覆盖后一次性输出集中修正清单。
 

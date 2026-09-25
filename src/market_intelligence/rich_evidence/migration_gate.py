@@ -49,6 +49,13 @@ async def controlled_upgrade_0010(
                 revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
                 if revision != "0009":
                     errors.append("migration_0010_database_revision_invalid")
+                pgcrypto_available = bool(
+                    await connection.scalar(
+                        text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto')")
+                    )
+                )
+                if not pgcrypto_available:
+                    errors.append("migration_0010_pgcrypto_required")
                 if not writers_stopped:
                     errors.append("migration_0010_writers_not_stopped")
                 running = int(

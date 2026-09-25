@@ -2,6 +2,12 @@
 
 ## Unreleased — M2-B concentrated correction
 
+- Unify handoff, typed preflight, packet reads and PostgreSQL guards on the exact four-operation historical
+  legacy identity matrix; reject company-news/RTO/new-operation opaque identities and document that legacy
+  adoption does not reconstruct an unverifiable historical provider hash.
+- Make `pgcrypto` an explicit DBA prerequisite checked value-free before 0010; business migration code no longer
+  attempts `CREATE EXTENSION`.
+- Add the repository-wide AI Engineering and Review Protocol for subsequent M2 implementation/review work.
 - Removes trigger row-to-advisory lock inversion; handoff now uses fixed row locks, bounded PostgreSQL concurrency
   retries and per-item batch isolation.
 - Completes operation-specific Evidence, Content and retention validation and reports narrowly adopted legacy

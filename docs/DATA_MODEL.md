@@ -8,8 +8,11 @@ canonical time, first persistence run, retention, facts and future columns there
 explicit worker bookkeeping fields remain mutable. Downgrade fails closed when linked state exists.
 LINKED transition, handoff revalidation, migration preflight and packet reads use the same operation-specific
 Evidence/Content/retention contract. Packet `identity_mode` distinguishes current canonical identity from the
-narrow Finnhub-quote/EIA-retail adopted legacy opaque identity. Mutation triggers preserve immutability without
-acquiring advisory locks after row locks.
+exact historical opaque identity matrix: Marketaux news, Finnhub quote, EIA retail and SEC submissions.
+Company-news/RTO/new operations cannot use that path. Legacy adoption validates deterministic identity and
+relational provenance/policy, but retains rather than reconstructs a historical `provider_item_hash` when its
+original factual hash cannot be proven. Mutation triggers preserve immutability without acquiring advisory locks
+after row locks. `pgcrypto` is a DBA-managed prerequisite checked before 0010; the migration never installs it.
 
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows

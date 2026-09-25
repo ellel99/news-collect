@@ -85,14 +85,22 @@ complete lock set is held, handoff reloads and revalidates typed normalization, 
 provenance, retention and access policy; no value inspected before locking is used to create downstream state.
 Concurrent mutation therefore commits
 before linking or loses to immutable LINKED state. Migration 0010 first performs a value-free, fail-closed audit
-of existing LINKED lineage. A validated legacy opaque Finnhub quote/EIA retail Evidence identity may be adopted
-without rewriting it; newly created Evidence must satisfy the current operation-specific access policy.
+of existing LINKED lineage. Legacy opaque adoption is restricted to the exact historical mapper matrix:
+Marketaux `news_all`, Finnhub `quote`, EIA `electricity_retail_sales`, and SEC `submissions_recent`.
+Finnhub `company_news`, EIA `electricity_rto_region_data`, and unknown/new operations cannot inherit the
+compatibility path. Adoption proves exact deterministic provider identity plus provider/type/source/account/raw,
+time, access and operation-policy compatibility; a historical `provider_item_hash` is retained but, when the
+legacy mapper did not derive it from the R2 projection, is not claimed to be reconstructed or equal to the
+projection hash. Newly created Evidence must satisfy the current identity/hash and operation policy.
 Because PostgreSQL cannot safely reproduce the Python typed normalizers, deployment must run
 `scripts/m2b_controlled_upgrade.py --writers-stopped` against revision 0009 and receive `DRY_RUN`, then use that
 same entry with `--execute --writers-stopped`. It holds the maintenance lock, runs the typed validator, rejects
 intervening state drift and applies exactly 0010. Bare production `alembic upgrade 0010` is prohibited. The
 validator uses a repeatable-read, read-only bounded keyset scan and emits only counts and stable safe error codes;
 0010 then performs the complementary relational fail-closed audit. Neither stage repairs factual data.
+`pgcrypto` is a DBA-managed prerequisite: the controlled read-only preflight requires it and returns
+`migration_0010_pgcrypto_required` before migration entry when absent. Revision 0010 never executes
+`CREATE EXTENSION`, so the migration role needs no extension-install privilege.
 PostgreSQL integration tests create a random `news_collect_test_<token>` disposable database per pytest process,
 bind the token to that exact database, migrate it, and drop only that database. A skipped PostgreSQL integration
 module must be reported as skipped and is not a full PostgreSQL PASS.

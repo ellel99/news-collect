@@ -13,9 +13,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Required only to reproduce the exact legacy opaque identity during the
-    # database transition guard. It is not used to hash or copy factual payloads.
-    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+    # pgcrypto is a DBA-managed deployment prerequisite. The controlled,
+    # read-only preflight verifies it before this migration is entered.
+    op.execute("""
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto') THEN
+        RAISE EXCEPTION 'migration_0010_pgcrypto_required';
+      END IF;
+    END $$
+    """)
     op.add_column(
         "evidence_projection_links",
         sa.Column("canonical_evidence", sa.Boolean(), nullable=False, server_default=sa.false()),
