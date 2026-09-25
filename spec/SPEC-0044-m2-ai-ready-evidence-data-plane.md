@@ -1,6 +1,6 @@
 # SPEC-0044 — M2 AI-Ready Evidence Data Plane
 
-Status: Authorized milestone — M2-A implementation active; M2-B/C/D not started
+Status: Authorized milestone — M2-A completed; M2-B active in Draft implementation review; M2-C/D not started
 
 User authorization: 2026-08-26, M2 command 1/5, based on main `f398f5557a41ebab6d2ba701f1bdb618d1106bc7`.
 Foundation v2.3-FROZEN safety, licensing, provenance and no-trading boundaries remain effective.
@@ -10,7 +10,7 @@ Foundation v2.3-FROZEN safety, licensing, provenance and no-trading boundaries r
 | Stage | Deliverable | Exit gate |
 |---|---|---|
 | M2-A | Four-provider data breadth and bounded collection | Operation-specific bounded collection reaches durable factual projection and canonical Evidence links; mock/PostgreSQL review |
-| M2-B | Rich Evidence Packet | Typed read model consumes linked factual values without placeholders; independent authorization/review |
+| M2-B | Rich Evidence Packet | Active Draft implementation review; typed read model consumes linked factual values without placeholders |
 | M2-C | Deterministic Event Evidence Bundle | Reversible, explainable cross-source factual association; independent authorization/review |
 | M2-D | Machine-readable Data Readiness Gate | Explicit completeness/coverage/provenance checks; independent authorization/review |
 

@@ -1,5 +1,22 @@
 # Data Model
 
+M2-B adds no packet table. `RichEvidencePacket` is a deterministic typed read model over LINKED
+`EvidenceProjectionLink`, READY `SafeFactProjection`, observation/raw/evidence/content and collection provenance.
+Migration 0010 protects the whole linked association and its Projection→Observation→RawItem→Evidence/Content
+lineage against UPDATE or DELETE. Association/projection/content exclude only `updated_at`; status/error/retry,
+canonical time, first persistence run, retention, facts and future columns therefore remain immutable while
+explicit worker bookkeeping fields remain mutable. Downgrade fails closed when linked state exists.
+LINKED transition, handoff revalidation, migration preflight and packet reads use the same operation-specific
+Evidence/Content/retention contract. Packet `identity_mode` distinguishes current canonical identity from the
+exact historical opaque identity matrix: Marketaux news, Finnhub quote, EIA retail and SEC submissions.
+Marketaux's historical scalar hash is limited to a normalized ASCII identity alphabet so Python and SQL consume
+the same bytes; ambiguous quote, Unicode and internal-whitespace forms are invalid rather than guessed.
+Company-news/RTO/new operations cannot use that path. Legacy adoption validates deterministic identity and
+relational provenance/policy, but retains rather than reconstructs a historical `provider_item_hash` when its
+original factual hash cannot be proven. Mutation triggers preserve immutability without acquiring advisory locks
+after row locks. `pgcrypto` is a DBA-managed prerequisite checked before 0010; the migration never installs it,
+and the controlled gate verifies the exact `digest(bytea,text)` signature resolves under the active search path.
+
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows
 across retry; unfinished cursor continuation carries those bounds for stale/new-run recovery.
@@ -543,7 +560,9 @@ Entity 与 Asset 通过稳定映射关联，避免仅靠文本代码识别。
 ## R8-A Evidence projection handoff
 
 `evidence_projection_links` is the durable state and lineage boundary from one READY SafeFactProjection to one
-canonical EvidenceItem. `safe_fact_projection_id` is unique; revision projections for the same RawItem/provider
+canonical EvidenceItem. `safe_fact_projection_id` is unique; independent `canonical_evidence` and
+`canonical_content` markers identify the one immutable originating association for each canonical row. A partial
+Evidence revision may therefore precede the first safe Content revision. Revision projections for the same RawItem/provider
 may share an EvidenceItem while retaining their distinct projection hashes and factual payloads. The link may also
 reference the allowlisted Marketaux or SEC ContentItem created/adopted in the same transaction. PostgreSQL guards
 enforce null-safe raw/source/account/provider provenance. The link never copies factual payload and Finnhub/EIA do

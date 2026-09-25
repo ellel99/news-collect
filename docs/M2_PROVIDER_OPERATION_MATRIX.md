@@ -1,5 +1,8 @@
 # M2-A Provider Operation / Cursor Matrix
 
+M2-B consumes these six approved operation projections through typed Rich Evidence variants. It does not expand
+operation, request, retention or access authority and fails closed for tuples absent from this matrix.
+
 Status: Implementation Review — no production activation
 
 All expanded rows use config version 2 / provider contract 2, projection schema 1 and continuation version 1.

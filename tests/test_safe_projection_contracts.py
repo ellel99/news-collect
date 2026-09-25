@@ -96,6 +96,50 @@ def test_v1_factual_payload_contracts_preserve_approved_values(
     assert len(canonical_projection_hash(validated)) == 64
 
 
+@pytest.mark.parametrize(
+    ("identity", "expected"),
+    [
+        ("550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000"),
+        (" 550e8400-e29b-41d4-a716-446655440000 ", "550e8400-e29b-41d4-a716-446655440000"),
+    ],
+)
+def test_marketaux_identity_uses_explicit_ascii_contract(identity: str, expected: str) -> None:
+    payload = {
+        "provider_item_id": identity,
+        "published_at": "2026-01-01T00:00:00+00:00",
+        "title": "Safe title",
+        "canonical_url": "https://example.com/article-1",
+        "source_identity": "Example",
+        "query": "technology",
+        "language": "en",
+        "symbols": ["NVDA"],
+        "description_coverage": "blocked",
+        "snippet_coverage": "blocked",
+    }
+    assert (
+        validate_factual_payload("marketaux", "news_all", 1, payload)["provider_item_id"]
+        == expected
+    )
+
+
+@pytest.mark.parametrize("identity", ['article"1', "新闻-1", "article 1"])
+def test_marketaux_identity_rejects_escaping_and_unicode_ambiguity(identity: str) -> None:
+    payload = {
+        "provider_item_id": identity,
+        "published_at": "2026-01-01T00:00:00+00:00",
+        "title": "Safe title",
+        "canonical_url": "https://example.com/article-1",
+        "source_identity": "Example",
+        "query": "technology",
+        "language": "en",
+        "symbols": ["NVDA"],
+        "description_coverage": "blocked",
+        "snippet_coverage": "blocked",
+    }
+    with pytest.raises(ProjectionContractError, match="projection_provider_identity_invalid"):
+        validate_factual_payload("marketaux", "news_all", 1, payload)
+
+
 def test_numeric_values_are_not_replaced_with_placeholders() -> None:
     finnhub = validate_factual_payload(
         "finnhub",

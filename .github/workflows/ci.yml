@@ -7,17 +7,20 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence_test
+      TEST_DATABASE_URL: postgresql+asyncpg://market_intelligence:local_dev_only@localhost:5432/market_intelligence_test
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: market_intelligence
+          POSTGRES_DB: market_intelligence_test
           POSTGRES_USER: market_intelligence
           POSTGRES_PASSWORD: local_dev_only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U market_intelligence -d market_intelligence"
+          --health-cmd "pg_isready -U market_intelligence -d market_intelligence_test"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
@@ -43,6 +46,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
+      - name: Provision DBA-managed PostgreSQL prerequisites
+        run: >-
+          docker exec "${{ job.services.postgres.id }}"
+          psql -U market_intelligence -d market_intelligence_test
+          -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
       - run: uv run alembic upgrade head
       - run: uv run pytest
       - run: docker compose config

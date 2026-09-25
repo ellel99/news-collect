@@ -15,9 +15,10 @@ Phase 1 信息采集与及时推送
 每个阶段通过多个小型 SPEC 交付。当前 SPEC 未通过验收前，不进入下一 SPEC；当前阶段的基础可靠性未达到完成标准前，不提前开发后一阶段的复杂能力。
 
 SPEC-0030–0039 已完成当前批准范围，SPEC-0041 Docs Review 已 PASS。Foundation v2.3-FROZEN 的 R0
-Freeze Review 已 PASS/Completed。SPEC-0041 R1 Docs Review 已 PASS；当前 Active SPEC 是 SPEC-0041
-Implementation Review，用户已明确授权 docs closeout 合并后实施 I-A、II、III、IV。Migration B 与
-production activation 未授权。
+Freeze Review 已 PASS/Completed。R1/R2/R8-A/M2-A 已 Completed；当前 Active SPEC 是 SPEC-0046
+M2-B Rich Evidence Packet（Draft Implementation Review），M2-C/D 尚未开始，production authority 仍为
+`legacy`。SPEC-0041 R1 Docs Review 与 implementation 已完成，
+其 I-A、II、III、IV 已进入 main。Migration B 与 production activation 未授权。
 
 ## Pre-AI Collection Readiness（R0 Completed；R1–R8 gated）
 

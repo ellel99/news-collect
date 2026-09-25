@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — M2-B concentrated correction
+
+- Unify handoff, typed preflight, packet reads and PostgreSQL guards on the exact four-operation historical
+  legacy identity matrix; reject company-news/RTO/new-operation opaque identities and document that legacy
+  adoption does not reconstruct an unverifiable historical provider hash.
+- Make `pgcrypto` an explicit DBA prerequisite checked value-free before 0010; business migration code no longer
+  attempts `CREATE EXTENSION`; controlled preflight also verifies the exact digest signature resolves through
+  the migration session search path.
+- Constrain Marketaux identity to one normalized ASCII format shared by adapter, projection, legacy hashing and
+  SQL, with UUID/whitespace parity and fail-closed quote/Unicode ambiguity tests.
+- Tighten remaining linked-lineage negative PostgreSQL tests to stable trigger or constraint identifiers.
+- Add the repository-wide AI Engineering and Review Protocol for subsequent M2 implementation/review work.
+- Removes trigger row-to-advisory lock inversion; handoff now uses fixed row locks, bounded PostgreSQL concurrency
+  retries and per-item batch isolation.
+- Completes operation-specific Evidence, Content and retention validation and reports narrowly adopted legacy
+  opaque identity explicitly in Rich Evidence packets.
+- Adds a controlled 0009→0010 deployment gate and random token-bound disposable PostgreSQL test databases.
+
+- Revalidated the complete SafeFactProjection handoff contract and provenance only after the ordered database
+  lock set is held, while preserving value-free blocked/retry outcomes.
+- Corrected operation-specific 0010 policy for Finnhub company news and validated legacy opaque Evidence
+  adoption without rewriting factual rows.
+- Replaced packet-per-Evidence lineage loading with bounded set-based prefetch and explicit 1/50/500 query gates.
+- Tightened destructive PostgreSQL test URL validation to explicit database, user and host/isolation rules.
+- Added a mandatory read-only, value-free typed projection validator before migration 0010.
+
+## Unreleased — M2-B Rich Evidence Packet
+
+- Persist independent canonical Evidence/Content adoption identities, add value-free 0010 existing-state
+  preflight and compatible advisory locking, and require explicit test-only PostgreSQL isolation.
+- Add SPEC-0046 and a typed provider-neutral packet contract for six approved operation paths.
+- Add deterministic, bounded, read-only packet construction with keyset listing, revision lineage, explicit
+  missing/blocked/truncation semantics, and exact Finnhub/EIA numeric preservation.
+- Strengthen migration 0010 to a future-safe whole-row immutable guard for linked projections; only `updated_at`
+  remains mutable bookkeeping.
+- Extend 0010 default-deny protection across LINKED association, Observation, canonical RawItem,
+  Evidence/Content and Source retention; LINKED lineage cannot be deleted.
+- Bind canonical Evidence/Content to first `(linked_at, link_id)` adoption and build packets in one repeatable-read,
+  read-only database snapshot without consulting mutable target contract revisions.
+- Add explicit canonical/current time provenance, retention/content policy validation, final UTF-8 packet-size
+  accounting, and bounded scan/result pagination metadata.
+- Keep production authority legacy; no external request, activation, Event/Fact/Impact/AI or M2-C/D work.
+
 ## M2-A PR #46 directed blocker fixes
 
 - Persist exact pre-request frozen-window recovery lineage and enforce operation-specific continuation shapes in

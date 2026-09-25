@@ -1,7 +1,7 @@
 # M2-A Implementation Review Package
 
 Baseline: main `f398f5557a41ebab6d2ba701f1bdb618d1106bc7`; Foundation v2.3-FROZEN.
-Review status: PENDING. Production authority: legacy. PR #39: untouched Draft.
+Review status: PASS — merged in PR #46. Production authority: legacy. PR #39: untouched Draft.
 
 Review together: SPEC-0044 milestone, SPEC-0045 implementation, M2 operation matrix, migration 0009,
 BreadthAdapter/config, operation policy, registry/factory, CollectionControlPlaneWorker page transactions,
@@ -14,11 +14,12 @@ is substituted for stored numeric facts. Canonical Evidence/Content are never ov
 Known boundaries: v1 remains compatibility-only; fixed/manual or rolling windows are explicitly configured;
 upstream pagination is not a transactional snapshot; keysets plus bounded overlap handle changing arrays.
 Production deployment requires separate stopped-writer review because the observation uniqueness conflict target
-changes. No activation is possible merely by selecting an environment setting. No M2-B/C/D output is implemented.
+changes. No activation is possible merely by selecting an environment setting. M2-B is implemented in its Draft
+review PR; M2-C/D remain unimplemented.
 
 Validation results and exact reviewed commit/changed-file count are recorded in the Draft PR body after execution.
 
-## Implementation self-check ledger (independent review still pending)
+## M2-B follow-on implementation self-check ledger（independent M2-B review pending）
 
 - VERIFIED_FIXED: provider-only Evidence dispatch now resolves exact operation/version; company-news has its
   own news type and RTO has its own typed factual contract.
@@ -28,8 +29,9 @@ Validation results and exact reviewed commit/changed-file count are recorded in 
   downgrade refuses incompatible operation/observation state.
 - INTENTIONAL_BOUNDARY: explicit frozen windows, bounded responses/requests, blocked body/summary fields,
   v1 compatibility paths, legacy authority and no production activation.
-- DEFERRED: linked-payload immutability enhancement/Rich Evidence Packet (M2-B), Event Bundle (M2-C), machine
-  readiness gate (M2-D), and separately authorized stopped-writer deployment/production verification.
+- ACTIVE_REVIEW: linked-payload immutability enhancement/Rich Evidence Packet (M2-B).
+- DEFERRED: Event Bundle (M2-C), machine readiness gate (M2-D), and separately authorized stopped-writer
+  deployment/production verification.
 
 Coverage follows the repository review protocol: contracts/config → request/continuation → persistence and
 constraints → handoff/content/notification policy → retry/restart/downgrade → regression and docs. Existing
