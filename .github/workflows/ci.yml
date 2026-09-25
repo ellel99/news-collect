@@ -46,6 +46,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
+      - name: Provision DBA-managed PostgreSQL prerequisites
+        run: >-
+          docker exec "${{ job.services.postgres.id }}"
+          psql -U market_intelligence -d market_intelligence_test
+          -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto"
       - run: uv run alembic upgrade head
       - run: uv run pytest
       - run: docker compose config
