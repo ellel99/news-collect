@@ -21,6 +21,7 @@ from market_intelligence.evidence.contracts import (
     ProviderItemType,
     SourceType,
 )
+from market_intelligence.provider_identity import normalize_marketaux_provider_identity
 
 _NUMERIC_QUOTE_FIELDS: Final = ("c", "d", "dp", "h", "l", "o", "pc")
 
@@ -109,7 +110,7 @@ def legacy_provider_item_identity(
     if (provider, operation_key) not in LEGACY_OPAQUE_IDENTITY_OPERATIONS:
         raise ValueError("legacy_provider_identity_unsupported")
     if provider == "marketaux":
-        value: object = payload.get("provider_item_id")
+        value: object = normalize_marketaux_provider_identity(payload.get("provider_item_id"))
     elif provider == "finnhub":
         value = (payload.get("symbol"), payload.get("provider_timestamp"))
     elif provider == "eia":

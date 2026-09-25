@@ -20,12 +20,14 @@ Review status: PENDING. Production authority: `legacy`. PR #39 remains untouched
 - Migration compatibility accepts only exact deterministic legacy opaque identities from the historical mapper
   matrix: Marketaux news, Finnhub quote, EIA retail and SEC submissions. Finnhub company news, EIA RTO and new
   operations are rejected. Adoption retains an unreconstructable historical provider hash without claiming full
-  hash equality; it never rewrites historical Evidence or relaxes new Evidence policy.
+  hash equality; it never rewrites historical Evidence or relaxes new Evidence policy. Marketaux uses one
+  typed ASCII identity contract across adapter, projection validator, Python hash and SQL; UUIDs are accepted,
+  outer whitespace is normalized, and quote/Unicode/internal-whitespace ambiguity fails closed.
 - Applying 0010 requires the controlled `m2b_controlled_upgrade.py` maintenance-lock entry, which verifies 0009,
   writers-stopped acknowledgement, typed preflight and unchanged state before upgrading. Bare production Alembic
   upgrade is prohibited; migration SQL remains the complementary relational audit. DBA-installed `pgcrypto` is
   a read-only checked prerequisite; 0010 does not install extensions and fails value-free before schema changes
-  when the prerequisite is absent.
+  when the prerequisite is absent or `digest(bytea,text)` cannot resolve through the effective `search_path`.
 - PostgreSQL fixtures for six operation paths, revisions, numeric preservation, tamper rejection and direct SQL.
 
 ## Deliberate exclusions

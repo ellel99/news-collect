@@ -46,6 +46,7 @@ from market_intelligence.evidence.write_path import (
     EvidenceWriteService,
     EvidenceWriteStatus,
 )
+from market_intelligence.provider_identity import normalize_marketaux_provider_identity
 from market_intelligence.rich_evidence import (
     RichEvidenceError,
     RichEvidencePacketBuilder,
@@ -61,7 +62,10 @@ from market_intelligence.rich_evidence.contracts import (
     SecFilingFacts,
 )
 from market_intelligence.rich_evidence.migration_gate import controlled_upgrade_0010
-from market_intelligence.rich_evidence.migration_preflight import validate_0010_pre_migration
+from market_intelligence.rich_evidence.migration_preflight import (
+    pgcrypto_0010_prerequisite_error,
+    validate_0010_pre_migration,
+)
 from market_intelligence.safe_projection.contracts import (
     canonical_projection_hash,
     normalize_and_classify_factual_payload,
@@ -1293,7 +1297,7 @@ async def test_database_rejects_market_observation_evidence_content(provider: st
             )
             assert outcome.evidence_item_id is not None
             evidence_id, content_id = outcome.evidence_item_id, content.id
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="evidence_projection_content_forbidden"):
             async with factory.begin() as session:
                 await session.execute(
                     text("UPDATE evidence_items SET content_item_id=:content WHERE id=:evidence"),
@@ -1319,13 +1323,13 @@ async def test_database_rejects_nonlinked_references_and_link_rebinding() -> Non
             )
             assert link is not None and link.evidence_item_id is not None
             link_id, evidence_id = link.id, link.evidence_item_id
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_evidence_projection_association_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("UPDATE evidence_projection_links SET status='pending' WHERE id=:id"),
                     {"id": link_id},
                 )
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_evidence_projection_association_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text(
@@ -1335,7 +1339,7 @@ async def test_database_rejects_nonlinked_references_and_link_rebinding() -> Non
                     {"id": link_id},
                 )
         _, second_projection, _ = await _seed_ready(factory, "finnhub", raw_id=raw_id)
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="ck_evidence_projection_links_linked_state"):
             async with factory.begin() as session:
                 await session.execute(
                     text("""
@@ -1803,7 +1807,7 @@ async def test_linked_projection_direct_sql_factual_mutation_is_rejected(
     try:
         _, projection_id, _ = await _seed_ready(factory, "eia")
         assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_safe_fact_projection_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text(f"UPDATE safe_fact_projections SET {assignment} WHERE id=:id"),
@@ -1884,7 +1888,7 @@ async def test_linked_projection_delete_is_rejected() -> None:
     try:
         _, projection_id, _ = await _seed_ready(factory, "marketaux")
         assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_safe_fact_projection_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("DELETE FROM safe_fact_projections WHERE id=:id"),
@@ -1897,27 +1901,69 @@ async def test_linked_projection_delete_is_rejected() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "table,assignment",
+    "table,assignment,expected",
     [
-        ("evidence_projection_links", "attempt_count=attempt_count+1"),
-        ("evidence_projection_links", "safe_error_code='changed'"),
-        ("evidence_projection_links", "next_retry_at=now()"),
-        ("evidence_projection_links", "created_at=created_at + interval '1 second'"),
-        ("raw_item_observations", "observed_at=observed_at + interval '1 second'"),
-        ("raw_item_observations", "config_revision=1"),
-        ("raw_item_observations", "provider_contract_version=2"),
-        ("raw_item_observations", "operation_key='changed'"),
-        ("raw_items", "collection_run_id=gen_random_uuid()"),
-        ("raw_items", "retention_class='changed'"),
-        ("evidence_items", "event_time=event_time + interval '1 second'"),
-        ("evidence_items", "observed_at=observed_at + interval '1 second'"),
-        ("content_items", "body='forbidden'"),
-        ("content_items", "source_summary='forbidden'"),
-        ("content_items", "title='changed'"),
-        ("content_items", "source_published_at=source_published_at + interval '1 second'"),
+        (
+            "evidence_projection_links",
+            "attempt_count=attempt_count+1",
+            "linked_evidence_projection_association_immutable",
+        ),
+        (
+            "evidence_projection_links",
+            "safe_error_code='changed'",
+            "linked_evidence_projection_association_immutable",
+        ),
+        (
+            "evidence_projection_links",
+            "next_retry_at=now()",
+            "linked_evidence_projection_association_immutable",
+        ),
+        (
+            "evidence_projection_links",
+            "created_at=created_at + interval '1 second'",
+            "linked_evidence_projection_association_immutable",
+        ),
+        (
+            "raw_item_observations",
+            "observed_at=observed_at + interval '1 second'",
+            "linked_raw_item_observation_immutable",
+        ),
+        ("raw_item_observations", "config_revision=1", "linked_raw_item_observation_immutable"),
+        (
+            "raw_item_observations",
+            "provider_contract_version=2",
+            "linked_raw_item_observation_immutable",
+        ),
+        (
+            "raw_item_observations",
+            "operation_key='changed'",
+            "linked_raw_item_observation_immutable",
+        ),
+        ("raw_items", "collection_run_id=gen_random_uuid()", "linked_raw_item_immutable"),
+        ("raw_items", "retention_class='changed'", "linked_raw_item_immutable"),
+        (
+            "evidence_items",
+            "event_time=event_time + interval '1 second'",
+            "linked_evidence_row_immutable",
+        ),
+        (
+            "evidence_items",
+            "observed_at=observed_at + interval '1 second'",
+            "linked_evidence_row_immutable",
+        ),
+        ("content_items", "body='forbidden'", "linked_content_row_immutable"),
+        ("content_items", "source_summary='forbidden'", "linked_content_row_immutable"),
+        ("content_items", "title='changed'", "linked_content_row_immutable"),
+        (
+            "content_items",
+            "source_published_at=source_published_at + interval '1 second'",
+            "linked_content_row_immutable",
+        ),
     ],
 )
-async def test_linked_lineage_direct_sql_mutation_is_rejected(table: str, assignment: str) -> None:
+async def test_linked_lineage_direct_sql_mutation_is_rejected(
+    table: str, assignment: str, expected: str
+) -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
@@ -1941,7 +1987,7 @@ async def test_linked_lineage_direct_sql_mutation_is_rejected(table: str, assign
             }
         identity = identities[table]
         assert identity is not None
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match=expected):
             async with factory.begin() as session:
                 await session.execute(
                     text(f"UPDATE {table} SET {assignment} WHERE id=:id"),
@@ -1970,14 +2016,14 @@ async def test_link_delete_cannot_remove_packet_or_unlock_projection() -> None:
             )
         assert link is not None and evidence_id is not None
         before = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_evidence_projection_association_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("DELETE FROM evidence_projection_links WHERE id=:id"), {"id": link.id}
                 )
         after = await RichEvidencePacketBuilder(factory).build_one(evidence_id)
         assert after.packet_digest == before.packet_digest
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_safe_fact_projection_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("UPDATE safe_fact_projections SET attempt_count=99 WHERE id=:id"),
@@ -2029,19 +2075,19 @@ async def test_packet_retention_and_canonical_time_tampering_fail_closed() -> No
             raw = await session.get(RawItem, raw_id)
             assert raw is not None
             source_id = raw.source_id
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_raw_item_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("UPDATE raw_items SET retention_class='link_only' WHERE id=:id"),
                     {"id": raw_id},
                 )
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_source_retention_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text("UPDATE sources SET retention_class='link_only' WHERE id=:id"),
                     {"id": source_id},
                 )
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError, match="linked_evidence_row_immutable"):
             async with factory.begin() as session:
                 await session.execute(
                     text(
@@ -2198,6 +2244,88 @@ async def test_0010_missing_pgcrypto_fails_before_schema_changes() -> None:
             assert "migration_0010_pgcrypto_required" in str(failure.value.orig)
         finally:
             await transaction.rollback()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0010_pgcrypto_prerequisite_resolves_exact_digest_signature() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            await connection.execute(text("SET LOCAL search_path TO public"))
+            assert await pgcrypto_0010_prerequisite_error(connection) is None
+            await connection.execute(text("CREATE SCHEMA m2b_isolated_search_path"))
+            await connection.execute(text("SET LOCAL search_path TO m2b_isolated_search_path"))
+            assert (
+                await pgcrypto_0010_prerequisite_error(connection)
+                == "migration_0010_pgcrypto_digest_unresolvable"
+            )
+        finally:
+            await transaction.rollback()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0010_preflight_needs_no_extension_install_privilege() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            await connection.execute(text("CREATE ROLE m2b_no_extension_install NOLOGIN"))
+            await connection.execute(text("SET LOCAL ROLE m2b_no_extension_install"))
+            assert not bool(
+                await connection.scalar(
+                    text("SELECT has_database_privilege(current_database(),'CREATE')")
+                )
+            )
+            assert await pgcrypto_0010_prerequisite_error(connection) is None
+        finally:
+            await transaction.rollback()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_identity", "accepted"),
+    [
+        ("550e8400-e29b-41d4-a716-446655440000", True),
+        (" 550e8400-e29b-41d4-a716-446655440000 ", True),
+        ('article"1', False),
+        ("新闻-1", False),
+        ("article 1", False),
+    ],
+)
+async def test_marketaux_legacy_identity_python_sql_bytes_are_equal(
+    raw_identity: str, accepted: bool
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    async with engine.connect() as connection:
+        normalized = raw_identity.strip()
+        sql_accepts = bool(
+            await connection.scalar(
+                text("SELECT :identity ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'"),
+                {"identity": normalized},
+            )
+        )
+        assert sql_accepts is accepted
+        if accepted:
+            identity = normalize_marketaux_provider_identity(raw_identity)
+            expected = legacy_provider_item_identity(
+                "marketaux", "news_all", {"provider_item_id": raw_identity}
+            )
+            actual = await connection.scalar(
+                text("""
+                SELECT 'provider-item:' || encode(
+                  digest(convert_to(concat('"', :identity, '"'), 'UTF8'), 'sha256'), 'hex'
+                )
+                """),
+                {"identity": identity},
+            )
+            assert actual == expected
+        else:
+            with pytest.raises(ValueError, match="marketaux_provider_identity_invalid"):
+                normalize_marketaux_provider_identity(raw_identity)
     await engine.dispose()
 
 

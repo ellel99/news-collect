@@ -6,7 +6,11 @@
   legacy identity matrix; reject company-news/RTO/new-operation opaque identities and document that legacy
   adoption does not reconstruct an unverifiable historical provider hash.
 - Make `pgcrypto` an explicit DBA prerequisite checked value-free before 0010; business migration code no longer
-  attempts `CREATE EXTENSION`.
+  attempts `CREATE EXTENSION`; controlled preflight also verifies the exact digest signature resolves through
+  the migration session search path.
+- Constrain Marketaux identity to one normalized ASCII format shared by adapter, projection, legacy hashing and
+  SQL, with UUID/whitespace parity and fail-closed quote/Unicode ambiguity tests.
+- Tighten remaining linked-lineage negative PostgreSQL tests to stable trigger or constraint identifiers.
 - Add the repository-wide AI Engineering and Review Protocol for subsequent M2 implementation/review work.
 - Removes trigger row-to-advisory lock inversion; handoff now uses fixed row locks, bounded PostgreSQL concurrency
   retries and per-item batch isolation.

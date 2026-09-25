@@ -21,22 +21,35 @@ from market_intelligence.safe_projection.contracts import (
 _PAGE_SIZE = 500
 
 
+async def pgcrypto_0010_prerequisite_error(connection: Any) -> str | None:
+    """Return a value-free prerequisite error for the exact SQL used by 0010."""
+    extension_present = bool(
+        await connection.scalar(
+            text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto')")
+        )
+    )
+    if not extension_present:
+        return "migration_0010_pgcrypto_required"
+    digest_resolvable = bool(
+        await connection.scalar(text("SELECT to_regprocedure('digest(bytea,text)') IS NOT NULL"))
+    )
+    if not digest_resolvable:
+        return "migration_0010_pgcrypto_digest_unresolvable"
+    return None
+
+
 async def validate_0010_pre_migration(engine: AsyncEngine) -> tuple[dict[str, object], int]:
     checked = 0
     cursor: str | None = None
     safe_errors: set[str] = set()
     canonical_candidates: dict[str, int] = {}
     async with engine.connect() as connection:
-        pgcrypto_available = bool(
-            await connection.scalar(
-                text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto')")
-            )
-        )
-        if not pgcrypto_available:
+        prerequisite_error = await pgcrypto_0010_prerequisite_error(connection)
+        if prerequisite_error is not None:
             return {
                 "status": "BLOCKED",
                 "checked_linked_projection_count": 0,
-                "safe_errors": ["migration_0010_pgcrypto_required"],
+                "safe_errors": [prerequisite_error],
             }, 2
         await connection.commit()
         transaction = await connection.begin()

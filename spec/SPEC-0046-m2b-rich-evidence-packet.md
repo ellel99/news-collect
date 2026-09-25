@@ -87,6 +87,9 @@ Concurrent mutation therefore commits
 before linking or loses to immutable LINKED state. Migration 0010 first performs a value-free, fail-closed audit
 of existing LINKED lineage. Legacy opaque adoption is restricted to the exact historical mapper matrix:
 Marketaux `news_all`, Finnhub `quote`, EIA `electricity_retail_sales`, and SEC `submissions_recent`.
+Marketaux identity is first normalized to the explicit ASCII alphabet
+`[A-Za-z0-9][A-Za-z0-9._:-]{0,254}` (outer whitespace is removed); quotes, Unicode and internal whitespace
+fail closed. This makes the historical Python JSON scalar bytes and the 0010 SQL digest bytes identical.
 Finnhub `company_news`, EIA `electricity_rto_region_data`, and unknown/new operations cannot inherit the
 compatibility path. Adoption proves exact deterministic provider identity plus provider/type/source/account/raw,
 time, access and operation-policy compatibility; a historical `provider_item_hash` is retained but, when the
@@ -100,7 +103,10 @@ validator uses a repeatable-read, read-only bounded keyset scan and emits only c
 0010 then performs the complementary relational fail-closed audit. Neither stage repairs factual data.
 `pgcrypto` is a DBA-managed prerequisite: the controlled read-only preflight requires it and returns
 `migration_0010_pgcrypto_required` before migration entry when absent. Revision 0010 never executes
-`CREATE EXTENSION`, so the migration role needs no extension-install privilege.
+`CREATE EXTENSION`, so the migration role needs no extension-install privilege. The gate also proves that the
+exact unqualified `digest(bytea,text)` call used by 0010 resolves under the migration session's effective
+`search_path`; an installed extension whose function is not resolvable returns
+`migration_0010_pgcrypto_digest_unresolvable` before schema changes.
 PostgreSQL integration tests create a random `news_collect_test_<token>` disposable database per pytest process,
 bind the token to that exact database, migrate it, and drop only that database. A skipped PostgreSQL integration
 module must be reported as skipped and is not a full PostgreSQL PASS.

@@ -11,6 +11,7 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 from market_intelligence.collection.contracts import RawItemEnvelope
+from market_intelligence.provider_identity import normalize_marketaux_provider_identity
 from market_intelligence.providers.contracts import (
     ProviderAdapterError,
     ProviderAdapterErrorCode,
@@ -325,7 +326,9 @@ def _response_items(body: object) -> list[Mapping[str, Any]] | None:
 def _sanitize_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
     item_id = item.get("uuid")
     published_at = item.get("published_at")
-    if not isinstance(item_id, str) or not item_id or _SECRET_MARKER.search(item_id):
+    try:
+        item_id = normalize_marketaux_provider_identity(item_id)
+    except ValueError:
         return None
     if not isinstance(published_at, str) or not published_at or _SECRET_MARKER.search(published_at):
         return None

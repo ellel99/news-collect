@@ -20,6 +20,9 @@ def upgrade() -> None:
       IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto') THEN
         RAISE EXCEPTION 'migration_0010_pgcrypto_required';
       END IF;
+      IF to_regprocedure('digest(bytea,text)') IS NULL THEN
+        RAISE EXCEPTION 'migration_0010_pgcrypto_digest_unresolvable';
+      END IF;
     END $$
     """)
     op.add_column(
@@ -56,6 +59,8 @@ def upgrade() -> None:
           OR r.retention_class IS DISTINCT FROM s.retention_class
           OR NOT (
             (p.provider='marketaux' AND p.operation_key='news_all'
+              AND p.factual_payload->>'provider_item_id' ~
+                  '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'
               AND e.provider_item_type='marketaux_news' AND e.evidence_kind='news'
               AND e.source_type='news' AND e.access_level='link_only')
             OR (p.provider='finnhub' AND p.operation_key='quote'
@@ -74,6 +79,8 @@ def upgrade() -> None:
               AND e.source_type='disclosure' AND e.access_level='link_only')
             OR (e.access_level='link_only' AND (
                 (p.provider='marketaux' AND p.operation_key='news_all'
+                  AND p.factual_payload->>'provider_item_id' ~
+                      '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'
                   AND e.provider_item_type='marketaux_news'
                   AND e.evidence_kind='news' AND e.source_type='news'
                   AND e.provider_item_id='provider-item:'||encode(digest(convert_to(
@@ -292,6 +299,8 @@ def upgrade() -> None:
             AND e.news_signal_flag=(p.operation_key IN ('news_all','company_news'))
             AND (
               (p.provider='marketaux' AND p.operation_key='news_all'
+                AND p.factual_payload->>'provider_item_id' ~
+                    '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'
                 AND e.provider_item_type='marketaux_news' AND e.evidence_kind='news'
                 AND e.source_type='news' AND e.access_level='link_only')
               OR (p.provider='finnhub' AND p.operation_key='quote'
@@ -374,6 +383,8 @@ def upgrade() -> None:
                 canonical_payload->>'provider_item_id'
               AND evidence_row.provider_item_hash=canonical_hash)
              OR (provider_key='marketaux' AND operation_identity='news_all'
+                 AND canonical_payload->>'provider_item_id' ~
+                     '^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$'
                  AND evidence_row.access_level='link_only'
                  AND evidence_row.provider_item_id='provider-item:'||encode(digest(convert_to(
                    concat('"',canonical_payload->>'provider_item_id','"'),

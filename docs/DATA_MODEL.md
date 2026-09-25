@@ -9,10 +9,13 @@ explicit worker bookkeeping fields remain mutable. Downgrade fails closed when l
 LINKED transition, handoff revalidation, migration preflight and packet reads use the same operation-specific
 Evidence/Content/retention contract. Packet `identity_mode` distinguishes current canonical identity from the
 exact historical opaque identity matrix: Marketaux news, Finnhub quote, EIA retail and SEC submissions.
+Marketaux's historical scalar hash is limited to a normalized ASCII identity alphabet so Python and SQL consume
+the same bytes; ambiguous quote, Unicode and internal-whitespace forms are invalid rather than guessed.
 Company-news/RTO/new operations cannot use that path. Legacy adoption validates deterministic identity and
 relational provenance/policy, but retains rather than reconstructs a historical `provider_item_hash` when its
 original factual hash cannot be proven. Mutation triggers preserve immutability without acquiring advisory locks
-after row locks. `pgcrypto` is a DBA-managed prerequisite checked before 0010; the migration never installs it.
+after row locks. `pgcrypto` is a DBA-managed prerequisite checked before 0010; the migration never installs it,
+and the controlled gate verifies the exact `digest(bytea,text)` signature resolves under the active search path.
 
 M2-A review fix (unpublished 0009): CollectionRun.resolved_window is nullable safe JSONB with exactly start/end
 date/hour strings, initialized once and protected by an immutable-window trigger. It freezes rolling windows

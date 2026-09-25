@@ -13,7 +13,10 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from market_intelligence.rich_evidence.migration_preflight import validate_0010_pre_migration
+from market_intelligence.rich_evidence.migration_preflight import (
+    pgcrypto_0010_prerequisite_error,
+    validate_0010_pre_migration,
+)
 
 _LOCK_KEY = "m2b_0010_controlled_upgrade"
 
@@ -49,13 +52,9 @@ async def controlled_upgrade_0010(
                 revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
                 if revision != "0009":
                     errors.append("migration_0010_database_revision_invalid")
-                pgcrypto_available = bool(
-                    await connection.scalar(
-                        text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pgcrypto')")
-                    )
-                )
-                if not pgcrypto_available:
-                    errors.append("migration_0010_pgcrypto_required")
+                prerequisite_error = await pgcrypto_0010_prerequisite_error(connection)
+                if prerequisite_error is not None:
+                    errors.append(prerequisite_error)
                 if not writers_stopped:
                     errors.append("migration_0010_writers_not_stopped")
                 running = int(

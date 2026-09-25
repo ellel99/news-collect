@@ -11,6 +11,8 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
+from market_intelligence.provider_identity import normalize_marketaux_provider_identity
+
 _SECRET = re.compile(
     r"(?i)(api[_-]?key|api[_-]?token|authorization|x-finnhub-token|token|secret|password)"
 )
@@ -189,7 +191,12 @@ def _marketaux(payload: Mapping[str, Any]) -> dict[str, Any]:
             "snippet_coverage",
         },
     )
-    result["provider_item_id"] = _opaque_id(result["provider_item_id"])
+    try:
+        result["provider_item_id"] = normalize_marketaux_provider_identity(
+            result["provider_item_id"]
+        )
+    except ValueError:
+        raise ProjectionContractError("projection_provider_identity_invalid") from None
     result["query"] = _text(result["query"], maximum=500)
     if "://" in result["query"]:
         raise ProjectionContractError("projection_query_invalid")
