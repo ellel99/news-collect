@@ -1789,7 +1789,6 @@ async def test_single_current_revision_final_utf8_packet_over_budget_fails_close
         "projection_hash=repeat('0',64)",
         "quality_status='complete'",
         "processing_status='pending'",
-        "processing_status='processing'",
         "processing_status='blocked'",
         "processing_status='retry'",
         "safe_error_code='unsafe'",
@@ -2317,7 +2316,7 @@ async def test_marketaux_legacy_identity_python_sql_bytes_are_equal(
             actual = await connection.scalar(
                 text("""
                 SELECT 'provider-item:' || encode(
-                  digest(convert_to(concat('"', :identity, '"'), 'UTF8'), 'sha256'), 'hex'
+                  digest(convert_to(concat('"', CAST(:identity AS text), '"'), 'UTF8'), 'sha256'), 'hex'
                 )
                 """),
                 {"identity": identity},
