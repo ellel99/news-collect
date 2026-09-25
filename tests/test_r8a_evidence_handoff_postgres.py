@@ -443,6 +443,11 @@ async def test_handoff_revalidates_mutation_committed_while_waiting_for_locks(
         await asyncio.sleep(0.05)
         await transaction.commit()
         report = await asyncio.wait_for(handoff, timeout=5)
+        # SKIP LOCKED may correctly return an empty bounded pass when the
+        # mutator still owns a row in the fixed lock set. Periodic
+        # reconciliation must then claim and reject it after commit.
+        if report.claimed == 0:
+            report = await EvidenceProjectionHandoffWorker(factory).process_batch(limit=1)
         assert report.blocked == 1
         async with factory() as session:
             link = await session.scalar(
