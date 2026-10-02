@@ -47,6 +47,8 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
   with `FOR UPDATE SKIP LOCKED`, and performs bounded keyset/batch processing.
 - Jobs implement PENDING/PROCESSING/READY/PARTIAL/RETRY/BLOCKED, finite retry and stale recovery. Per-event bundle,
   items and head update are one transaction and idempotent under unique constraints.
+- A concurrent membership change or not-yet-linked Rich Evidence dependency is RETRY, while invalid identity,
+  provenance, packet contracts and exhausted retry are value-free BLOCKED outcomes.
 - A claim token is revalidated under lock inside the same transaction that creates a revision, so a stale worker
   cannot create a bundle, advance the head or complete a recovered claim (ABA protection).
 - One bundle is capped at 500 active Evidence memberships in both the service and PostgreSQL; exceeding the cap is

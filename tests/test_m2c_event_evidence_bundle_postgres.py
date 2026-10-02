@@ -31,6 +31,7 @@ from market_intelligence.db.models import (
     EvidenceProjectionLinkStatus,
 )
 from market_intelligence.event_evidence.contracts import BundleClaimLost, BundleConflict
+from market_intelligence.event_evidence.migration_preflight import validate_0011_pre_migration
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
 from market_intelligence.event_evidence.worker import EventEvidenceBundleWorker
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
@@ -95,6 +96,33 @@ async def _linked_evidence(
         )
         assert link is not None and link.evidence_item_id is not None
         return raw_id, link.evidence_item_id
+
+
+async def _clone_without_packet(
+    factory: async_sessionmaker[AsyncSession], evidence_id: uuid.UUID
+) -> uuid.UUID:
+    async with factory.begin() as session:
+        identity = await session.scalar(
+            text("""
+            INSERT INTO evidence_items(
+              evidence_version,provider,provider_item_type,evidence_kind,source_type,
+              source_id,source_account_id,raw_item_id,content_item_id,provider_item_id,
+              provider_item_hash,event_time,observed_at,access_level,processing_status,
+              official_source_flag,market_data_flag,disclosure_flag,news_signal_flag,
+              content_presence,numeric_presence,entity_refs,asset_refs,topic_refs,errors
+            )
+            SELECT evidence_version,provider,provider_item_type,evidence_kind,source_type,
+              source_id,source_account_id,raw_item_id,content_item_id,
+              provider_item_id || '-without-packet',repeat('b',64),event_time,observed_at,
+              access_level,processing_status,official_source_flag,market_data_flag,
+              disclosure_flag,news_signal_flag,content_presence,numeric_presence,
+              entity_refs,asset_refs,topic_refs,errors
+            FROM evidence_items WHERE id=:evidence RETURNING id
+            """),
+            {"evidence": evidence_id},
+        )
+        assert identity is not None
+        return identity
 
 
 @pytest.mark.asyncio
@@ -342,6 +370,55 @@ async def test_head_cannot_be_rebound_to_an_older_revision() -> None:
                     """),
                     {"old": first.bundle_id, "event": event_id},
                 )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_existing_state_preflight_is_value_free_and_blocks_missing_packet() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "marketaux")
+        await _event(factory, (evidence_id,))
+        report, exit_code = await validate_0011_pre_migration(engine)
+        assert exit_code == 0 and report["status"] == "PASS"
+
+        orphan_id = await _clone_without_packet(factory, evidence_id)
+        await _event(factory, (orphan_id,))
+        report, exit_code = await validate_0011_pre_migration(engine)
+        assert exit_code == 2
+        assert report == {
+            "status": "BLOCKED",
+            "broken_active_association_count": 0,
+            "active_without_rich_packet_count": 1,
+            "safe_errors": ["migration_0011_rich_packet_unavailable"],
+            "migration_ready": False,
+        }
+        assert "without-packet" not in str(report)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_not_yet_linked_packet_is_retryable_not_permanently_blocked() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "marketaux")
+        orphan_id = await _clone_without_packet(factory, evidence_id)
+        event_id = await _event(factory, (orphan_id,))
+        report = await EventEvidenceBundleWorker(factory).process_batch(limit=10)
+        assert report.retried == 1 and report.blocked == 0
+        async with factory() as session:
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None
+            assert job.status is EventEvidenceBundleJobStatus.RETRY
+            assert job.safe_error_code == "event_bundle_packet_not_ready"
+            assert job.next_retry_at is not None
+            assert await session.get(EventEvidenceBundleHead, event_id) is None
     finally:
         await _cleanup(factory)
         await engine.dispose()

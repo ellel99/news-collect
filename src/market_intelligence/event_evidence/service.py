@@ -28,6 +28,7 @@ from market_intelligence.event_evidence.contracts import (
     BundleBuildResult,
     BundleClaimLost,
     BundleConflict,
+    BundleRetryableConflict,
 )
 from market_intelligence.rich_evidence.builder import RichEvidencePacketBuilder
 from market_intelligence.rich_evidence.contracts import RichEvidenceError, RichEvidencePacket
@@ -74,6 +75,8 @@ class EventEvidenceBundleService:
             try:
                 packet = await self._builder.build_one(evidence_id)
             except RichEvidenceError as exc:
+                if str(exc) == "rich_evidence_linked_projection_missing":
+                    raise BundleRetryableConflict("event_bundle_packet_not_ready") from exc
                 raise BundleConflict("event_bundle_packet_invalid") from exc
             identity, value = _fact_digests(packet)
             prepared.append(_Prepared(association_id, evidence_id, packet, identity, value))
@@ -112,7 +115,7 @@ class EventEvidenceBundleService:
                 )
             )
             if locked != associations:
-                raise BundleConflict("event_bundle_membership_changed")
+                raise BundleRetryableConflict("event_bundle_membership_changed")
             head = await session.get(
                 EventEvidenceBundleHead, event_candidate_id, with_for_update=True
             )

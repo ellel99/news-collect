@@ -32,5 +32,9 @@ class BundleConflict(ValueError):
     """A value-free permanent bundle contract failure."""
 
 
+class BundleRetryableConflict(RuntimeError):
+    """A value-free transient bundle dependency or membership race."""
+
+
 class BundleClaimLost(RuntimeError):
     """The durable worker claim was recovered or replaced before persistence."""

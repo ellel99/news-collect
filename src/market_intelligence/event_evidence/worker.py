@@ -20,6 +20,7 @@ from market_intelligence.db.models import (
 from market_intelligence.event_evidence.contracts import (
     BundleClaimLost,
     BundleConflict,
+    BundleRetryableConflict,
     BundleWorkerReport,
 )
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
@@ -70,6 +71,8 @@ class EventEvidenceBundleWorker:
                     outcome = "claim_lost"
             except BundleClaimLost:
                 outcome = "claim_lost"
+            except BundleRetryableConflict as exc:
+                outcome = await self._retry(identity, claim_token, str(exc), now)
             except BundleConflict as exc:
                 outcome = "blocked"
                 await self._block(identity, claim_token, str(exc), now)
