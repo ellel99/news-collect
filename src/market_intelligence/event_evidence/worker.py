@@ -17,7 +17,11 @@ from market_intelligence.db.models import (
     EventEvidenceBundleJob,
     EventEvidenceBundleJobStatus,
 )
-from market_intelligence.event_evidence.contracts import BundleConflict, BundleWorkerReport
+from market_intelligence.event_evidence.contracts import (
+    BundleClaimLost,
+    BundleConflict,
+    BundleWorkerReport,
+)
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
 
 _DISCOVERY_KEY = "event_evidence_bundle_discovery_cursor"
@@ -47,12 +51,25 @@ class EventEvidenceBundleWorker:
         recovered = await self._recover_stale(now, limit)
         discovered = await self._discover(limit)
         claimed = await self._claim(now, limit)
-        counts = {"ready": 0, "partial": 0, "unchanged": 0, "blocked": 0, "retry": 0}
+        counts = {
+            "ready": 0,
+            "partial": 0,
+            "unchanged": 0,
+            "blocked": 0,
+            "retry": 0,
+            "claim_lost": 0,
+        }
         for identity, claim_token in claimed:
             try:
-                result = await self._service.build(identity)
+                result = await self._service.build(identity, claim_token=claim_token)
                 outcome = result.status
-                await self._complete(identity, claim_token, result.status, result.bundle_id, now)
+                completed = await self._complete(
+                    identity, claim_token, result.status, result.bundle_id, now
+                )
+                if not completed:
+                    outcome = "claim_lost"
+            except BundleClaimLost:
+                outcome = "claim_lost"
             except BundleConflict as exc:
                 outcome = "blocked"
                 await self._block(identity, claim_token, str(exc), now)
@@ -72,6 +89,7 @@ class EventEvidenceBundleWorker:
             counts["blocked"],
             counts["retry"],
             recovered,
+            counts["claim_lost"],
         )
 
     async def _discover(self, limit: int) -> int:
@@ -238,7 +256,7 @@ class EventEvidenceBundleWorker:
         status: str,
         bundle_id: uuid.UUID | None,
         now: datetime,
-    ) -> None:
+    ) -> bool:
         final = (
             EventEvidenceBundleJobStatus.PARTIAL
             if status == "partial"
@@ -251,7 +269,7 @@ class EventEvidenceBundleWorker:
                 or row.status is not EventEvidenceBundleJobStatus.PROCESSING
                 or row.claim_token != claim_token
             ):
-                return
+                return False
             if status == "unchanged" and bundle_id is not None:
                 from market_intelligence.db.models import EventEvidenceBundle
 
@@ -266,6 +284,7 @@ class EventEvidenceBundleWorker:
             row.next_retry_at = None
             row.safe_error_code = None
             row.updated_at = now
+            return True
 
     async def _block(
         self, identity: uuid.UUID, claim_token: uuid.UUID, code: str, now: datetime

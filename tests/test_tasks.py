@@ -106,6 +106,7 @@ def test_event_evidence_task_returns_value_free_counts(
             "blocked": 0,
             "retried": 1,
             "recovered": 0,
+            "claim_lost": 0,
         }
 
     monkeypatch.setattr(event_evidence_bundle, "_process", fake_process)
@@ -118,6 +119,7 @@ def test_event_evidence_task_returns_value_free_counts(
         "blocked": 0,
         "retried": 1,
         "recovered": 0,
+        "claim_lost": 0,
     }
 
 

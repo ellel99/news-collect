@@ -27,13 +27,16 @@ def upgrade() -> None:
     if broken:
         raise RuntimeError("migration_0011_active_association_invalid")
 
-    bundle_status = postgresql.ENUM("ready", "partial", name="event_evidence_bundle_status")
+    bundle_status = postgresql.ENUM(
+        "ready", "partial", name="event_evidence_bundle_status", create_type=False
+    )
     relation = postgresql.ENUM(
         "supporting",
         "duplicate",
         "contradicting",
         "superseding",
         name="event_evidence_relation",
+        create_type=False,
     )
     job_status = postgresql.ENUM(
         "pending",
@@ -43,10 +46,27 @@ def upgrade() -> None:
         "retry",
         "blocked",
         name="event_evidence_bundle_job_status",
+        create_type=False,
     )
-    bundle_status.create(bind, checkfirst=True)
-    relation.create(bind, checkfirst=True)
-    job_status.create(bind, checkfirst=True)
+    postgresql.ENUM("ready", "partial", name="event_evidence_bundle_status").create(
+        bind, checkfirst=True
+    )
+    postgresql.ENUM(
+        "supporting",
+        "duplicate",
+        "contradicting",
+        "superseding",
+        name="event_evidence_relation",
+    ).create(bind, checkfirst=True)
+    postgresql.ENUM(
+        "pending",
+        "processing",
+        "ready",
+        "partial",
+        "retry",
+        "blocked",
+        name="event_evidence_bundle_job_status",
+    ).create(bind, checkfirst=True)
 
     op.create_table(
         "event_evidence_bundles",
@@ -85,6 +105,7 @@ def upgrade() -> None:
         sa.CheckConstraint("revision > 0", name="ck_event_bundle_revision_positive"),
         sa.CheckConstraint("bundle_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_digest"),
         sa.CheckConstraint("evidence_count > 0", name="ck_event_bundle_evidence_positive"),
+        sa.CheckConstraint("evidence_count <= 500", name="ck_event_bundle_evidence_budget"),
         sa.CheckConstraint("source_count > 0", name="ck_event_bundle_source_positive"),
         sa.CheckConstraint("provider_count > 0", name="ck_event_bundle_provider_positive"),
         sa.CheckConstraint("operation_count > 0", name="ck_event_bundle_operation_positive"),
@@ -315,11 +336,21 @@ def upgrade() -> None:
       ON event_evidence_bundle_items FOR EACH ROW EXECUTE FUNCTION m2c_bundle_item_guard()""")
     op.execute("""
     CREATE FUNCTION m2c_bundle_head_guard() RETURNS trigger AS $$
-    DECLARE cur record; can record;
+    DECLARE cur record; can record; expected_current uuid; expected_canonical uuid;
     BEGIN
       SELECT * INTO cur FROM event_evidence_bundles WHERE id=NEW.current_bundle_id;
       IF cur.event_candidate_id IS DISTINCT FROM NEW.event_candidate_id THEN
         RAISE EXCEPTION 'event_evidence_bundle_head_provenance_invalid';
+      END IF;
+      SELECT id INTO expected_current FROM event_evidence_bundles
+        WHERE event_candidate_id=NEW.event_candidate_id
+        ORDER BY revision DESC LIMIT 1;
+      SELECT id INTO expected_canonical FROM event_evidence_bundles
+        WHERE event_candidate_id=NEW.event_candidate_id AND status='ready'
+        ORDER BY revision DESC LIMIT 1;
+      IF NEW.current_bundle_id IS DISTINCT FROM expected_current
+         OR NEW.canonical_bundle_id IS DISTINCT FROM expected_canonical THEN
+        RAISE EXCEPTION 'event_evidence_bundle_head_not_latest';
       END IF;
       IF NEW.canonical_bundle_id IS NOT NULL THEN
         SELECT * INTO can FROM event_evidence_bundles WHERE id=NEW.canonical_bundle_id;
@@ -363,9 +394,16 @@ def upgrade() -> None:
     DECLARE actual_operations jsonb;
     DECLARE actual_first timestamptz;
     DECLARE actual_last timestamptz;
+    DECLARE head_current uuid;
+    DECLARE head_canonical uuid;
+    DECLARE expected_current uuid;
+    DECLARE expected_canonical uuid;
     BEGIN
-      bundle_identity := CASE WHEN TG_TABLE_NAME='event_evidence_bundles'
-                              THEN NEW.id ELSE NEW.bundle_id END;
+      IF TG_TABLE_NAME='event_evidence_bundles' THEN
+        bundle_identity := NEW.id;
+      ELSE
+        bundle_identity := NEW.bundle_id;
+      END IF;
       SELECT * INTO b FROM event_evidence_bundles WHERE id=bundle_identity;
       SELECT count(*),count(DISTINCT source_id),min(event_time),max(event_time)
         INTO actual_evidence,actual_sources,actual_first,actual_last
@@ -378,6 +416,13 @@ def upgrade() -> None:
           SELECT DISTINCT provider || ':' || operation_key AS operation
           FROM event_evidence_bundle_items WHERE bundle_id=bundle_identity
         ) operations;
+      SELECT current_bundle_id,canonical_bundle_id INTO head_current,head_canonical
+        FROM event_evidence_bundle_heads WHERE event_candidate_id=b.event_candidate_id;
+      SELECT id INTO expected_current FROM event_evidence_bundles
+        WHERE event_candidate_id=b.event_candidate_id ORDER BY revision DESC LIMIT 1;
+      SELECT id INTO expected_canonical FROM event_evidence_bundles
+        WHERE event_candidate_id=b.event_candidate_id AND status='ready'
+        ORDER BY revision DESC LIMIT 1;
       IF b.id IS NULL OR b.evidence_count IS DISTINCT FROM actual_evidence
          OR b.source_count IS DISTINCT FROM actual_sources
          OR b.provider_count IS DISTINCT FROM jsonb_array_length(actual_providers)
@@ -385,7 +430,9 @@ def upgrade() -> None:
          OR b.provider_coverage IS DISTINCT FROM actual_providers
          OR b.operation_coverage IS DISTINCT FROM actual_operations
          OR b.first_event_time IS DISTINCT FROM actual_first
-         OR b.last_event_time IS DISTINCT FROM actual_last THEN
+         OR b.last_event_time IS DISTINCT FROM actual_last
+         OR head_current IS DISTINCT FROM expected_current
+         OR head_canonical IS DISTINCT FROM expected_canonical THEN
         RAISE EXCEPTION 'event_evidence_bundle_aggregate_invalid';
       END IF;
       RETURN NEW;
@@ -412,6 +459,9 @@ def downgrade() -> None:
     bind.execute(
         sa.text("DELETE FROM system_metadata WHERE key='event_evidence_bundle_discovery_cursor'")
     )
+    op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_item ON event_evidence_bundle_items")
+    op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_bundle ON event_evidence_bundles")
+    op.execute("DROP FUNCTION m2c_bundle_aggregate_guard()")
     op.execute("DROP TRIGGER trg_m2c_bundle_job_guard ON event_evidence_bundle_jobs")
     op.execute("DROP FUNCTION m2c_bundle_job_guard()")
     op.execute("DROP TRIGGER trg_m2c_bundle_head_guard ON event_evidence_bundle_heads")
@@ -428,6 +478,3 @@ def downgrade() -> None:
     postgresql.ENUM(name="event_evidence_bundle_job_status").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_relation").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_bundle_status").drop(bind, checkfirst=True)
-    op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_item ON event_evidence_bundle_items")
-    op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_bundle ON event_evidence_bundles")
-    op.execute("DROP FUNCTION m2c_bundle_aggregate_guard()")

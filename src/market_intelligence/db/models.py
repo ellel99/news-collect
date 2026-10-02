@@ -1340,6 +1340,7 @@ class EventEvidenceBundle(Base):
         CheckConstraint("revision > 0", name="ck_event_bundle_revision_positive"),
         CheckConstraint("bundle_digest ~ '^[0-9a-f]{64}$'", name="ck_event_bundle_digest"),
         CheckConstraint("evidence_count > 0", name="ck_event_bundle_evidence_positive"),
+        CheckConstraint("evidence_count <= 500", name="ck_event_bundle_evidence_budget"),
         CheckConstraint("source_count > 0", name="ck_event_bundle_source_positive"),
         CheckConstraint("provider_count > 0", name="ck_event_bundle_provider_positive"),
         CheckConstraint("operation_count > 0", name="ck_event_bundle_operation_positive"),

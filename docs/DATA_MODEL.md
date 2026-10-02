@@ -6,7 +6,9 @@ M2-C migration 0011 adds append-only `event_evidence_bundles` and immutable orde
 reversible `event_candidate_evidence`; one Evidence can belong to multiple events. Bundle revisions snapshot
 active membership and Rich Evidence packet/projection digests without copying factual payload. Current points to
 the newest READY or PARTIAL revision; canonical advances only to READY. PostgreSQL protects item provenance,
-immutable history and head/event consistency. Downgrade fails closed while bundle/job state exists.
+immutable history, a hard 500-member revision budget, and exact latest-current/latest-READY head semantics.
+Worker claim tokens are checked under lock in the revision transaction so stale recovery cannot produce an ABA
+write. Downgrade fails closed while bundle/job state exists.
 
 M2-B adds no packet table. `RichEvidencePacket` is a deterministic typed read model over LINKED
 `EvidenceProjectionLink`, READY `SafeFactProjection`, observation/raw/evidence/content and collection provenance.

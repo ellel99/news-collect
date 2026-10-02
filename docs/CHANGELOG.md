@@ -9,6 +9,8 @@
   never judged by AI.
 - Add authority-neutral Celery reconciliation with bounded discovery, `SKIP LOCKED` claim, finite retry, stale
   recovery and value-free counts; production collection authority remains `legacy`.
+- Enforce the 500-member budget and latest current/canonical head semantics in PostgreSQL, and validate worker claim
+  tokens inside the revision transaction so stale recovered workers cannot persist an ABA completion.
 - Add value-free existing-state preflight and fail-closed nonempty downgrade. No production migration,
   activation, historical replay or external request is performed.
 

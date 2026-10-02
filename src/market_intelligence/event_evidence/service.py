@@ -19,10 +19,16 @@ from market_intelligence.db.models import (
     EventEvidenceBundle,
     EventEvidenceBundleHead,
     EventEvidenceBundleItem,
+    EventEvidenceBundleJob,
+    EventEvidenceBundleJobStatus,
     EventEvidenceBundleStatus,
     EventEvidenceRelation,
 )
-from market_intelligence.event_evidence.contracts import BundleBuildResult, BundleConflict
+from market_intelligence.event_evidence.contracts import (
+    BundleBuildResult,
+    BundleClaimLost,
+    BundleConflict,
+)
 from market_intelligence.rich_evidence.builder import RichEvidencePacketBuilder
 from market_intelligence.rich_evidence.contracts import RichEvidenceError, RichEvidencePacket
 
@@ -55,7 +61,9 @@ class EventEvidenceBundleService:
         self._builder = packet_builder or RichEvidencePacketBuilder(factory)
         self._max_evidence = max_evidence
 
-    async def build(self, event_candidate_id: uuid.UUID) -> BundleBuildResult:
+    async def build(
+        self, event_candidate_id: uuid.UUID, *, claim_token: uuid.UUID | None = None
+    ) -> BundleBuildResult:
         associations = await self._active_associations(event_candidate_id)
         if not associations:
             raise BundleConflict("event_bundle_no_active_evidence")
@@ -71,6 +79,16 @@ class EventEvidenceBundleService:
             prepared.append(_Prepared(association_id, evidence_id, packet, identity, value))
 
         async with self._factory.begin() as session:
+            if claim_token is not None:
+                job = await session.get(
+                    EventEvidenceBundleJob, event_candidate_id, with_for_update=True
+                )
+                if (
+                    job is None
+                    or job.status is not EventEvidenceBundleJobStatus.PROCESSING
+                    or job.claim_token != claim_token
+                ):
+                    raise BundleClaimLost("event_bundle_claim_lost")
             candidate = await session.scalar(
                 select(EventCandidate)
                 .where(EventCandidate.id == event_candidate_id)

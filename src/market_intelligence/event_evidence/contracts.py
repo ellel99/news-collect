@@ -25,7 +25,12 @@ class BundleWorkerReport:
     blocked: int
     retried: int
     recovered: int
+    claim_lost: int
 
 
 class BundleConflict(ValueError):
     """A value-free permanent bundle contract failure."""
+
+
+class BundleClaimLost(RuntimeError):
+    """The durable worker claim was recovered or replaced before persistence."""

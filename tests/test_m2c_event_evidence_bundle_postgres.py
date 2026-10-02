@@ -30,6 +30,7 @@ from market_intelligence.db.models import (
     EvidenceProjectionLink,
     EvidenceProjectionLinkStatus,
 )
+from market_intelligence.event_evidence.contracts import BundleClaimLost, BundleConflict
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
 from market_intelligence.event_evidence.worker import EventEvidenceBundleWorker
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
@@ -246,6 +247,101 @@ async def test_worker_is_bounded_concurrent_idempotent_and_recovers_stale() -> N
         assert await EventEvidenceBundleService(factory).build(
             event_id
         ) == await EventEvidenceBundleService(factory).build(event_id)
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_recovered_claim_cannot_create_bundle_or_advance_head() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, (evidence_id,))
+        old_token, new_token = uuid.uuid4(), uuid.uuid4()
+        async with factory.begin() as session:
+            session.add(
+                EventEvidenceBundleJob(
+                    event_candidate_id=event_id,
+                    status=EventEvidenceBundleJobStatus.PROCESSING,
+                    attempt_count=1,
+                    processing_started_at=datetime.now(UTC),
+                    claim_token=new_token,
+                )
+            )
+        with pytest.raises(BundleClaimLost, match="event_bundle_claim_lost"):
+            await EventEvidenceBundleService(factory).build(event_id, claim_token=old_token)
+        async with factory() as session:
+            assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 0
+            assert await session.get(EventEvidenceBundleHead, event_id) is None
+        result = await EventEvidenceBundleService(factory).build(event_id, claim_token=new_token)
+        assert result.bundle_id is not None
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_evidence_budget_is_enforced_by_service_and_database() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw_one, first = await _linked_evidence(factory, "marketaux")
+        _raw_two, second = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, (first, second))
+        with pytest.raises(BundleConflict, match="event_bundle_evidence_budget_exceeded"):
+            await EventEvidenceBundleService(factory, max_evidence=1).build(event_id)
+        async with factory.begin() as session:
+            with pytest.raises(DBAPIError, match="ck_event_bundle_evidence_budget"):
+                await session.execute(
+                    text("""
+                    INSERT INTO event_evidence_bundles(
+                      event_candidate_id,revision,bundle_version,status,bundle_digest,
+                      evidence_count,source_count,provider_count,operation_count,
+                      provider_coverage,operation_coverage,reason_codes,
+                      first_event_time,last_event_time
+                    ) VALUES (
+                      :event,1,1,'ready',repeat('a',64),501,1,1,1,
+                      '["marketaux"]'::jsonb,'["marketaux:news_all"]'::jsonb,
+                      '[]'::jsonb,:now,:now
+                    )
+                    """),
+                    {"event": event_id, "now": datetime.now(UTC)},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_head_cannot_be_rebound_to_an_older_revision() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, (evidence_id,))
+        service = EventEvidenceBundleService(factory)
+        first = await service.build(event_id)
+        await _seed_ready(
+            factory,
+            "marketaux",
+            raw_id=raw_id,
+            payload_updates={"title": "Synthetic later revision"},
+        )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        second = await service.build(event_id)
+        assert second.revision == 2
+        async with factory.begin() as session:
+            with pytest.raises(DBAPIError, match="event_evidence_bundle_head_not_latest"):
+                await session.execute(
+                    text("""
+                    UPDATE event_evidence_bundle_heads
+                    SET current_bundle_id=:old, canonical_bundle_id=:old
+                    WHERE event_candidate_id=:event
+                    """),
+                    {"old": first.bundle_id, "event": event_id},
+                )
     finally:
         await _cleanup(factory)
         await engine.dispose()

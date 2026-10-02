@@ -20,6 +20,9 @@
 7. Reconciliation is bounded and authority-neutral, uses `FOR UPDATE SKIP LOCKED`, finite retry and stale recovery.
 8. Existing-state preflight is read-only and value-free. Downgrade refuses nonempty M2-C state.
 9. M2-D receives bundle version/digest/status, ordered items, packet/projection hashes, diversity and time range.
+10. The service revalidates the worker claim token under lock in the revision transaction; recovered stale claims
+    cannot create history or advance the head. PostgreSQL independently caps revisions at 500 items and requires
+    head pointers to name the latest current and latest READY canonical revisions.
 
 ## Explicitly absent
 

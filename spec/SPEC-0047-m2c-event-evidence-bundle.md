@@ -47,8 +47,12 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
   with `FOR UPDATE SKIP LOCKED`, and performs bounded keyset/batch processing.
 - Jobs implement PENDING/PROCESSING/READY/PARTIAL/RETRY/BLOCKED, finite retry and stale recovery. Per-event bundle,
   items and head update are one transaction and idempotent under unique constraints.
-- A claim token prevents a stale worker from completing a recovered claim. One bundle is capped at 500 active
-  Evidence memberships; exceeding the cap is a value-free BLOCKED outcome rather than an unbounded scan.
+- A claim token is revalidated under lock inside the same transaction that creates a revision, so a stale worker
+  cannot create a bundle, advance the head or complete a recovered claim (ABA protection).
+- One bundle is capped at 500 active Evidence memberships in both the service and PostgreSQL; exceeding the cap is
+  a value-free BLOCKED outcome rather than an unbounded scan.
+- The mutable head may point only to the greatest revision and its canonical pointer must equal the greatest READY
+  revision. PostgreSQL enforces these current/canonical semantics and rejects rollback/rebinding by SQL bypass.
 - Migration 0011 is additive. Existing-state preflight rejects broken active membership value-free. Downgrade is
   allowed only when bundle/job/head tables are empty; it never removes EventCandidate/Evidence history.
 - `scripts/m2c_pre_migration_validator.py` is the read-only controlled preflight. It reports counts and stable
@@ -65,5 +69,6 @@ Fact/ImpactAnalysis or M2-D implementation.
 
 Deterministic identity/relation/digest tests; append-only revision and canonical/current semantics; multi-source
 diversity/time coverage; duplicate/contradicting/superseding expression; bounded pagination and no starvation;
-concurrent/idempotent processing; retry/stale recovery; SQL-bypass immutability; 0010→0011→0010→0011; existing
+concurrent/idempotent processing; claim-token ABA rejection; retry/stale recovery; SQL-bypass immutability,
+500-member enforcement and latest-head guards; 0010→0011→0010→0011; existing
 Phase 1/R1/R2/R8-A/M2-A/M2-B/scheduler/Telegram regressions; clean archive review.
