@@ -623,7 +623,15 @@ async def test_0005_migration_round_trip_and_identity_trigger() -> None:
         existing = [
             table
             for table in Base.metadata.sorted_tables
-            if table.name not in {"event_candidates", "event_candidate_evidence"}
+            if table.name
+            not in {
+                "event_candidates",
+                "event_candidate_evidence",
+                "event_evidence_bundles",
+                "event_evidence_bundle_items",
+                "event_evidence_bundle_heads",
+                "event_evidence_bundle_jobs",
+            }
         ]
         Base.metadata.create_all(sync_connection, tables=existing)
         revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0005")

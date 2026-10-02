@@ -197,6 +197,10 @@ async def test_incompatible_schema_blocks_execute_without_update(
     compatible_database: AsyncEngine,
 ) -> None:
     async with compatible_database.begin() as connection:
+        await connection.execute(text("DROP TABLE event_evidence_bundle_jobs"))
+        await connection.execute(text("DROP TABLE event_evidence_bundle_heads"))
+        await connection.execute(text("DROP TABLE event_evidence_bundle_items"))
+        await connection.execute(text("DROP TABLE event_evidence_bundles"))
         await connection.execute(text("DROP TABLE evidence_projection_links"))
         await connection.execute(text("DROP TABLE event_candidate_evidence"))
         await connection.execute(text("DROP TABLE event_candidates"))
