@@ -31,6 +31,27 @@
 No AI association or conflict decision, cheap/strong model, Fact/ImpactAnalysis, recommendation, production
 migration/activation/cutover, historical replay, external request, raw response persistence or PR #39 change.
 
+## Implementation self-audit evidence
+
+- Complete `origin/main...HEAD` audit covered bundle identity, membership ownership, relation rules, deterministic
+  digest, the 500-member service/database cap, append-only revision/head semantics, claim-token ABA protection,
+  retry/stale recovery, authority-neutral Celery wiring, 0011 upgrade/downgrade, and the M2-D input boundary.
+- Initial CI exposed duplicate enum creation. The migration now creates each enum exactly once and uses
+  `create_type=False` for table columns; downgrade removes deferred triggers before their tables.
+- Historical migration round-trip fixtures explicitly exclude/remove 0011 dependants rather than using CASCADE.
+- PostgreSQL rejects a head rollback and enforces exact latest-current/latest-READY pointers. Losing the final
+  active association removes only the mutable head and never deletes a revision.
+- The controlled preflight is tested in PASS and value-free BLOCKED states. Missing not-yet-linked packet state and
+  concurrent membership changes use bounded RETRY; invalid packet/provenance and exhaustion remain BLOCKED.
+- GitHub quality CI executed the complete PostgreSQL/Redis suite: 873 passed. Local PostgreSQL tests were not run
+  because no local PostgreSQL service was available; the 15 M2-C PostgreSQL tests executed in GitHub CI.
+- No P0/P1 remained within the defined self-review matrix after these corrections. Independent Implementation
+  Review remains required; this statement is not approval or production authorization.
+
+Known limits: relation v1 is exact deterministic fact-identity/value comparison rather than semantic adjudication;
+packet construction is bounded at 500 Evidence memberships and intentionally does not implement AI, Fact,
+ImpactAnalysis, production migration, activation, backfill, or M2-D.
+
 ## Review result
 
 PENDING — keep the PR Draft. Independent Implementation Review is required.
