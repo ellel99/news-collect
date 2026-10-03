@@ -118,6 +118,10 @@ async def test_evidence_migration_upgrade_downgrade_reupgrade() -> None:
             "evidence_projection_links",
             "event_candidates",
             "event_candidate_evidence",
+            "event_evidence_bundles",
+            "event_evidence_bundle_items",
+            "event_evidence_bundle_heads",
+            "event_evidence_bundle_jobs",
         }
         existing_tables = [
             table for table in Base.metadata.sorted_tables if table.name not in excluded_tables

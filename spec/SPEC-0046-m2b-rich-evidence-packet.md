@@ -1,5 +1,7 @@
 # SPEC-0046 — M2-B Rich Evidence Packet
 
+Status: Completed — Implementation Review approved; merged in PR #47
+
 Status: Active — Implementation Review
 
 ## Authorization and boundary
