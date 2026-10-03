@@ -8,7 +8,9 @@ active membership and Rich Evidence packet/projection digests without copying fa
 the newest READY or PARTIAL revision; canonical advances only to READY. PostgreSQL protects item provenance,
 immutable history, a hard 500-member revision budget, and exact latest-current/latest-READY head semantics.
 Worker claim tokens are checked under lock in the revision transaction so stale recovery cannot produce an ABA
-write. Downgrade fails closed while bundle/job state exists.
+write. Removing the final active association removes only the mutable head (under a PostgreSQL active-membership
+guard), keeps every immutable revision, and prevents downstream use of stale evidence until a reviewed association
+creates a later revision. Downgrade fails closed while bundle/job state exists.
 
 M2-B adds no packet table. `RichEvidencePacket` is a deterministic typed read model over LINKED
 `EvidenceProjectionLink`, READY `SafeFactProjection`, observation/raw/evidence/content and collection provenance.

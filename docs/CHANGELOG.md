@@ -11,6 +11,8 @@
   recovery and value-free counts; production collection authority remains `legacy`.
 - Enforce the 500-member budget and latest current/canonical head semantics in PostgreSQL, and validate worker claim
   tokens inside the revision transaction so stale recovered workers cannot persist an ABA completion.
+- Remove the mutable bundle head when an EventCandidate loses its final active Evidence association while retaining
+  all immutable revisions; reviewed re-association reopens reconciliation instead of exposing stale evidence.
 - Add value-free existing-state preflight and fail-closed nonempty downgrade. No production migration,
   activation, historical replay or external request is performed.
 

@@ -10,6 +10,9 @@ market validation or conflict adjudication. Production collection authority rema
 ### Identity and ownership
 
 - `EventCandidate` owns event identity and active Evidence membership. M2-C never creates or changes clustering.
+- If the last active association is removed, reconciliation removes only the mutable head and blocks the job with
+  `event_bundle_no_active_evidence`; immutable revisions remain. A later reviewed association reopens the job and
+  appends a new revision, preventing M2-D from consuming a stale historical head as current evidence.
 - `EventEvidenceBundle` identity is `(event_candidate_id, revision)`. Revisions are append-only; a mutable head row
   points to the current revision and the latest READY canonical revision.
 - `bundle_digest` is SHA-256 over canonical versioned material: event id, ordered item digests/relations, diversity,

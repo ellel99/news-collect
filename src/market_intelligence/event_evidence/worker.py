@@ -14,6 +14,7 @@ from market_intelligence.db.base import system_metadata
 from market_intelligence.db.models import (
     EventCandidate,
     EventCandidateEvidence,
+    EventEvidenceBundleHead,
     EventEvidenceBundleJob,
     EventEvidenceBundleJobStatus,
 )
@@ -116,6 +117,17 @@ class EventEvidenceBundleWorker:
                         EventEvidenceBundleJobStatus.PARTIAL,
                     )
                 ),
+                (
+                    (EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED)
+                    & (EventEvidenceBundleJob.safe_error_code == "event_bundle_no_active_evidence")
+                ),
+            )
+            has_material_or_head = or_(
+                exists().where(
+                    EventCandidateEvidence.event_candidate_id == EventCandidate.id,
+                    EventCandidateEvidence.active.is_(True),
+                ),
+                exists().where(EventEvidenceBundleHead.event_candidate_id == EventCandidate.id),
             )
             base = (
                 select(EventCandidate.id)
@@ -124,10 +136,7 @@ class EventEvidenceBundleWorker:
                     EventEvidenceBundleJob.event_candidate_id == EventCandidate.id,
                 )
                 .where(
-                    exists().where(
-                        EventCandidateEvidence.event_candidate_id == EventCandidate.id,
-                        EventCandidateEvidence.active.is_(True),
-                    ),
+                    has_material_or_head,
                     eligible,
                 )
                 .order_by(EventCandidate.id)
@@ -145,10 +154,7 @@ class EventEvidenceBundleWorker:
                             EventEvidenceBundleJob.event_candidate_id == EventCandidate.id,
                         )
                         .where(
-                            exists().where(
-                                EventCandidateEvidence.event_candidate_id == EventCandidate.id,
-                                EventCandidateEvidence.active.is_(True),
-                            ),
+                            has_material_or_head,
                             eligible,
                         )
                         .order_by(EventCandidate.id)
@@ -170,13 +176,24 @@ class EventEvidenceBundleWorker:
                 index_elements=["event_candidate_id"],
                 set_={
                     "status": EventEvidenceBundleJobStatus.PENDING.value,
+                    "safe_error_code": None,
+                    "next_retry_at": None,
                     "updated_at": datetime.now(UTC),
                 },
-                where=EventEvidenceBundleJob.status.in_(
+                where=or_(
+                    EventEvidenceBundleJob.status.in_(
+                        (
+                            EventEvidenceBundleJobStatus.READY,
+                            EventEvidenceBundleJobStatus.PARTIAL,
+                        )
+                    ),
                     (
-                        EventEvidenceBundleJobStatus.READY,
-                        EventEvidenceBundleJobStatus.PARTIAL,
-                    )
+                        (EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED)
+                        & (
+                            EventEvidenceBundleJob.safe_error_code
+                            == "event_bundle_no_active_evidence"
+                        )
+                    ),
                 ),
             )
             await session.execute(statement)

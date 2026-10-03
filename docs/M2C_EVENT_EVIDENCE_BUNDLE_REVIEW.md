@@ -23,6 +23,8 @@
 10. The service revalidates the worker claim token under lock in the revision transaction; recovered stale claims
     cannot create history or advance the head. PostgreSQL independently caps revisions at 500 items and requires
     head pointers to name the latest current and latest READY canonical revisions.
+11. An EventCandidate with no active membership has no current head. Reconciliation removes only that mutable
+    pointer, preserves immutable revisions, and can reopen the blocked job after a reviewed association is added.
 
 ## Explicitly absent
 

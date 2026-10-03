@@ -338,6 +338,15 @@ def upgrade() -> None:
     CREATE FUNCTION m2c_bundle_head_guard() RETURNS trigger AS $$
     DECLARE cur record; can record; expected_current uuid; expected_canonical uuid;
     BEGIN
+      IF TG_OP='DELETE' THEN
+        IF EXISTS (
+          SELECT 1 FROM event_candidate_evidence
+          WHERE event_candidate_id=OLD.event_candidate_id AND active
+        ) THEN
+          RAISE EXCEPTION 'event_evidence_bundle_head_delete_active';
+        END IF;
+        RETURN OLD;
+      END IF;
       SELECT * INTO cur FROM event_evidence_bundles WHERE id=NEW.current_bundle_id;
       IF cur.event_candidate_id IS DISTINCT FROM NEW.event_candidate_id THEN
         RAISE EXCEPTION 'event_evidence_bundle_head_provenance_invalid';

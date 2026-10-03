@@ -34,6 +34,7 @@ from market_intelligence.event_evidence.contracts import BundleClaimLost, Bundle
 from market_intelligence.event_evidence.migration_preflight import validate_0011_pre_migration
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
 from market_intelligence.event_evidence.worker import EventEvidenceBundleWorker
+from market_intelligence.event_intelligence.service import EventCandidateService
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
 from market_intelligence.test_database import isolated_test_database_url
 
@@ -419,6 +420,44 @@ async def test_not_yet_linked_packet_is_retryable_not_permanently_blocked() -> N
             assert job.safe_error_code == "event_bundle_packet_not_ready"
             assert job.next_retry_at is not None
             assert await session.get(EventEvidenceBundleHead, event_id) is None
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_empty_membership_clears_only_head_and_reactivation_appends_revision() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, (evidence_id,))
+        first = await EventEvidenceBundleService(factory).build(event_id)
+        async with factory.begin() as session:
+            await EventCandidateService().deactivate_association(session, event_id, evidence_id)
+        report = await EventEvidenceBundleWorker(factory).process_batch(limit=10)
+        assert report.blocked == 1
+        async with factory() as session:
+            assert await session.get(EventEvidenceBundleHead, event_id) is None
+            assert await session.get(EventEvidenceBundle, first.bundle_id) is not None
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                INSERT INTO event_candidate_evidence(
+                  event_candidate_id,evidence_item_id,match_rule,rule_version,
+                  official_source,active
+                ) VALUES (:event,:evidence,'reviewed_reactivation',1,true,true)
+                """),
+                {"event": event_id, "evidence": evidence_id},
+            )
+        report = await EventEvidenceBundleWorker(factory).process_batch(limit=10)
+        assert report.ready + report.partial == 1
+        async with factory() as session:
+            head = await session.get(EventEvidenceBundleHead, event_id)
+            assert head is not None and head.current_bundle_id != first.bundle_id
+            current = await session.get(EventEvidenceBundle, head.current_bundle_id)
+            assert current is not None and current.revision == 2
+            assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 2
     finally:
         await _cleanup(factory)
         await engine.dispose()

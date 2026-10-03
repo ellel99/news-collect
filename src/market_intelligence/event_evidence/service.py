@@ -67,6 +67,7 @@ class EventEvidenceBundleService:
     ) -> BundleBuildResult:
         associations = await self._active_associations(event_candidate_id)
         if not associations:
+            await self._clear_head_for_empty_membership(event_candidate_id, claim_token)
             raise BundleConflict("event_bundle_no_active_evidence")
         if len(associations) > self._max_evidence:
             raise BundleConflict("event_bundle_evidence_budget_exceeded")
@@ -201,6 +202,44 @@ class EventEvidenceBundleService:
                     head.canonical_bundle_id = bundle.id
                 head.updated_at = datetime.now(UTC)
             return BundleBuildResult(status.value, event_candidate_id, bundle.id, revision)
+
+    async def _clear_head_for_empty_membership(
+        self, event_candidate_id: uuid.UUID, claim_token: uuid.UUID | None
+    ) -> None:
+        async with self._factory.begin() as session:
+            if claim_token is not None:
+                job = await session.get(
+                    EventEvidenceBundleJob, event_candidate_id, with_for_update=True
+                )
+                if (
+                    job is None
+                    or job.status is not EventEvidenceBundleJobStatus.PROCESSING
+                    or job.claim_token != claim_token
+                ):
+                    raise BundleClaimLost("event_bundle_claim_lost")
+            candidate = await session.scalar(
+                select(EventCandidate)
+                .where(EventCandidate.id == event_candidate_id)
+                .with_for_update()
+            )
+            if candidate is None:
+                raise BundleConflict("event_bundle_candidate_missing")
+            active = await session.scalar(
+                select(EventCandidateEvidence.id)
+                .where(
+                    EventCandidateEvidence.event_candidate_id == event_candidate_id,
+                    EventCandidateEvidence.active.is_(True),
+                )
+                .limit(1)
+                .with_for_update()
+            )
+            if active is not None:
+                raise BundleRetryableConflict("event_bundle_membership_changed")
+            head = await session.get(
+                EventEvidenceBundleHead, event_candidate_id, with_for_update=True
+            )
+            if head is not None:
+                await session.delete(head)
 
     async def _active_associations(
         self, event_candidate_id: uuid.UUID
