@@ -45,10 +45,22 @@ migration/activation/cutover, historical replay, external request, raw response 
 - Historical migration round-trip fixtures explicitly exclude/remove 0011 dependants rather than using CASCADE.
 - PostgreSQL rejects a head rollback and enforces exact latest-current/latest-READY pointers. Losing the final
   active association removes only the mutable head and never deletes a revision.
+- Relation classification now groups the complete fact identity/value matrix: superseding wins, repeated value
+  groups are duplicate, distinct singleton value groups are contradicting, and only a sole value is supporting.
+  `A,B,B`, `A,A,B,B`, three-value and superseding combinations are independent of input/UUID order.
+- All packets for a revision share one repeatable-read snapshot and are rebuilt in the commit transaction to compare
+  exact packet digest and current projection identity/hash. A concurrent Evidence revision cannot become a mixed
+  current head or an incorrect unchanged result.
+- PostgreSQL serializes active membership insert/reactivation and rejects member 501, including two independent
+  transactions racing for slot 500. Inactive association history remains outside the active budget.
+- Retry exhaustion stores a value-free dependency fingerprint. A bounded durable keyset reopens only changed
+  Evidence-link/association input; unchanged input stays BLOCKED. Lost-token failure updates count as claim-lost.
 - The controlled preflight is tested in PASS and value-free BLOCKED states. Missing not-yet-linked packet state and
   concurrent membership changes use bounded RETRY; invalid packet/provenance and exhaustion remain BLOCKED.
-- GitHub quality CI executed the complete PostgreSQL/Redis suite: 873 passed. Local PostgreSQL tests were not run
-  because no local PostgreSQL service was available; the 15 M2-C PostgreSQL tests executed in GitHub CI.
+- GitHub quality CI executed the complete PostgreSQL/Redis suite: 881 passed. Local PostgreSQL tests were not run
+  because no local PostgreSQL service/Docker daemon was available; all 20 M2-C PostgreSQL tests executed in CI.
+- Clean Git archive package review: 289 files, SHA-256
+  `640326ecd950a4d38ee3d4e77b9d3f90a8ebdb27672282817bf8d8dd12ab2a95`.
 - No P0/P1 remained within the defined self-review matrix after these corrections. Independent Implementation
   Review remains required; this statement is not approval or production authorization.
 
