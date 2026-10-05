@@ -59,8 +59,8 @@ migration/activation/cutover, historical replay, external request, raw response 
   concurrent membership changes use bounded RETRY; invalid packet/provenance and exhaustion remain BLOCKED.
 - GitHub quality CI executed the complete PostgreSQL/Redis suite: 881 passed. Local PostgreSQL tests were not run
   because no local PostgreSQL service/Docker daemon was available; all 20 M2-C PostgreSQL tests executed in CI.
-- Clean Git archive package review: 289 files, SHA-256
-  `640326ecd950a4d38ee3d4e77b9d3f90a8ebdb27672282817bf8d8dd12ab2a95`.
+- Clean Git archive package review must be generated from the final committed tree; its file count and SHA-256 are
+  recorded in PR metadata so the tracked review package does not create a self-referential archive hash.
 - No P0/P1 remained within the defined self-review matrix after these corrections. Independent Implementation
   Review remains required; this statement is not approval or production authorization.
 
