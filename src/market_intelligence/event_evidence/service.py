@@ -126,7 +126,13 @@ class EventEvidenceBundleService:
             )
             if locked != associations:
                 raise BundleRetryableConflict("event_bundle_membership_changed")
-            if not await _packets_still_current(session, prepared):
+            try:
+                current_packets = await self._builder.build_many_in_session(
+                    session, tuple(row.evidence_id for row in prepared)
+                )
+            except RichEvidenceError as exc:
+                raise BundleRetryableConflict("event_bundle_packet_snapshot_changed") from exc
+            if not _packets_still_current(prepared, current_packets):
                 raise BundleRetryableConflict("event_bundle_packet_snapshot_changed")
             head = await session.get(
                 EventEvidenceBundleHead, event_candidate_id, with_for_update=True
@@ -368,41 +374,19 @@ def _classify(
     return sorted(result, key=lambda item: item[0].association_id.hex)
 
 
-async def _packets_still_current(session: AsyncSession, prepared: list[_Prepared]) -> bool:
-    """Validate every packet revision against the state visible in the commit transaction."""
-    evidence_ids = tuple(row.evidence_id for row in prepared)
-    rows = (
-        await session.execute(
-            select(
-                EvidenceProjectionLink.evidence_item_id,
-                EvidenceProjectionLink.id,
-                SafeFactProjection.id,
-                SafeFactProjection.projection_hash,
-            )
-            .join(
-                SafeFactProjection,
-                SafeFactProjection.id == EvidenceProjectionLink.safe_fact_projection_id,
-            )
-            .where(
-                EvidenceProjectionLink.evidence_item_id.in_(evidence_ids),
-                EvidenceProjectionLink.status == "linked",
-                SafeFactProjection.processing_status == "ready",
-            )
-        )
-    ).all()
-    actual: dict[uuid.UUID, set[tuple[uuid.UUID, uuid.UUID, str]]] = defaultdict(set)
-    for evidence_id, link_id, projection_id, projection_hash in rows:
-        actual[evidence_id].add((link_id, projection_id, projection_hash))
-    for row in prepared:
-        current = (
-            row.packet.current.link_id,
-            row.packet.current.projection_id,
-            row.packet.current.projection_hash,
-        )
-        observed = actual.get(row.evidence_id, set())
-        if len(observed) != row.packet.truncation.total_revision_count or current not in observed:
-            return False
-    return True
+def _packets_still_current(
+    prepared: list[_Prepared], current_packets: tuple[RichEvidencePacket, ...]
+) -> bool:
+    """Compare full packet and current projection identity in the commit transaction."""
+    if len(prepared) != len(current_packets):
+        return False
+    return all(
+        row.evidence_id == current.evidence_id
+        and row.packet.packet_digest == current.packet_digest
+        and row.packet.current.projection_id == current.current.projection_id
+        and row.packet.current.projection_hash == current.current.projection_hash
+        for row, current in zip(prepared, current_packets, strict=True)
+    )
 
 
 def _quality(

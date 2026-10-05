@@ -369,6 +369,11 @@ async def test_concurrent_packet_revision_cannot_publish_mixed_snapshot() -> Non
                 ).linked == 1
                 return packets
 
+            async def build_many_in_session(
+                self, session: AsyncSession, evidence_ids: tuple[uuid.UUID, ...]
+            ) -> tuple[object, ...]:
+                return await delegate.build_many_in_session(session, evidence_ids)
+
         service = EventEvidenceBundleService(factory, packet_builder=AppendAfterSnapshot())  # type: ignore[arg-type]
         with pytest.raises(BundleRetryableConflict, match="event_bundle_packet_snapshot_changed"):
             await service.build(event_id)
