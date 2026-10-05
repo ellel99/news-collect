@@ -6,9 +6,14 @@ M2-C migration 0011 adds append-only `event_evidence_bundles` and immutable orde
 reversible `event_candidate_evidence`; one Evidence can belong to multiple events. Bundle revisions snapshot
 active membership and Rich Evidence packet/projection digests without copying factual payload. Current points to
 the newest READY or PARTIAL revision; canonical advances only to READY. PostgreSQL protects item provenance,
-immutable history, a hard 500-member revision budget, and exact latest-current/latest-READY head semantics.
+immutable history, a hard 500-active-association limit at Event membership authority plus a 500-member revision
+budget, and exact latest-current/latest-READY head semantics. The authority limit is serialized by PostgreSQL for
+concurrent insert/reactivation; inactive association history remains retained.
 Worker claim tokens are checked under lock in the revision transaction so stale recovery cannot produce an ABA
-write. Removing the final active association removes only the mutable head (under a PostgreSQL active-membership
+commit. Jobs retain only value-free dependency fingerprints after retry exhaustion, reopening only when association
+or Evidence-link input changes. Every revision uses one repeatable-read packet snapshot and revalidates linked
+projection identity/hash/count before commit. Removing the final active association removes only the mutable head
+(under a PostgreSQL active-membership
 guard), keeps every immutable revision, and prevents downstream use of stale evidence until a reviewed association
 creates a later revision. Downgrade fails closed while bundle/job state exists.
 

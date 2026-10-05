@@ -26,6 +26,42 @@ def upgrade() -> None:
     ).scalar_one()
     if broken:
         raise RuntimeError("migration_0011_active_association_invalid")
+    over_budget = bind.execute(
+        sa.text("""
+      SELECT count(*) FROM (
+        SELECT event_candidate_id FROM event_candidate_evidence
+        WHERE active GROUP BY event_candidate_id HAVING count(*) > 500
+      ) over_limit
+    """)
+    ).scalar_one()
+    if over_budget:
+        raise RuntimeError("migration_0011_active_membership_budget_exceeded")
+
+    op.execute("""
+    CREATE FUNCTION m2c_event_membership_budget_guard() RETURNS trigger AS $$
+    DECLARE active_count integer;
+    BEGIN
+      IF TG_OP='UPDATE' AND OLD.event_candidate_id IS DISTINCT FROM NEW.event_candidate_id THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended(
+          LEAST(OLD.event_candidate_id::text,NEW.event_candidate_id::text),0));
+        PERFORM pg_advisory_xact_lock(hashtextextended(
+          GREATEST(OLD.event_candidate_id::text,NEW.event_candidate_id::text),0));
+      ELSE
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.event_candidate_id::text,0));
+      END IF;
+      IF NEW.active THEN
+        SELECT count(*) INTO active_count FROM event_candidate_evidence
+          WHERE event_candidate_id=NEW.event_candidate_id AND active AND id<>NEW.id;
+        IF active_count >= 500 THEN
+          RAISE EXCEPTION 'event_candidate_active_membership_budget_exceeded';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql
+    """)
+    op.execute("""CREATE TRIGGER trg_m2c_event_membership_budget
+      BEFORE INSERT OR UPDATE OF active,event_candidate_id ON event_candidate_evidence
+      FOR EACH ROW EXECUTE FUNCTION m2c_event_membership_budget_guard()""")
 
     bundle_status = postgresql.ENUM(
         "ready", "partial", name="event_evidence_bundle_status", create_type=False
@@ -248,6 +284,7 @@ def upgrade() -> None:
         sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("next_retry_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("safe_error_code", sa.String(100), nullable=True),
+        sa.Column("dependency_fingerprint", sa.CHAR(64), nullable=True),
         sa.Column("processing_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("claim_token", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(
@@ -287,6 +324,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "status NOT IN ('pending','processing','ready','partial') OR safe_error_code IS NULL",
             name="ck_event_bundle_job_success_error_empty",
+        ),
+        sa.CheckConstraint(
+            "dependency_fingerprint IS NULL OR dependency_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_event_bundle_job_dependency_fingerprint",
         ),
     )
     op.create_index(
@@ -466,7 +507,11 @@ def downgrade() -> None:
     if populated:
         raise RuntimeError("migration_0011_downgrade_nonempty")
     bind.execute(
-        sa.text("DELETE FROM system_metadata WHERE key='event_evidence_bundle_discovery_cursor'")
+        sa.text(
+            "DELETE FROM system_metadata WHERE key IN "
+            "('event_evidence_bundle_discovery_cursor',"
+            "'event_evidence_bundle_dependency_cursor')"
+        )
     )
     op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_item ON event_evidence_bundle_items")
     op.execute("DROP TRIGGER trg_m2c_bundle_aggregate_bundle ON event_evidence_bundles")
@@ -484,6 +529,8 @@ def downgrade() -> None:
     op.drop_table("event_evidence_bundle_heads")
     op.drop_table("event_evidence_bundle_items")
     op.drop_table("event_evidence_bundles")
+    op.execute("DROP TRIGGER trg_m2c_event_membership_budget ON event_candidate_evidence")
+    op.execute("DROP FUNCTION m2c_event_membership_budget_guard()")
     postgresql.ENUM(name="event_evidence_bundle_job_status").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_relation").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_bundle_status").drop(bind, checkfirst=True)

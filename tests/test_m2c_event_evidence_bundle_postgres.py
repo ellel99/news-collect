@@ -20,6 +20,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from market_intelligence.db.models import (
+    EventCandidateEvidence,
     EventEvidenceBundle,
     EventEvidenceBundleHead,
     EventEvidenceBundleItem,
@@ -30,12 +31,17 @@ from market_intelligence.db.models import (
     EvidenceProjectionLink,
     EvidenceProjectionLinkStatus,
 )
-from market_intelligence.event_evidence.contracts import BundleClaimLost, BundleConflict
+from market_intelligence.event_evidence.contracts import (
+    BundleClaimLost,
+    BundleConflict,
+    BundleRetryableConflict,
+)
 from market_intelligence.event_evidence.migration_preflight import validate_0011_pre_migration
 from market_intelligence.event_evidence.service import EventEvidenceBundleService
 from market_intelligence.event_evidence.worker import EventEvidenceBundleWorker
 from market_intelligence.event_intelligence.service import EventCandidateService
 from market_intelligence.evidence.handoff import EvidenceProjectionHandoffWorker
+from market_intelligence.rich_evidence.builder import RichEvidencePacketBuilder
 from market_intelligence.test_database import isolated_test_database_url
 
 try:
@@ -124,6 +130,35 @@ async def _clone_without_packet(
         )
         assert identity is not None
         return identity
+
+
+async def _clone_evidence_many(
+    factory: async_sessionmaker[AsyncSession], evidence_id: uuid.UUID, count: int
+) -> tuple[uuid.UUID, ...]:
+    async with factory.begin() as session:
+        return tuple(
+            await session.scalars(
+                text("""
+                INSERT INTO evidence_items(
+                  evidence_version,provider,provider_item_type,evidence_kind,source_type,
+                  source_id,source_account_id,raw_item_id,content_item_id,provider_item_id,
+                  provider_item_hash,event_time,observed_at,access_level,processing_status,
+                  official_source_flag,market_data_flag,disclosure_flag,news_signal_flag,
+                  content_presence,numeric_presence,entity_refs,asset_refs,topic_refs,errors
+                )
+                SELECT evidence_version,provider,provider_item_type,evidence_kind,source_type,
+                  source_id,source_account_id,raw_item_id,content_item_id,
+                  provider_item_id || '-member-' || value,
+                  lpad(to_hex(value),64,'0'),event_time,observed_at,access_level,
+                  processing_status,official_source_flag,market_data_flag,disclosure_flag,
+                  news_signal_flag,content_presence,numeric_presence,entity_refs,asset_refs,
+                  topic_refs,errors
+                FROM evidence_items CROSS JOIN generate_series(1,:count) value
+                WHERE id=:evidence RETURNING id
+                """),
+                {"evidence": evidence_id, "count": count},
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -312,6 +347,113 @@ async def test_recovered_claim_cannot_create_bundle_or_advance_head() -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_packet_revision_cannot_publish_mixed_snapshot() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, (evidence_id,))
+        delegate = RichEvidencePacketBuilder(factory)
+
+        class AppendAfterSnapshot:
+            async def build_many(self, evidence_ids: tuple[uuid.UUID, ...]) -> tuple[object, ...]:
+                packets = await delegate.build_many(evidence_ids)
+                await _seed_ready(
+                    factory,
+                    "marketaux",
+                    raw_id=raw_id,
+                    payload_updates={"title": "Concurrent factual revision"},
+                )
+                assert (
+                    await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)
+                ).linked == 1
+                return packets
+
+        service = EventEvidenceBundleService(factory, packet_builder=AppendAfterSnapshot())  # type: ignore[arg-type]
+        with pytest.raises(BundleRetryableConflict, match="event_bundle_packet_snapshot_changed"):
+            await service.build(event_id)
+        async with factory() as session:
+            assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 0
+            assert await session.get(EventEvidenceBundleHead, event_id) is None
+        result = await EventEvidenceBundleService(factory).build(event_id)
+        assert result.revision == 1
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_exhausted_dependency_reopens_only_after_material_change() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, linked_id = await _linked_evidence(factory, "marketaux")
+        orphan_id = await _clone_without_packet(factory, linked_id)
+        event_id = await _event(factory, (orphan_id,))
+        worker = EventEvidenceBundleWorker(factory, max_attempts=1)
+        first = await worker.process_batch(limit=10)
+        assert first.blocked == 1
+        unchanged = await worker.process_batch(limit=10)
+        assert unchanged.claimed == 0
+        async with factory.begin() as session:
+            await EventCandidateService().deactivate_association(session, event_id, orphan_id)
+            await session.execute(
+                text("""
+                INSERT INTO event_candidate_evidence(
+                  event_candidate_id,evidence_item_id,match_rule,rule_version,
+                  official_source,active
+                ) VALUES (:event,:evidence,'dependency_changed',1,false,true)
+                """),
+                {"event": event_id, "evidence": linked_id},
+            )
+        reopened = await worker.process_batch(limit=10)
+        assert reopened.ready + reopened.partial == 1
+        async with factory() as session:
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None
+            assert job.dependency_fingerprint is None
+            assert job.attempt_count == 0
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_lost_claim_during_block_is_reported_as_claim_lost() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, (evidence_id,))
+        worker = EventEvidenceBundleWorker(factory)
+
+        class LoseClaimService:
+            async def build(
+                self, identity: uuid.UUID, *, claim_token: uuid.UUID | None = None
+            ) -> object:
+                async with factory.begin() as session:
+                    await session.execute(
+                        text("""
+                        UPDATE event_evidence_bundle_jobs SET claim_token=:replacement
+                        WHERE event_candidate_id=:event
+                        """),
+                        {"replacement": uuid.uuid4(), "event": identity},
+                    )
+                raise BundleConflict("event_bundle_packet_invalid")
+
+        worker._service = LoseClaimService()  # type: ignore[assignment]
+        report = await worker.process_batch(limit=10)
+        assert report.claim_lost == 1
+        assert report.blocked == 0
+        async with factory() as session:
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None and job.status is EventEvidenceBundleJobStatus.PROCESSING
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_evidence_budget_is_enforced_by_service_and_database() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -394,6 +536,7 @@ async def test_existing_state_preflight_is_value_free_and_blocks_missing_packet(
             "status": "BLOCKED",
             "broken_active_association_count": 0,
             "active_without_rich_packet_count": 1,
+            "over_budget_event_count": 0,
             "safe_errors": ["migration_0011_rich_packet_unavailable"],
             "migration_ready": False,
         }
@@ -458,6 +601,132 @@ async def test_empty_membership_clears_only_head_and_reactivation_appends_revisi
             current = await session.get(EventEvidenceBundle, head.current_bundle_id)
             assert current is not None and current.revision == 2
             assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 2
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_membership_authority_enforces_500_active_and_allows_inactive_history() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, ())
+        identities = await _clone_evidence_many(factory, evidence_id, 501)
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                INSERT INTO event_candidate_evidence(
+                  event_candidate_id,evidence_item_id,match_rule,rule_version,
+                  official_source,active
+                ) SELECT :event,unnest(CAST(:evidence AS uuid[])),'budget_test',1,false,true
+                """),
+                {"event": event_id, "evidence": list(identities[:500])},
+            )
+        async with factory.begin() as session:
+            with pytest.raises(
+                DBAPIError, match="event_candidate_active_membership_budget_exceeded"
+            ):
+                await session.execute(
+                    text("""
+                    INSERT INTO event_candidate_evidence(
+                      event_candidate_id,evidence_item_id,match_rule,rule_version,
+                      official_source,active
+                    ) VALUES (:event,:evidence,'budget_test',1,false,true)
+                    """),
+                    {"event": event_id, "evidence": identities[500]},
+                )
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                UPDATE event_candidate_evidence SET active=false,removed_at=:now
+                WHERE event_candidate_id=:event AND evidence_item_id=:evidence
+                """),
+                {"event": event_id, "evidence": identities[0], "now": datetime.now(UTC)},
+            )
+            await session.execute(
+                text("""
+                INSERT INTO event_candidate_evidence(
+                  event_candidate_id,evidence_item_id,match_rule,rule_version,
+                  official_source,active
+                ) VALUES (:event,:evidence,'budget_test',1,false,true)
+                """),
+                {"event": event_id, "evidence": identities[500]},
+            )
+        async with factory.begin() as session:
+            with pytest.raises(
+                DBAPIError, match="event_candidate_active_membership_budget_exceeded"
+            ):
+                await session.execute(
+                    text("""
+                    UPDATE event_candidate_evidence SET active=true,removed_at=NULL
+                    WHERE event_candidate_id=:event AND evidence_item_id=:evidence
+                    """),
+                    {"event": event_id, "evidence": identities[0]},
+                )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_two_transactions_compete_safely_for_final_membership_slot() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, ())
+        identities = await _clone_evidence_many(factory, evidence_id, 501)
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                INSERT INTO event_candidate_evidence(
+                  event_candidate_id,evidence_item_id,match_rule,rule_version,
+                  official_source,active
+                ) SELECT :event,unnest(CAST(:evidence AS uuid[])),'concurrency_test',1,false,true
+                """),
+                {"event": event_id, "evidence": list(identities[:499])},
+            )
+        first_inserted = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def insert(identity: uuid.UUID, hold: bool) -> str:
+            try:
+                async with factory.begin() as session:
+                    await session.execute(
+                        text("""
+                        INSERT INTO event_candidate_evidence(
+                          event_candidate_id,evidence_item_id,match_rule,rule_version,
+                          official_source,active
+                        ) VALUES (:event,:evidence,'concurrency_test',1,false,true)
+                        """),
+                        {"event": event_id, "evidence": identity},
+                    )
+                    if hold:
+                        first_inserted.set()
+                        await release_first.wait()
+                return "committed"
+            except DBAPIError as exc:
+                assert "event_candidate_active_membership_budget_exceeded" in str(exc)
+                return "rejected"
+
+        first = asyncio.create_task(insert(identities[499], True))
+        await first_inserted.wait()
+        second = asyncio.create_task(insert(identities[500], False))
+        await asyncio.sleep(0.1)
+        release_first.set()
+        assert sorted(await asyncio.gather(first, second)) == ["committed", "rejected"]
+        async with factory() as session:
+            count = await session.scalar(
+                select(func.count())
+                .select_from(EventCandidateEvidence)
+                .where(
+                    EventCandidateEvidence.event_candidate_id == event_id,
+                    EventCandidateEvidence.active.is_(True),
+                )
+            )
+            assert count == 500
     finally:
         await _cleanup(factory)
         await engine.dispose()

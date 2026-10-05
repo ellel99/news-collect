@@ -54,9 +54,58 @@ def test_relations_are_deterministic_and_conflict_is_only_expressed() -> None:
         for row, relation in _classify([contradiction, duplicate, first], {})
     }
     assert relations == {
-        first.association_id: EventEvidenceRelation.SUPPORTING,
+        first.association_id: EventEvidenceRelation.DUPLICATE,
         duplicate.association_id: EventEvidenceRelation.DUPLICATE,
         contradiction.association_id: EventEvidenceRelation.CONTRADICTING,
+    }
+
+
+def test_relation_groups_handle_a_b_b_and_are_order_independent() -> None:
+    rows = [
+        _prepared(packet_digest="1" * 64, identity="a" * 64, value="a" * 64),
+        _prepared(packet_digest="2" * 64, identity="a" * 64, value="b" * 64),
+        _prepared(packet_digest="3" * 64, identity="a" * 64, value="b" * 64),
+    ]
+    expected = [
+        EventEvidenceRelation.CONTRADICTING,
+        EventEvidenceRelation.DUPLICATE,
+        EventEvidenceRelation.DUPLICATE,
+    ]
+    for ordering in (rows, list(reversed(rows)), [rows[1], rows[0], rows[2]]):
+        relations = {
+            row.packet.packet_digest: relation for row, relation in _classify(ordering, {})
+        }
+        assert [relations[row.packet.packet_digest] for row in rows] == expected
+
+
+def test_relation_groups_handle_a_a_b_b_and_three_values() -> None:
+    rows = [
+        _prepared(packet_digest=f"{index}" * 64, identity="a" * 64, value=value * 64)
+        for index, value in (("1", "a"), ("2", "a"), ("3", "b"), ("4", "b"), ("5", "c"))
+    ]
+    relations = {row.packet.packet_digest: relation for row, relation in _classify(rows, {})}
+    assert [relations[row.packet.packet_digest] for row in rows] == [
+        EventEvidenceRelation.DUPLICATE,
+        EventEvidenceRelation.DUPLICATE,
+        EventEvidenceRelation.DUPLICATE,
+        EventEvidenceRelation.DUPLICATE,
+        EventEvidenceRelation.CONTRADICTING,
+    ]
+
+
+def test_superseding_precedes_value_group_relation_without_changing_peers() -> None:
+    changed = _prepared(packet_digest="2" * 64, identity="a" * 64, value="b" * 64)
+    peer = _prepared(packet_digest="3" * 64, identity="a" * 64, value="b" * 64)
+    baseline = _prepared(packet_digest="1" * 64, identity="a" * 64, value="a" * 64)
+    prior = SimpleNamespace(packet_digest="0" * 64)
+    relations = {
+        row.packet.packet_digest: relation
+        for row, relation in _classify([peer, changed, baseline], {changed.association_id: prior})
+    }
+    assert relations == {
+        "1" * 64: EventEvidenceRelation.CONTRADICTING,
+        "2" * 64: EventEvidenceRelation.SUPERSEDING,
+        "3" * 64: EventEvidenceRelation.DUPLICATE,
     }
 
 

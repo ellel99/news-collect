@@ -117,6 +117,30 @@ class RichEvidencePacketBuilder:
                 raise RichEvidenceError("rich_evidence_not_found")
             return await self._build(session, evidence)
 
+    async def build_many(self, evidence_ids: Sequence[uuid.UUID]) -> tuple[RichEvidencePacket, ...]:
+        """Build a bounded set of packets from one repeatable-read snapshot."""
+        if not evidence_ids or len(evidence_ids) > self._max_batch:
+            raise RichEvidenceError("rich_evidence_batch_limit_invalid")
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise RichEvidenceError("rich_evidence_identity_duplicate")
+        async with self._factory() as session, session.begin():
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            rows = tuple(
+                await session.scalars(
+                    select(EvidenceItem)
+                    .where(EvidenceItem.id.in_(tuple(evidence_ids)))
+                    .order_by(EvidenceItem.id)
+                )
+            )
+            by_id = {row.id: row for row in rows}
+            if set(by_id) != set(evidence_ids):
+                raise RichEvidenceError("rich_evidence_not_found")
+            inputs = await self._load_inputs(session, rows)
+            packets: list[RichEvidencePacket] = []
+            for identity in evidence_ids:
+                packets.append(await self._build(session, by_id[identity], inputs))
+            return tuple(packets)
+
     async def list_packets(
         self,
         *,

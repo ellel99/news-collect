@@ -25,9 +25,11 @@ market validation or conflict adjudication. Production collection authority rema
 The relation is descriptive and never resolves truth:
 
 1. `superseding`: the same active membership existed in the prior bundle and its packet digest changed.
-2. `duplicate`: another item in the same bundle has the same deterministic fact-identity digest and fact-value
-   digest.
-3. `contradicting`: another item has the same fact-identity digest but a different fact-value digest.
+2. `duplicate`: within one exact deterministic fact-identity group, an unchanged value group has more than one
+   member; every member of that group is duplicate, avoiding an arbitrary UUID-based representative.
+3. `contradicting`: within that same exact fact-identity group, an unchanged single-member value group coexists
+   with another value group. V1 never compares different identities and performs no cross-Provider semantic
+   adjudication. The precedence is superseding, duplicate, contradicting, supporting.
 4. `supporting`: every other valid active association.
 
 Fact identity/value material is operation-specific, typed and derived only from `RichEvidencePacket`; raw payload
@@ -50,12 +52,18 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
   with `FOR UPDATE SKIP LOCKED`, and performs bounded keyset/batch processing.
 - Jobs implement PENDING/PROCESSING/READY/PARTIAL/RETRY/BLOCKED, finite retry and stale recovery. Per-event bundle,
   items and head update are one transaction and idempotent under unique constraints.
+- All packets used by one revision are read from one repeatable-read snapshot. The commit transaction then verifies
+  linked-projection count and current projection identity/hash; concurrent revision input makes the attempt RETRY
+  and cannot publish a stale/mixed head or return unchanged.
 - A concurrent membership change or not-yet-linked Rich Evidence dependency is RETRY, while invalid identity,
   provenance, packet contracts and exhausted retry are value-free BLOCKED outcomes.
 - A claim token is revalidated under lock inside the same transaction that creates a revision, so a stale worker
   cannot create a bundle, advance the head or complete a recovered claim (ABA protection).
-- One bundle is capped at 500 active Evidence memberships in both the service and PostgreSQL; exceeding the cap is
-  a value-free BLOCKED outcome rather than an unbounded scan.
+- Event membership authority itself is capped at 500 active associations per EventCandidate by a PostgreSQL
+  advisory-lock trigger, including concurrent inserts/reactivation. Inactive history is not counted. Bundle and
+  service bounds remain defense in depth.
+- Retry exhaustion records a value-free dependency fingerprint. Unchanged input stays BLOCKED; a later Evidence
+  link or association material change atomically reopens the job with a fresh finite retry budget.
 - The mutable head may point only to the greatest revision and its canonical pointer must equal the greatest READY
   revision. PostgreSQL enforces these current/canonical semantics and rejects rollback/rebinding by SQL bypass.
 - Migration 0011 is additive. Existing-state preflight rejects broken active membership value-free. Downgrade is

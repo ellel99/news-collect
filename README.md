@@ -4,9 +4,13 @@ M2-A and M2-B are complete in main. M2-C is implemented in this Draft PR as the 
 of the deterministic, typed Rich Evidence Packet boundary. It creates immutable Event Evidence Bundle revisions
 from existing EventCandidate membership, records descriptive supporting/duplicate/contradicting/superseding
 relations, and never copies factual payload or uses AI to decide truth. Authority-neutral bounded reconciliation
-is wired for every scheduler authority. It revalidates claim tokens transactionally, caps each revision at 500
-members, and preserves exact latest current/canonical head semantics, while production collection authority
-remains `legacy`.
+is wired for every scheduler authority. It revalidates claim tokens transactionally, caps active Event membership
+and each revision at 500 with concurrency-safe PostgreSQL enforcement, and preserves exact latest
+current/canonical head semantics, while production collection authority remains `legacy`. Every revision reads
+one repeatable-read packet snapshot and revalidates projection identity/hash/count before commit. V1
+duplicate/contradiction labels apply only inside an exact deterministic fact-identity group and perform no
+cross-Provider semantic adjudication. Exhausted transient dependencies reopen only after their value-free
+dependency fingerprint changes.
 This is not AI-ready: M2-D, production migration/activation, backfill and live acceptance remain incomplete.
 Legacy opaque adoption is limited to Marketaux news, Finnhub quote, EIA retail and SEC submissions; it verifies
 deterministic identity and provenance/policy but does not claim to reconstruct an unverifiable historical

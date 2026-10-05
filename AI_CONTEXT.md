@@ -10,8 +10,12 @@ row-lock timeout/retry without trigger advisory inversion, a controlled 0009→0
 token-bound disposable PostgreSQL database per pytest process. M2-C adds only an authority-neutral bounded
 consumer and additive migration 0011; production migration/activation, backfill, live Provider acceptance and AI
 remain unauthorized.
-M2-C revalidates each claim token under lock in the revision transaction, enforces a 500-member upper bound in
-service and PostgreSQL, and permits the head to reference only the latest revision and latest READY canonical.
+M2-C revalidates each claim token under lock in the revision transaction, enforces the 500-active-membership bound
+at PostgreSQL association authority (and again at bundle/service boundaries), and permits the head to reference
+only the latest revision and latest READY canonical. One revision uses one repeatable-read packet snapshot plus
+commit-time projection revalidation. Retry exhaustion records a value-free dependency fingerprint so changed
+Evidence links/membership can reopen safely. V1 duplicate/contradiction is limited to the same exact deterministic
+fact identity and is not cross-Provider semantic adjudication.
 Legacy Evidence adoption is limited to the real historical mapper operations (Marketaux news, Finnhub quote,
 EIA retail and SEC submissions); company-news/RTO/new operations fail closed. It proves deterministic identity
 and relational policy/provenance, not reconstruction of an otherwise unverifiable historical provider hash.

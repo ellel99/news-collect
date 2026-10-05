@@ -23,6 +23,8 @@ from market_intelligence.db.models import (
     EventEvidenceBundleJobStatus,
     EventEvidenceBundleStatus,
     EventEvidenceRelation,
+    EvidenceProjectionLink,
+    SafeFactProjection,
 )
 from market_intelligence.event_evidence.contracts import (
     BundleBuildResult,
@@ -59,7 +61,9 @@ class EventEvidenceBundleService:
         if not 1 <= max_evidence <= 500:
             raise ValueError("event_bundle_evidence_budget_invalid")
         self._factory = factory
-        self._builder = packet_builder or RichEvidencePacketBuilder(factory)
+        self._builder = packet_builder or RichEvidencePacketBuilder(
+            factory, max_batch_size=max_evidence
+        )
         self._max_evidence = max_evidence
 
     async def build(
@@ -72,14 +76,19 @@ class EventEvidenceBundleService:
         if len(associations) > self._max_evidence:
             raise BundleConflict("event_bundle_evidence_budget_exceeded")
         prepared: list[_Prepared] = []
-        for association_id, evidence_id in associations:
+        try:
+            packets = await self._builder.build_many(
+                tuple(evidence_id for _association_id, evidence_id in associations)
+            )
+        except RichEvidenceError as exc:
+            if str(exc) == "rich_evidence_linked_projection_missing":
+                raise BundleRetryableConflict("event_bundle_packet_not_ready") from exc
+            raise BundleConflict("event_bundle_packet_invalid") from exc
+        for (association_id, evidence_id), packet in zip(associations, packets, strict=True):
             try:
-                packet = await self._builder.build_one(evidence_id)
-            except RichEvidenceError as exc:
-                if str(exc) == "rich_evidence_linked_projection_missing":
-                    raise BundleRetryableConflict("event_bundle_packet_not_ready") from exc
-                raise BundleConflict("event_bundle_packet_invalid") from exc
-            identity, value = _fact_digests(packet)
+                identity, value = _fact_digests(packet)
+            except BundleConflict:
+                raise
             prepared.append(_Prepared(association_id, evidence_id, packet, identity, value))
 
         async with self._factory.begin() as session:
@@ -117,6 +126,8 @@ class EventEvidenceBundleService:
             )
             if locked != associations:
                 raise BundleRetryableConflict("event_bundle_membership_changed")
+            if not await _packets_still_current(session, prepared):
+                raise BundleRetryableConflict("event_bundle_packet_snapshot_changed")
             head = await session.get(
                 EventEvidenceBundleHead, event_candidate_id, with_for_update=True
             )
@@ -202,6 +213,44 @@ class EventEvidenceBundleService:
                     head.canonical_bundle_id = bundle.id
                 head.updated_at = datetime.now(UTC)
             return BundleBuildResult(status.value, event_candidate_id, bundle.id, revision)
+
+    async def dependency_fingerprint(self, event_candidate_id: uuid.UUID) -> str:
+        """Return a value-free watermark for membership and linked packet dependencies."""
+        async with self._factory() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        EventCandidateEvidence.id,
+                        EventCandidateEvidence.evidence_item_id,
+                        EventCandidateEvidence.active,
+                        EventCandidateEvidence.removed_at,
+                        EvidenceProjectionLink.id,
+                        EvidenceProjectionLink.status,
+                        EvidenceProjectionLink.updated_at,
+                        SafeFactProjection.id,
+                        SafeFactProjection.projection_hash,
+                        SafeFactProjection.processing_status,
+                    )
+                    .outerjoin(
+                        EvidenceProjectionLink,
+                        EvidenceProjectionLink.evidence_item_id
+                        == EventCandidateEvidence.evidence_item_id,
+                    )
+                    .outerjoin(
+                        SafeFactProjection,
+                        SafeFactProjection.id == EvidenceProjectionLink.safe_fact_projection_id,
+                    )
+                    .where(EventCandidateEvidence.event_candidate_id == event_candidate_id)
+                    .order_by(
+                        EventCandidateEvidence.id,
+                        EvidenceProjectionLink.id,
+                        SafeFactProjection.id,
+                    )
+                )
+            ).all()
+        return _digest(
+            [[str(value) if value is not None else None for value in row] for row in rows]
+        )
 
     async def _clear_head_for_empty_membership(
         self, event_candidate_id: uuid.UUID, claim_token: uuid.UUID | None
@@ -297,23 +346,63 @@ def _classify(
         grouped[row.fact_identity_digest].append(row)
     result: list[tuple[_Prepared, EventEvidenceRelation]] = []
     for identity in sorted(grouped):
-        rows = sorted(
-            grouped[identity], key=lambda row: (row.packet.packet_digest, row.evidence_id.hex)
-        )
-        first_value: str | None = None
-        for row in rows:
-            prior = previous.get(row.association_id)
-            if prior is not None and prior.packet_digest != row.packet.packet_digest:
-                relation = EventEvidenceRelation.SUPERSEDING
-            elif first_value is None:
-                relation = EventEvidenceRelation.SUPPORTING
-            elif row.fact_value_digest == first_value:
-                relation = EventEvidenceRelation.DUPLICATE
-            else:
-                relation = EventEvidenceRelation.CONTRADICTING
-            first_value = first_value or row.fact_value_digest
-            result.append((row, relation))
+        value_groups: dict[str, list[_Prepared]] = defaultdict(list)
+        for row in grouped[identity]:
+            value_groups[row.fact_value_digest].append(row)
+        for value_digest in sorted(value_groups):
+            rows = sorted(
+                value_groups[value_digest],
+                key=lambda row: (row.packet.packet_digest, row.evidence_id.hex),
+            )
+            for row in rows:
+                prior = previous.get(row.association_id)
+                if prior is not None and prior.packet_digest != row.packet.packet_digest:
+                    relation = EventEvidenceRelation.SUPERSEDING
+                elif len(rows) > 1:
+                    relation = EventEvidenceRelation.DUPLICATE
+                elif len(value_groups) > 1:
+                    relation = EventEvidenceRelation.CONTRADICTING
+                else:
+                    relation = EventEvidenceRelation.SUPPORTING
+                result.append((row, relation))
     return sorted(result, key=lambda item: item[0].association_id.hex)
+
+
+async def _packets_still_current(session: AsyncSession, prepared: list[_Prepared]) -> bool:
+    """Validate every packet revision against the state visible in the commit transaction."""
+    evidence_ids = tuple(row.evidence_id for row in prepared)
+    rows = (
+        await session.execute(
+            select(
+                EvidenceProjectionLink.evidence_item_id,
+                EvidenceProjectionLink.id,
+                SafeFactProjection.id,
+                SafeFactProjection.projection_hash,
+            )
+            .join(
+                SafeFactProjection,
+                SafeFactProjection.id == EvidenceProjectionLink.safe_fact_projection_id,
+            )
+            .where(
+                EvidenceProjectionLink.evidence_item_id.in_(evidence_ids),
+                EvidenceProjectionLink.status == "linked",
+                SafeFactProjection.processing_status == "ready",
+            )
+        )
+    ).all()
+    actual: dict[uuid.UUID, set[tuple[uuid.UUID, uuid.UUID, str]]] = defaultdict(set)
+    for evidence_id, link_id, projection_id, projection_hash in rows:
+        actual[evidence_id].add((link_id, projection_id, projection_hash))
+    for row in prepared:
+        current = (
+            row.packet.current.link_id,
+            row.packet.current.projection_id,
+            row.packet.current.projection_hash,
+        )
+        observed = actual.get(row.evidence_id, set())
+        if len(observed) != row.packet.truncation.total_revision_count or current not in observed:
+            return False
+    return True
 
 
 def _quality(

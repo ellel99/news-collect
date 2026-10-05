@@ -25,6 +25,12 @@ async def validate_0011_pre_migration(engine: AsyncEngine) -> tuple[dict[str, An
               AND l.status='linked' AND p.processing_status='ready'
           )
         """,
+        "over_budget_event_count": """
+          SELECT count(*) FROM (
+            SELECT event_candidate_id FROM event_candidate_evidence
+            WHERE active GROUP BY event_candidate_id HAVING count(*) > 500
+          ) over_limit
+        """,
     }
     counts: dict[str, int] = {}
     async with engine.connect() as connection:
@@ -35,6 +41,8 @@ async def validate_0011_pre_migration(engine: AsyncEngine) -> tuple[dict[str, An
         errors.append("migration_0011_active_association_invalid")
     if counts["active_without_rich_packet_count"]:
         errors.append("migration_0011_rich_packet_unavailable")
+    if counts["over_budget_event_count"]:
+        errors.append("migration_0011_active_membership_budget_exceeded")
     report: dict[str, Any] = {
         "status": "PASS" if not errors else "BLOCKED",
         **counts,
