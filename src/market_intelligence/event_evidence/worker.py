@@ -224,28 +224,47 @@ class EventEvidenceBundleWorker:
                     .with_for_update(skip_locked=True)
                 )
             )
+            recovered = 0
             for row in rows:
+                token = row.claim_token
                 if row.attempt_count >= self._max_attempts:
-                    row.status = EventEvidenceBundleJobStatus.BLOCKED
                     try:
-                        row.dependency_fingerprint = (
-                            await self._service.dependency_fingerprint_in_session(
-                                session, row.event_candidate_id
-                            )
+                        fingerprint = await self._service.dependency_fingerprint_in_session(
+                            session, row.event_candidate_id
                         )
-                        row.safe_error_code = "event_bundle_retry_exhausted"
+                        error = "event_bundle_retry_exhausted"
                     except Exception:
-                        row.dependency_fingerprint = None
-                        row.safe_error_code = "event_bundle_dependency_fingerprint_unavailable"
-                    row.next_retry_at = None
+                        fingerprint = None
+                        error = "event_bundle_dependency_fingerprint_unavailable"
+                    values: dict[str, object] = {
+                        "status": EventEvidenceBundleJobStatus.BLOCKED,
+                        "safe_error_code": error,
+                        "dependency_fingerprint": fingerprint,
+                        "next_retry_at": None,
+                    }
                 else:
-                    row.status = EventEvidenceBundleJobStatus.RETRY
-                    row.safe_error_code = "event_bundle_stale"
-                    row.next_retry_at = now
-                row.processing_started_at = None
-                row.claim_token = None
-                row.updated_at = now
-            return len(rows)
+                    values = {
+                        "status": EventEvidenceBundleJobStatus.RETRY,
+                        "safe_error_code": "event_bundle_stale",
+                        "dependency_fingerprint": None,
+                        "next_retry_at": now,
+                    }
+                result = await session.execute(
+                    update(EventEvidenceBundleJob)
+                    .where(
+                        EventEvidenceBundleJob.event_candidate_id == row.event_candidate_id,
+                        EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                        EventEvidenceBundleJob.claim_token == token,
+                    )
+                    .values(
+                        **values,
+                        processing_started_at=None,
+                        claim_token=None,
+                        updated_at=now,
+                    )
+                )
+                recovered += int((getattr(result, "rowcount", 0) or 0) > 0)
+            return recovered
 
     async def _reopen_changed_dependencies(self, limit: int) -> int:
         async with self._factory.begin() as session:

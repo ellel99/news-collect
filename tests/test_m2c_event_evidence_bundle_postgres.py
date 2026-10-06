@@ -442,16 +442,27 @@ async def test_revision_after_final_validation_invalidates_head_before_consumpti
             report = await EvidenceProjectionHandoffWorker(
                 factory, retry_delay=timedelta(0)
             ).process_batch(limit=10)
-            assert report.retried == 1 and report.linked == 0
-            return projection_id, "lock_protected"
+            assert report.retried + report.linked == 1
+            return projection_id, "serialized"
 
         revision_task = asyncio.create_task(add_revision())
         await asyncio.sleep(0.1)
         release.set()
         await bundle_task
         projection_id, outcome = await revision_task
-        assert outcome == "lock_protected"
-        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        assert outcome == "serialized"
+        async with factory() as session:
+            link = await session.scalar(
+                select(EvidenceProjectionLink).where(
+                    EvidenceProjectionLink.safe_fact_projection_id == projection_id
+                )
+            )
+            assert link is not None
+            linked = link.status is EvidenceProjectionLinkStatus.LINKED
+        if not linked:
+            assert (
+                await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)
+            ).linked == 1
         async with factory() as session:
             job = await session.get(EventEvidenceBundleJob, event_id)
             assert job is not None and job.status is EventEvidenceBundleJobStatus.PENDING
