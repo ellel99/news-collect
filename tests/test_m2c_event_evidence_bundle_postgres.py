@@ -30,6 +30,7 @@ from market_intelligence.db.models import (
     EventEvidenceRelation,
     EvidenceProjectionLink,
     EvidenceProjectionLinkStatus,
+    SafeFactProjection,
 )
 from market_intelligence.event_evidence.contracts import (
     BundleClaimLost,
@@ -269,8 +270,8 @@ async def test_durable_keyset_discovery_does_not_starve_later_candidates() -> No
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
-        event_ids = [await _event(factory, (evidence_id,)) for _ in range(3)]
+        evidence_ids = [(await _linked_evidence(factory, "sec_edgar"))[1] for _ in range(3)]
+        event_ids = [await _event(factory, (evidence_id,)) for evidence_id in evidence_ids]
         for _ in range(4):
             await EventEvidenceBundleWorker(factory).process_batch(limit=1)
         async with factory() as session:
@@ -388,6 +389,85 @@ async def test_concurrent_packet_revision_cannot_publish_mixed_snapshot() -> Non
 
 
 @pytest.mark.asyncio
+async def test_revision_after_final_validation_invalidates_head_before_consumption() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, (evidence_id,))
+        delegate = RichEvidencePacketBuilder(factory)
+        validated = asyncio.Event()
+        release = asyncio.Event()
+
+        class GateAfterValidation:
+            enabled = True
+
+            async def build_many(self, evidence_ids: tuple[uuid.UUID, ...]) -> tuple[object, ...]:
+                return await delegate.build_many(evidence_ids)
+
+            async def build_many_in_session(
+                self, session: AsyncSession, evidence_ids: tuple[uuid.UUID, ...]
+            ) -> tuple[object, ...]:
+                packets = await delegate.build_many_in_session(session, evidence_ids)
+                if self.enabled:
+                    self.enabled = False
+                    validated.set()
+                    await release.wait()
+                return packets
+
+            async def dependency_fingerprint_in_session(
+                self, session: AsyncSession, identity: uuid.UUID
+            ) -> str:
+                del session, identity
+                return "0" * 64
+
+        worker = EventEvidenceBundleWorker(factory)
+        worker._service = EventEvidenceBundleService(  # type: ignore[assignment]
+            factory,
+            packet_builder=GateAfterValidation(),  # type: ignore[arg-type]
+        )
+        bundle_task = asyncio.create_task(worker.process_batch(limit=10))
+        await validated.wait()
+
+        async def add_revision() -> uuid.UUID:
+            _raw, projection_id, _payload = await _seed_ready(
+                factory,
+                "marketaux",
+                raw_id=raw_id,
+                payload_updates={"title": "Post-validation revision"},
+            )
+            assert (
+                await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)
+            ).linked == 1
+            return projection_id
+
+        revision_task = asyncio.create_task(add_revision())
+        await asyncio.sleep(0.1)
+        release.set()
+        await bundle_task
+        projection_id = await revision_task
+        async with factory() as session:
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None and job.status is EventEvidenceBundleJobStatus.PENDING
+        followup = await EventEvidenceBundleWorker(factory).process_batch(limit=10)
+        assert followup.ready + followup.partial == 1
+        async with factory() as session:
+            head = await session.get(EventEvidenceBundleHead, event_id)
+            assert head is not None
+            item = await session.scalar(
+                select(EventEvidenceBundleItem).where(
+                    EventEvidenceBundleItem.bundle_id == head.current_bundle_id
+                )
+            )
+            projection = await session.get(SafeFactProjection, projection_id)
+            assert item is not None and projection is not None
+            assert item.projection_hash == projection.projection_hash
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_exhausted_dependency_reopens_only_after_material_change() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -418,6 +498,109 @@ async def test_exhausted_dependency_reopens_only_after_material_change() -> None
             assert job is not None
             assert job.dependency_fingerprint is None
             assert job.attempt_count == 0
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stale_exhaustion_fingerprint_ignores_bookkeeping_and_reopens_on_material() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        raw_id, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, (evidence_id,))
+        async with factory.begin() as session:
+            session.add(
+                EventEvidenceBundleJob(
+                    event_candidate_id=event_id,
+                    status=EventEvidenceBundleJobStatus.PROCESSING,
+                    attempt_count=1,
+                    processing_started_at=datetime.now(UTC) - timedelta(hours=1),
+                    claim_token=uuid.uuid4(),
+                )
+            )
+        worker = EventEvidenceBundleWorker(
+            factory, max_attempts=1, stale_after=timedelta(seconds=1)
+        )
+        report = await worker.process_batch(limit=10)
+        assert report.recovered == 1 and report.claimed == 0
+        async with factory() as session:
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None
+            assert job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert job.safe_error_code == "event_bundle_retry_exhausted"
+            assert job.dependency_fingerprint is not None
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                UPDATE evidence_projection_links SET updated_at=:now
+                WHERE evidence_item_id=:evidence AND status='linked'
+                """),
+                {"now": datetime.now(UTC) + timedelta(seconds=1), "evidence": evidence_id},
+            )
+        unchanged = await worker.process_batch(limit=10)
+        assert unchanged.claimed == 0
+        _raw, _projection_id, _payload = await _seed_ready(
+            factory,
+            "marketaux",
+            raw_id=raw_id,
+            payload_updates={"title": "Material dependency revision"},
+        )
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
+        reopened = await worker.process_batch(limit=10)
+        assert reopened.ready + reopened.partial == 1
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw_one, first_evidence = await _linked_evidence(factory, "marketaux")
+        _raw_two, second_evidence = await _linked_evidence(factory, "sec_edgar")
+        first_event = await _event(factory, (first_evidence,))
+        second_event = await _event(factory, (second_evidence,))
+        delegate = EventEvidenceBundleService(factory)
+
+        class IsolatedFailureService:
+            async def build(
+                self, identity: uuid.UUID, *, claim_token: uuid.UUID | None = None
+            ) -> object:
+                if identity == first_event:
+                    raise BundleRetryableConflict("event_bundle_packet_not_ready")
+                return await delegate.build(identity, claim_token=claim_token)
+
+            async def dependency_fingerprint_in_session(
+                self, session: AsyncSession, identity: uuid.UUID
+            ) -> str:
+                if identity == first_event:
+                    raise RuntimeError("synthetic value-bearing detail must not escape")
+                return await delegate.dependency_fingerprint_in_session(session, identity)
+
+            async def dependency_fingerprint(self, identity: uuid.UUID) -> str:
+                return await delegate.dependency_fingerprint(identity)
+
+        worker = EventEvidenceBundleWorker(factory, max_attempts=1)
+        worker._service = IsolatedFailureService()  # type: ignore[assignment]
+        report = await worker.process_batch(limit=10)
+        assert report.blocked == 1
+        assert report.ready + report.partial == 1
+        async with factory() as session:
+            first_job = await session.get(EventEvidenceBundleJob, first_event)
+            second_job = await session.get(EventEvidenceBundleJob, second_event)
+            assert first_job is not None
+            assert first_job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert first_job.safe_error_code == "event_bundle_dependency_fingerprint_unavailable"
+            assert first_job.dependency_fingerprint is None
+            assert second_job is not None
+            assert second_job.status in {
+                EventEvidenceBundleJobStatus.READY,
+                EventEvidenceBundleJobStatus.PARTIAL,
+            }
     finally:
         await _cleanup(factory)
         await engine.dispose()
@@ -542,6 +725,7 @@ async def test_existing_state_preflight_is_value_free_and_blocks_missing_packet(
             "broken_active_association_count": 0,
             "active_without_rich_packet_count": 1,
             "over_budget_event_count": 0,
+            "ambiguous_active_evidence_owner_count": 0,
             "safe_errors": ["migration_0011_rich_packet_unavailable"],
             "migration_ready": False,
         }
@@ -606,6 +790,34 @@ async def test_empty_membership_clears_only_head_and_reactivation_appends_revisi
             current = await session.get(EventEvidenceBundle, head.current_bundle_id)
             assert current is not None and current.revision == 2
             assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 2
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_single_active_event_ownership_is_service_and_database_authority() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "marketaux")
+        first_event = await _event(factory, (evidence_id,))
+        async with factory.begin() as session:
+            outcome = await EventCandidateService().process(session, evidence_id)
+            assert outcome.event_candidate_id == first_event
+            assert outcome.status == "existing"
+        second_event = await _event(factory, ())
+        async with factory.begin() as session:
+            with pytest.raises(DBAPIError, match="uq_event_candidate_evidence_active_owner"):
+                await session.execute(
+                    text("""
+                    INSERT INTO event_candidate_evidence(
+                      event_candidate_id,evidence_item_id,match_rule,rule_version,
+                      official_source,active
+                    ) VALUES (:event,:evidence,'forbidden_second_owner',1,false,true)
+                    """),
+                    {"event": second_event, "evidence": evidence_id},
+                )
     finally:
         await _cleanup(factory)
         await engine.dispose()

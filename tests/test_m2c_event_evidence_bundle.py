@@ -10,6 +10,7 @@ from typing import Any, cast
 from market_intelligence.db.models import EventEvidenceBundleStatus, EventEvidenceRelation
 from market_intelligence.event_evidence.service import (
     _bundle_material,
+    _Classified,
     _classify,
     _digest,
     _Prepared,
@@ -50,8 +51,8 @@ def test_relations_are_deterministic_and_conflict_is_only_expressed() -> None:
     duplicate = _prepared(packet_digest="2" * 64, identity="a" * 64, value="b" * 64)
     contradiction = _prepared(packet_digest="3" * 64, identity="a" * 64, value="c" * 64)
     relations = {
-        row.association_id: relation
-        for row, relation in _classify([contradiction, duplicate, first], {})
+        item.prepared.association_id: item.relation
+        for item in _classify([contradiction, duplicate, first], {})
     }
     assert relations == {
         first.association_id: EventEvidenceRelation.DUPLICATE,
@@ -73,7 +74,7 @@ def test_relation_groups_handle_a_b_b_and_are_order_independent() -> None:
     ]
     for ordering in (rows, list(reversed(rows)), [rows[1], rows[0], rows[2]]):
         relations = {
-            row.packet.packet_digest: relation for row, relation in _classify(ordering, {})
+            item.prepared.packet.packet_digest: item.relation for item in _classify(ordering, {})
         }
         assert [relations[row.packet.packet_digest] for row in rows] == expected
 
@@ -83,13 +84,25 @@ def test_relation_groups_handle_a_a_b_b_and_three_values() -> None:
         _prepared(packet_digest=f"{index}" * 64, identity="a" * 64, value=value * 64)
         for index, value in (("1", "a"), ("2", "a"), ("3", "b"), ("4", "b"), ("5", "c"))
     ]
-    relations = {row.packet.packet_digest: relation for row, relation in _classify(rows, {})}
+    classified = _classify(rows, {})
+    relations = {item.prepared.packet.packet_digest: item.relation for item in classified}
     assert [relations[row.packet.packet_digest] for row in rows] == [
         EventEvidenceRelation.DUPLICATE,
         EventEvidenceRelation.DUPLICATE,
         EventEvidenceRelation.DUPLICATE,
         EventEvidenceRelation.DUPLICATE,
         EventEvidenceRelation.CONTRADICTING,
+    ]
+    assert all(item.identity_conflict for item in classified)
+    duplicate_flags = {
+        item.prepared.packet.packet_digest: item.value_duplicate for item in classified
+    }
+    assert [duplicate_flags[row.packet.packet_digest] for row in rows] == [
+        True,
+        True,
+        True,
+        True,
+        False,
     ]
 
 
@@ -99,8 +112,8 @@ def test_superseding_precedes_value_group_relation_without_changing_peers() -> N
     baseline = _prepared(packet_digest="1" * 64, identity="a" * 64, value="a" * 64)
     prior = SimpleNamespace(packet_digest="0" * 64)
     relations = {
-        row.packet.packet_digest: relation
-        for row, relation in _classify([peer, changed, baseline], {changed.association_id: prior})
+        item.prepared.packet.packet_digest: item.relation
+        for item in _classify([peer, changed, baseline], {changed.association_id: prior})
     }
     assert relations == {
         "1" * 64: EventEvidenceRelation.CONTRADICTING,
@@ -118,7 +131,7 @@ def test_changed_packet_is_superseding_and_identical_material_is_idempotent() ->
         fact_identity_digest=row.fact_identity_digest,
         fact_value_digest=row.fact_value_digest,
     )
-    assert _classify([row], cast(Any, {row.association_id: prior}))[0][1] is (
+    assert _classify([row], cast(Any, {row.association_id: prior}))[0].relation is (
         EventEvidenceRelation.SUPERSEDING
     )
     prior.packet_digest = row.packet.packet_digest
@@ -142,7 +155,7 @@ def test_partial_and_truncated_inputs_have_stable_value_free_reasons() -> None:
 def test_bundle_digest_is_stable_and_event_scoped() -> None:
     event_id = uuid.uuid4()
     row = _prepared(packet_digest="1" * 64, identity="a" * 64, value="b" * 64)
-    rows = [(row, EventEvidenceRelation.SUPPORTING)]
+    rows = [_Classified(row, EventEvidenceRelation.SUPPORTING, False, False)]
     material = _bundle_material(event_id, "ready", (), rows)
     assert _digest(material) == _digest(material)
     assert _digest(material) != _digest(_bundle_material(uuid.uuid4(), "ready", (), rows))

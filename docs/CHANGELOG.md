@@ -1,5 +1,9 @@
 # Changelog
 
+- Harden M2-C correction semantics: single-active-Event Evidence ownership, independent value-duplicate and
+  identity-conflict dimensions, deterministic Evidence-row serialization with R8-A job invalidation, stale
+  exhaustion fingerprints, and material-only dependency reopening. No production activation or external request.
+
 ## Unreleased — M2-C Event Evidence Bundle
 
 - Add SPEC-0047 and migration 0011 for immutable, append-only Event Evidence Bundle revisions, ordered Evidence

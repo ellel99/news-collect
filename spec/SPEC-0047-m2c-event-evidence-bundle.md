@@ -17,19 +17,22 @@ market validation or conflict adjudication. Production collection authority rema
   points to the current revision and the latest READY canonical revision.
 - `bundle_digest` is SHA-256 over canonical versioned material: event id, ordered item digests/relations, diversity,
   time range, status and reason codes. Reprocessing identical material creates no revision.
-- Existing `event_candidate_evidence` rows remain the reversible membership history. One Evidence may belong to
-  multiple Events; the same Event/Evidence pair has at most one active membership.
+- Existing `event_candidate_evidence` rows remain the reversible membership history. V1 has single-active-Event
+  ownership: one Evidence may have at most one active association across all Events. Regrouping first deactivates
+  the prior association (retaining history) and then creates the reviewed replacement; multi-Event active
+  membership is not an advertised capability.
 
 ### Deterministic association relations
 
 The relation is descriptive and never resolves truth:
 
 1. `superseding`: the same active membership existed in the prior bundle and its packet digest changed.
-2. `duplicate`: within one exact deterministic fact-identity group, an unchanged value group has more than one
-   member; every member of that group is duplicate, avoiding an arbitrary UUID-based representative.
-3. `contradicting`: within that same exact fact-identity group, an unchanged single-member value group coexists
-   with another value group. V1 never compares different identities and performs no cross-Provider semantic
-   adjudication. The precedence is superseding, duplicate, contradicting, supporting.
+2. `value_duplicate=true` records every member of an exact value group whose size exceeds one; the scalar
+   `relation` is `duplicate` unless that membership supersedes its prior packet.
+3. `identity_conflict=true` independently records that the same exact fact identity contains more than one value
+   group. A singleton conflicting value uses scalar `contradicting`; repeated conflicting groups retain both
+   duplicate and conflict dimensions. V1 never compares different identities and performs no cross-Provider
+   semantic adjudication. Scalar precedence is superseding, duplicate, contradicting, supporting.
 4. `supporting`: every other valid active association.
 
 Fact identity/value material is operation-specific, typed and derived only from `RichEvidencePacket`; raw payload
@@ -43,8 +46,9 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
 - READY requires only complete packets and no truncation. PARTIAL records partial/truncated input with stable
   reason codes. BLOCKED is a durable job outcome for missing membership, invalid packet/provenance or retry
   exhaustion; a BLOCKED job does not create a bundle revision.
-- M2-D consumes only a bundle referenced by the head, verifies `bundle_version`, `bundle_digest`, READY/PARTIAL
-  state, ordered immutable items and canonical packet digests, and never reads provider raw payload.
+- M2-D consumes only a bundle referenced by the head whose durable job is READY/PARTIAL for that same bundle,
+  verifies `bundle_version`, `bundle_digest`, scalar relation plus `value_duplicate`/`identity_conflict`, ordered
+  immutable items and canonical packet digests, and never reads provider raw payload.
 
 ### Runtime and migration
 
@@ -52,9 +56,12 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
   with `FOR UPDATE SKIP LOCKED`, and performs bounded keyset/batch processing.
 - Jobs implement PENDING/PROCESSING/READY/PARTIAL/RETRY/BLOCKED, finite retry and stale recovery. Per-event bundle,
   items and head update are one transaction and idempotent under unique constraints.
-- All packets used by one revision are read from one repeatable-read snapshot. The commit transaction then verifies
-  linked-projection count and current projection identity/hash; concurrent revision input makes the attempt RETRY
-  and cannot publish a stale/mixed head or return unchanged.
+- All packets used by one revision are read from one repeatable-read snapshot. The commit transaction locks the
+  Event, active memberships and their Evidence rows in deterministic order, then revalidates current packet
+  identity/hash before writing bundle/head. R8-A locks the same Evidence row before linking a revision and its
+  database trigger atomically invalidates the affected bundle job. Thus a post-validation revision either precedes
+  validation or follows bundle commit and makes the head non-consumable until reconciliation; it cannot publish a
+  stale/mixed consumable head or return a durable false unchanged.
 - A concurrent membership change or not-yet-linked Rich Evidence dependency is RETRY, while invalid identity,
   provenance, packet contracts and exhausted retry are value-free BLOCKED outcomes.
 - A claim token is revalidated under lock inside the same transaction that creates a revision, so a stale worker
@@ -62,8 +69,10 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
 - Event membership authority itself is capped at 500 active associations per EventCandidate by a PostgreSQL
   advisory-lock trigger, including concurrent inserts/reactivation. Inactive history is not counted. Bundle and
   service bounds remain defense in depth.
-- Retry exhaustion records a value-free dependency fingerprint. Unchanged input stays BLOCKED; a later Evidence
-  link or association material change atomically reopens the job with a fresh finite retry budget.
+- Retry and stale-recovery exhaustion record the same value-free dependency fingerprint. It contains only active
+  association identity and buildable linked projection lineage/hash; bookkeeping timestamps are excluded.
+  Unchanged input stays BLOCKED; a later Evidence link or association material change atomically reopens the job
+  with a fresh finite retry budget.
 - The mutable head may point only to the greatest revision and its canonical pointer must equal the greatest READY
   revision. PostgreSQL enforces these current/canonical semantics and rejects rollback/rebinding by SQL bypass.
 - Migration 0011 is additive. Existing-state preflight rejects broken active membership value-free. Downgrade is

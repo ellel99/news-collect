@@ -1305,6 +1305,12 @@ class EventCandidateEvidence(Base):
             unique=True,
             postgresql_where=text("active"),
         ),
+        Index(
+            "uq_event_candidate_evidence_active_owner",
+            "evidence_item_id",
+            unique=True,
+            postgresql_where=text("active"),
+        ),
         Index("ix_event_candidate_evidence_item", "evidence_item_id"),
         Index("ix_event_candidate_evidence_active", "event_candidate_id", "active"),
     )
@@ -1413,6 +1419,13 @@ class EventEvidenceBundleItem(Base):
             "relation_rule='m2c_relation_v1' AND rule_version=1",
             name="ck_event_bundle_item_rule_exact",
         ),
+        CheckConstraint(
+            "relation='superseding' OR "
+            "(relation='duplicate' AND value_duplicate) OR "
+            "(relation='contradicting' AND NOT value_duplicate AND identity_conflict) OR "
+            "(relation='supporting' AND NOT value_duplicate AND NOT identity_conflict)",
+            name="ck_event_bundle_item_relation_dimensions",
+        ),
         Index("ix_event_bundle_item_evidence", "evidence_item_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1434,6 +1447,8 @@ class EventEvidenceBundleItem(Base):
     relation: Mapped[EventEvidenceRelation] = mapped_column(
         Enum(EventEvidenceRelation, name="event_evidence_relation", values_callable=enum_values)
     )
+    value_duplicate: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    identity_conflict: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     relation_rule: Mapped[str] = mapped_column(String(100))
     rule_version: Mapped[int] = mapped_column(Integer)
     provider: Mapped[str] = mapped_column(String(50))

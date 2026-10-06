@@ -31,6 +31,12 @@ async def validate_0011_pre_migration(engine: AsyncEngine) -> tuple[dict[str, An
             WHERE active GROUP BY event_candidate_id HAVING count(*) > 500
           ) over_limit
         """,
+        "ambiguous_active_evidence_owner_count": """
+          SELECT count(*) FROM (
+            SELECT evidence_item_id FROM event_candidate_evidence
+            WHERE active GROUP BY evidence_item_id HAVING count(*) > 1
+          ) ambiguous
+        """,
     }
     counts: dict[str, int] = {}
     async with engine.connect() as connection:
@@ -43,6 +49,8 @@ async def validate_0011_pre_migration(engine: AsyncEngine) -> tuple[dict[str, An
         errors.append("migration_0011_rich_packet_unavailable")
     if counts["over_budget_event_count"]:
         errors.append("migration_0011_active_membership_budget_exceeded")
+    if counts["ambiguous_active_evidence_owner_count"]:
+        errors.append("migration_0011_active_evidence_owner_ambiguous")
     report: dict[str, Any] = {
         "status": "PASS" if not errors else "BLOCKED",
         **counts,

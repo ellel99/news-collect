@@ -458,7 +458,7 @@ async def test_same_company_different_fact_and_expired_window_remain_separate(
 
 
 @pytest.mark.asyncio
-async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
+async def test_single_active_owner_preserves_inactive_regroup_history(
     event_session: AsyncSession,
 ) -> None:
     service = EventCandidateService()
@@ -548,7 +548,22 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
         EventCandidateEvidence(
             event_candidate_id=other.id,
             evidence_item_id=evidence_id,
-            match_rule="active_regroup",
+            match_rule="forbidden_second_owner",
+            rule_version=2,
+            official_source=False,
+            active=True,
+            removed_at=None,
+        )
+    )
+    with pytest.raises(IntegrityError, match="uq_event_candidate_evidence_active_owner"):
+        await event_session.commit()
+    await event_session.rollback()
+    await service.deactivate_association(event_session, original.id, evidence_id)
+    event_session.add(
+        EventCandidateEvidence(
+            event_candidate_id=other.id,
+            evidence_item_id=evidence_id,
+            match_rule="reviewed_regroup",
             rule_version=2,
             official_source=False,
             active=True,
@@ -556,8 +571,8 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
         )
     )
     await event_session.commit()
-    with pytest.raises(ValueError, match="event_candidate_association_ambiguous"):
-        await service.process(event_session, evidence_id)
+    result = await service.process(event_session, evidence_id)
+    assert result.event_candidate_id == other.id
     assert await event_session.scalar(select(func.count()).select_from(EventCandidate)) == 2
     assert (
         await event_session.scalar(

@@ -227,7 +227,16 @@ class EventEvidenceBundleWorker:
             for row in rows:
                 if row.attempt_count >= self._max_attempts:
                     row.status = EventEvidenceBundleJobStatus.BLOCKED
-                    row.safe_error_code = "event_bundle_retry_exhausted"
+                    try:
+                        row.dependency_fingerprint = (
+                            await self._service.dependency_fingerprint_in_session(
+                                session, row.event_candidate_id
+                            )
+                        )
+                        row.safe_error_code = "event_bundle_retry_exhausted"
+                    except Exception:
+                        row.dependency_fingerprint = None
+                        row.safe_error_code = "event_bundle_dependency_fingerprint_unavailable"
                     row.next_retry_at = None
                 else:
                     row.status = EventEvidenceBundleJobStatus.RETRY
@@ -403,7 +412,6 @@ class EventEvidenceBundleWorker:
     async def _retry(
         self, identity: uuid.UUID, claim_token: uuid.UUID, code: str, now: datetime
     ) -> str:
-        dependency_fingerprint = await self._service.dependency_fingerprint(identity)
         async with self._factory.begin() as session:
             row = await session.get(EventEvidenceBundleJob, identity, with_for_update=True)
             if (
@@ -413,6 +421,21 @@ class EventEvidenceBundleWorker:
             ):
                 return "claim_lost"
             exhausted = row.attempt_count >= self._max_attempts
+            dependency_fingerprint: str | None = None
+            if exhausted:
+                try:
+                    dependency_fingerprint = await self._service.dependency_fingerprint_in_session(
+                        session, identity
+                    )
+                except Exception:
+                    row.status = EventEvidenceBundleJobStatus.BLOCKED
+                    row.safe_error_code = "event_bundle_dependency_fingerprint_unavailable"
+                    row.processing_started_at = None
+                    row.claim_token = None
+                    row.next_retry_at = None
+                    row.dependency_fingerprint = None
+                    row.updated_at = now
+                    return "blocked"
             row.status = (
                 EventEvidenceBundleJobStatus.BLOCKED
                 if exhausted

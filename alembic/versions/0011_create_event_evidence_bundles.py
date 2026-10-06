@@ -36,6 +36,24 @@ def upgrade() -> None:
     ).scalar_one()
     if over_budget:
         raise RuntimeError("migration_0011_active_membership_budget_exceeded")
+    ambiguous_owner = bind.execute(
+        sa.text("""
+      SELECT count(*) FROM (
+        SELECT evidence_item_id FROM event_candidate_evidence
+        WHERE active GROUP BY evidence_item_id HAVING count(*) > 1
+      ) ambiguous
+    """)
+    ).scalar_one()
+    if ambiguous_owner:
+        raise RuntimeError("migration_0011_active_evidence_owner_ambiguous")
+
+    op.create_index(
+        "uq_event_candidate_evidence_active_owner",
+        "event_candidate_evidence",
+        ["evidence_item_id"],
+        unique=True,
+        postgresql_where=sa.text("active"),
+    )
 
     op.execute("""
     CREATE FUNCTION m2c_event_membership_budget_guard() RETURNS trigger AS $$
@@ -204,6 +222,10 @@ def upgrade() -> None:
         sa.Column("fact_identity_digest", sa.CHAR(64), nullable=False),
         sa.Column("fact_value_digest", sa.CHAR(64), nullable=False),
         sa.Column("relation", relation, nullable=False),
+        sa.Column("value_duplicate", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "identity_conflict", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("relation_rule", sa.String(100), nullable=False),
         sa.Column("rule_version", sa.Integer(), nullable=False),
         sa.Column("provider", sa.String(50), nullable=False),
@@ -238,6 +260,13 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "relation_rule='m2c_relation_v1' AND rule_version=1",
             name="ck_event_bundle_item_rule_exact",
+        ),
+        sa.CheckConstraint(
+            "relation='superseding' OR "
+            "(relation='duplicate' AND value_duplicate) OR "
+            "(relation='contradicting' AND NOT value_duplicate AND identity_conflict) OR "
+            "(relation='supporting' AND NOT value_duplicate AND NOT identity_conflict)",
+            name="ck_event_bundle_item_relation_dimensions",
         ),
     )
     op.create_index(
@@ -435,6 +464,31 @@ def upgrade() -> None:
     op.execute("""CREATE TRIGGER trg_m2c_bundle_job_guard BEFORE INSERT OR UPDATE
       ON event_evidence_bundle_jobs FOR EACH ROW EXECUTE FUNCTION m2c_bundle_job_guard()""")
     op.execute("""
+    CREATE FUNCTION m2c_bundle_dependency_invalidate() RETURNS trigger AS $$ BEGIN
+      IF NEW.status='linked' AND TG_OP='INSERT' THEN
+        UPDATE event_evidence_bundle_jobs j SET
+          status='pending', attempt_count=0, next_retry_at=NULL, safe_error_code=NULL,
+          processing_started_at=NULL, claim_token=NULL, dependency_fingerprint=NULL,
+          updated_at=CURRENT_TIMESTAMP
+        FROM event_candidate_evidence a
+        WHERE a.evidence_item_id=NEW.evidence_item_id AND a.active
+          AND j.event_candidate_id=a.event_candidate_id;
+      ELSIF NEW.status='linked' AND OLD.status IS DISTINCT FROM NEW.status THEN
+        UPDATE event_evidence_bundle_jobs j SET
+          status='pending', attempt_count=0, next_retry_at=NULL, safe_error_code=NULL,
+          processing_started_at=NULL, claim_token=NULL, dependency_fingerprint=NULL,
+          updated_at=CURRENT_TIMESTAMP
+        FROM event_candidate_evidence a
+        WHERE a.evidence_item_id=NEW.evidence_item_id AND a.active
+          AND j.event_candidate_id=a.event_candidate_id;
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql
+    """)
+    op.execute("""CREATE TRIGGER trg_m2c_bundle_dependency_invalidate
+      AFTER INSERT OR UPDATE OF status ON evidence_projection_links
+      FOR EACH ROW EXECUTE FUNCTION m2c_bundle_dependency_invalidate()""")
+    op.execute("""
     CREATE FUNCTION m2c_bundle_aggregate_guard() RETURNS trigger AS $$
     DECLARE bundle_identity uuid;
     DECLARE b record;
@@ -466,6 +520,24 @@ def upgrade() -> None:
           SELECT DISTINCT provider || ':' || operation_key AS operation
           FROM event_evidence_bundle_items WHERE bundle_id=bundle_identity
         ) operations;
+      IF EXISTS (
+        SELECT 1 FROM event_evidence_bundle_items i
+        WHERE i.bundle_id=bundle_identity AND (
+          i.value_duplicate IS DISTINCT FROM (
+            SELECT count(*) > 1 FROM event_evidence_bundle_items peer
+            WHERE peer.bundle_id=i.bundle_id
+              AND peer.fact_identity_digest=i.fact_identity_digest
+              AND peer.fact_value_digest=i.fact_value_digest
+          ) OR i.identity_conflict IS DISTINCT FROM (
+            SELECT count(DISTINCT peer.fact_value_digest) > 1
+            FROM event_evidence_bundle_items peer
+            WHERE peer.bundle_id=i.bundle_id
+              AND peer.fact_identity_digest=i.fact_identity_digest
+          )
+        )
+      ) THEN
+        RAISE EXCEPTION 'event_evidence_bundle_relation_dimensions_invalid';
+      END IF;
       SELECT current_bundle_id,canonical_bundle_id INTO head_current,head_canonical
         FROM event_evidence_bundle_heads WHERE event_candidate_id=b.event_candidate_id;
       SELECT id INTO expected_current FROM event_evidence_bundles
@@ -518,6 +590,8 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION m2c_bundle_aggregate_guard()")
     op.execute("DROP TRIGGER trg_m2c_bundle_job_guard ON event_evidence_bundle_jobs")
     op.execute("DROP FUNCTION m2c_bundle_job_guard()")
+    op.execute("DROP TRIGGER trg_m2c_bundle_dependency_invalidate ON evidence_projection_links")
+    op.execute("DROP FUNCTION m2c_bundle_dependency_invalidate()")
     op.execute("DROP TRIGGER trg_m2c_bundle_head_guard ON event_evidence_bundle_heads")
     op.execute("DROP FUNCTION m2c_bundle_head_guard()")
     op.execute("DROP TRIGGER trg_m2c_bundle_item_guard ON event_evidence_bundle_items")
@@ -531,6 +605,10 @@ def downgrade() -> None:
     op.drop_table("event_evidence_bundles")
     op.execute("DROP TRIGGER trg_m2c_event_membership_budget ON event_candidate_evidence")
     op.execute("DROP FUNCTION m2c_event_membership_budget_guard()")
+    op.drop_index(
+        "uq_event_candidate_evidence_active_owner",
+        table_name="event_candidate_evidence",
+    )
     postgresql.ENUM(name="event_evidence_bundle_job_status").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_relation").drop(bind, checkfirst=True)
     postgresql.ENUM(name="event_evidence_bundle_status").drop(bind, checkfirst=True)

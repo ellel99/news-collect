@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from market_intelligence.db.models import (
@@ -23,6 +23,7 @@ from market_intelligence.db.models import (
     EventEvidenceBundleJobStatus,
     EventEvidenceBundleStatus,
     EventEvidenceRelation,
+    EvidenceItem,
     EvidenceProjectionLink,
     SafeFactProjection,
 )
@@ -46,6 +47,14 @@ class _Prepared:
     packet: RichEvidencePacket
     fact_identity_digest: str
     fact_value_digest: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Classified:
+    prepared: _Prepared
+    relation: EventEvidenceRelation
+    value_duplicate: bool
+    identity_conflict: bool
 
 
 class EventEvidenceBundleService:
@@ -92,16 +101,6 @@ class EventEvidenceBundleService:
             prepared.append(_Prepared(association_id, evidence_id, packet, identity, value))
 
         async with self._factory.begin() as session:
-            if claim_token is not None:
-                job = await session.get(
-                    EventEvidenceBundleJob, event_candidate_id, with_for_update=True
-                )
-                if (
-                    job is None
-                    or job.status is not EventEvidenceBundleJobStatus.PROCESSING
-                    or job.claim_token != claim_token
-                ):
-                    raise BundleClaimLost("event_bundle_claim_lost")
             candidate = await session.scalar(
                 select(EventCandidate)
                 .where(EventCandidate.id == event_candidate_id)
@@ -126,6 +125,26 @@ class EventEvidenceBundleService:
             )
             if locked != associations:
                 raise BundleRetryableConflict("event_bundle_membership_changed")
+            locked_evidence = tuple(
+                await session.scalars(
+                    select(EvidenceItem.id)
+                    .where(EvidenceItem.id.in_(tuple(row[1] for row in locked)))
+                    .order_by(EvidenceItem.id)
+                    .with_for_update()
+                )
+            )
+            if set(locked_evidence) != {row[1] for row in locked}:
+                raise BundleConflict("event_bundle_evidence_missing")
+            if claim_token is not None:
+                job = await session.get(
+                    EventEvidenceBundleJob, event_candidate_id, with_for_update=True
+                )
+                if (
+                    job is None
+                    or job.status is not EventEvidenceBundleJobStatus.PROCESSING
+                    or job.claim_token != claim_token
+                ):
+                    raise BundleClaimLost("event_bundle_claim_lost")
             try:
                 current_packets = await self._builder.build_many_in_session(
                     session, tuple(row.evidence_id for row in prepared)
@@ -185,7 +204,8 @@ class EventEvidenceBundleService:
             )
             session.add(bundle)
             await session.flush()
-            for row, relation in rows:
+            for classified in rows:
+                row = classified.prepared
                 session.add(
                     EventEvidenceBundleItem(
                         bundle_id=bundle.id,
@@ -195,7 +215,9 @@ class EventEvidenceBundleService:
                         projection_hash=row.packet.current.projection_hash,
                         fact_identity_digest=row.fact_identity_digest,
                         fact_value_digest=row.fact_value_digest,
-                        relation=relation,
+                        relation=classified.relation,
+                        value_duplicate=classified.value_duplicate,
+                        identity_conflict=classified.identity_conflict,
                         relation_rule=_RELATION_RULE,
                         rule_version=_RULE_VERSION,
                         provider=row.packet.provider,
@@ -223,37 +245,47 @@ class EventEvidenceBundleService:
     async def dependency_fingerprint(self, event_candidate_id: uuid.UUID) -> str:
         """Return a value-free watermark for membership and linked packet dependencies."""
         async with self._factory() as session:
-            rows = (
-                await session.execute(
-                    select(
-                        EventCandidateEvidence.id,
-                        EventCandidateEvidence.evidence_item_id,
-                        EventCandidateEvidence.active,
-                        EventCandidateEvidence.removed_at,
-                        EvidenceProjectionLink.id,
-                        EvidenceProjectionLink.status,
-                        EvidenceProjectionLink.updated_at,
-                        SafeFactProjection.id,
-                        SafeFactProjection.projection_hash,
-                        SafeFactProjection.processing_status,
-                    )
-                    .outerjoin(
-                        EvidenceProjectionLink,
+            return await self.dependency_fingerprint_in_session(session, event_candidate_id)
+
+    async def dependency_fingerprint_in_session(
+        self, session: AsyncSession, event_candidate_id: uuid.UUID
+    ) -> str:
+        """Fingerprint only active membership and buildable linked projection lineage."""
+        rows = (
+            await session.execute(
+                select(
+                    EventCandidateEvidence.id,
+                    EventCandidateEvidence.evidence_item_id,
+                    EvidenceProjectionLink.id,
+                    SafeFactProjection.id,
+                    SafeFactProjection.projection_hash,
+                )
+                .outerjoin(
+                    EvidenceProjectionLink,
+                    and_(
                         EvidenceProjectionLink.evidence_item_id
                         == EventCandidateEvidence.evidence_item_id,
-                    )
-                    .outerjoin(
-                        SafeFactProjection,
-                        SafeFactProjection.id == EvidenceProjectionLink.safe_fact_projection_id,
-                    )
-                    .where(EventCandidateEvidence.event_candidate_id == event_candidate_id)
-                    .order_by(
-                        EventCandidateEvidence.id,
-                        EvidenceProjectionLink.id,
-                        SafeFactProjection.id,
-                    )
+                        EvidenceProjectionLink.status == "linked",
+                    ),
                 )
-            ).all()
+                .outerjoin(
+                    SafeFactProjection,
+                    and_(
+                        SafeFactProjection.id == EvidenceProjectionLink.safe_fact_projection_id,
+                        SafeFactProjection.processing_status == "ready",
+                    ),
+                )
+                .where(
+                    EventCandidateEvidence.event_candidate_id == event_candidate_id,
+                    EventCandidateEvidence.active.is_(True),
+                )
+                .order_by(
+                    EventCandidateEvidence.id,
+                    EvidenceProjectionLink.id,
+                    SafeFactProjection.id,
+                )
+            )
+        ).all()
         return _digest(
             [[str(value) if value is not None else None for value in row] for row in rows]
         )
@@ -346,11 +378,11 @@ def _same_material(
 
 def _classify(
     prepared: list[_Prepared], previous: dict[uuid.UUID, EventEvidenceBundleItem]
-) -> list[tuple[_Prepared, EventEvidenceRelation]]:
+) -> list[_Classified]:
     grouped: dict[str, list[_Prepared]] = defaultdict(list)
     for row in prepared:
         grouped[row.fact_identity_digest].append(row)
-    result: list[tuple[_Prepared, EventEvidenceRelation]] = []
+    result: list[_Classified] = []
     for identity in sorted(grouped):
         value_groups: dict[str, list[_Prepared]] = defaultdict(list)
         for row in grouped[identity]:
@@ -361,17 +393,19 @@ def _classify(
                 key=lambda row: (row.packet.packet_digest, row.evidence_id.hex),
             )
             for row in rows:
+                value_duplicate = len(rows) > 1
+                identity_conflict = len(value_groups) > 1
                 prior = previous.get(row.association_id)
                 if prior is not None and prior.packet_digest != row.packet.packet_digest:
                     relation = EventEvidenceRelation.SUPERSEDING
-                elif len(rows) > 1:
+                elif value_duplicate:
                     relation = EventEvidenceRelation.DUPLICATE
-                elif len(value_groups) > 1:
+                elif identity_conflict:
                     relation = EventEvidenceRelation.CONTRADICTING
                 else:
                     relation = EventEvidenceRelation.SUPPORTING
-                result.append((row, relation))
-    return sorted(result, key=lambda item: item[0].association_id.hex)
+                result.append(_Classified(row, relation, value_duplicate, identity_conflict))
+    return sorted(result, key=lambda item: item.prepared.association_id.hex)
 
 
 def _packets_still_current(
@@ -432,7 +466,7 @@ def _bundle_material(
     event_candidate_id: uuid.UUID,
     status: str,
     reasons: tuple[str, ...],
-    rows: list[tuple[_Prepared, EventEvidenceRelation]],
+    rows: list[_Classified],
 ) -> dict[str, Any]:
     return {
         "bundle_version": 1,
@@ -441,19 +475,21 @@ def _bundle_material(
         "reason_codes": list(reasons),
         "items": [
             {
-                "association_id": str(row.association_id),
-                "evidence_id": str(row.evidence_id),
-                "packet_digest": row.packet.packet_digest,
-                "projection_hash": row.packet.current.projection_hash,
-                "fact_identity_digest": row.fact_identity_digest,
-                "fact_value_digest": row.fact_value_digest,
-                "relation": relation.value,
-                "provider": row.packet.provider,
-                "operation_key": row.packet.operation_key,
-                "source_id": str(row.packet.provenance.source_id),
-                "event_time": row.packet.current_published_at.astimezone(UTC).isoformat(),
+                "association_id": str(item.prepared.association_id),
+                "evidence_id": str(item.prepared.evidence_id),
+                "packet_digest": item.prepared.packet.packet_digest,
+                "projection_hash": item.prepared.packet.current.projection_hash,
+                "fact_identity_digest": item.prepared.fact_identity_digest,
+                "fact_value_digest": item.prepared.fact_value_digest,
+                "relation": item.relation.value,
+                "value_duplicate": item.value_duplicate,
+                "identity_conflict": item.identity_conflict,
+                "provider": item.prepared.packet.provider,
+                "operation_key": item.prepared.packet.operation_key,
+                "source_id": str(item.prepared.packet.provenance.source_id),
+                "event_time": item.prepared.packet.current_published_at.astimezone(UTC).isoformat(),
             }
-            for row, relation in rows
+            for item in rows
         ],
     }
 
