@@ -313,7 +313,7 @@ async def test_deactivate_refreshes_active_aggregates_and_retains_evidence(
                 EventCandidateEvidence.active.is_(False),
             )
         )
-        == 1
+        == 2
     )
     assert (
         await event_session.scalar(
@@ -563,7 +563,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     await service.deactivate_association(event_session, original_id, evidence_id)
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="reviewed_regroup",
             rule_version=2,
@@ -585,11 +585,11 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
                 EventCandidateEvidence.active.is_(True),
             )
         )
-        == 2
+        == 1
     )
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="duplicate_active",
             rule_version=2,
