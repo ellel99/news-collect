@@ -82,7 +82,7 @@ async def _event(
                 INSERT INTO event_candidate_evidence(
                   event_candidate_id,evidence_item_id,match_rule,rule_version,
                   official_source,active
-                ) VALUES (:event,:evidence,'synthetic_exact',1,false,true)
+                ) VALUES (:event,:evidence,'new_candidate',1,false,true)
                 """),
                 {"event": event_id, "evidence": evidence_id},
             )
@@ -270,7 +270,10 @@ async def test_durable_keyset_discovery_does_not_starve_later_candidates() -> No
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        evidence_ids = [(await _linked_evidence(factory, "sec_edgar"))[1] for _ in range(3)]
+        evidence_ids = [
+            (await _linked_evidence(factory, provider))[1]
+            for provider in ("marketaux", "finnhub", "eia")
+        ]
         event_ids = [await _event(factory, (evidence_id,)) for evidence_id in evidence_ids]
         for _ in range(4):
             await EventEvidenceBundleWorker(factory).process_batch(limit=1)
@@ -429,23 +432,26 @@ async def test_revision_after_final_validation_invalidates_head_before_consumpti
         bundle_task = asyncio.create_task(worker.process_batch(limit=10))
         await validated.wait()
 
-        async def add_revision() -> uuid.UUID:
+        async def add_revision() -> tuple[uuid.UUID, str]:
             _raw, projection_id, _payload = await _seed_ready(
                 factory,
                 "marketaux",
                 raw_id=raw_id,
                 payload_updates={"title": "Post-validation revision"},
             )
-            assert (
-                await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)
-            ).linked == 1
-            return projection_id
+            report = await EvidenceProjectionHandoffWorker(
+                factory, retry_delay=timedelta(0)
+            ).process_batch(limit=10)
+            assert report.retried == 1 and report.linked == 0
+            return projection_id, "lock_protected"
 
         revision_task = asyncio.create_task(add_revision())
         await asyncio.sleep(0.1)
         release.set()
         await bundle_task
-        projection_id = await revision_task
+        projection_id, outcome = await revision_task
+        assert outcome == "lock_protected"
+        assert (await EvidenceProjectionHandoffWorker(factory).process_batch(limit=10)).linked == 1
         async with factory() as session:
             job = await session.get(EventEvidenceBundleJob, event_id)
             assert job is not None and job.status is EventEvidenceBundleJobStatus.PENDING
@@ -523,8 +529,8 @@ async def test_stale_exhaustion_fingerprint_ignores_bookkeeping_and_reopens_on_m
         worker = EventEvidenceBundleWorker(
             factory, max_attempts=1, stale_after=timedelta(seconds=1)
         )
-        report = await worker.process_batch(limit=10)
-        assert report.recovered == 1 and report.claimed == 0
+        recovered = await worker._recover_stale(datetime.now(UTC), 10)
+        assert recovered == 1
         async with factory() as session:
             job = await session.get(EventEvidenceBundleJob, event_id)
             assert job is not None

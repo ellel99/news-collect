@@ -471,6 +471,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     outcome = await service.process(event_session, evidence_id)
     original = await event_session.get(EventCandidate, outcome.event_candidate_id)
     assert original is not None
+    original_id = original.id
     other = EventCandidate(
         cluster_key="f" * 64,
         anchor_type="test",
@@ -500,9 +501,10 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     )
     event_session.add(other)
     await event_session.flush()
+    other_id = other.id
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="reviewed_regroup",
             rule_version=1,
@@ -522,7 +524,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     )
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="duplicate",
             rule_version=1,
@@ -537,7 +539,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
             select(func.count())
             .select_from(EventCandidateEvidence)
             .where(
-                EventCandidateEvidence.event_candidate_id == other.id,
+                EventCandidateEvidence.event_candidate_id == other_id,
                 EventCandidateEvidence.evidence_item_id == evidence_id,
                 EventCandidateEvidence.active.is_(False),
             )
@@ -546,7 +548,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     )
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="forbidden_second_owner",
             rule_version=2,
@@ -558,7 +560,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     with pytest.raises(IntegrityError, match="uq_event_candidate_evidence_active_owner"):
         await event_session.commit()
     await event_session.rollback()
-    await service.deactivate_association(event_session, original.id, evidence_id)
+    await service.deactivate_association(event_session, original_id, evidence_id)
     event_session.add(
         EventCandidateEvidence(
             event_candidate_id=other.id,
@@ -572,7 +574,7 @@ async def test_single_active_owner_preserves_inactive_regroup_history(
     )
     await event_session.commit()
     result = await service.process(event_session, evidence_id)
-    assert result.event_candidate_id == other.id
+    assert result.event_candidate_id == other_id
     assert await event_session.scalar(select(func.count()).select_from(EventCandidate)) == 2
     assert (
         await event_session.scalar(
