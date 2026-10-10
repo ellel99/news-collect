@@ -211,50 +211,56 @@ class EventEvidenceBundleWorker:
             return len(candidates)
 
     async def _recover_stale(self, now: datetime, limit: int) -> int:
+        cutoff = now - self._stale_after
         async with self._factory.begin() as session:
             rows = tuple(
                 await session.scalars(
                     select(EventEvidenceBundleJob)
                     .where(
                         EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
-                        EventEvidenceBundleJob.processing_started_at < now - self._stale_after,
+                        EventEvidenceBundleJob.processing_started_at < cutoff,
                     )
                     .order_by(EventEvidenceBundleJob.processing_started_at)
                     .limit(limit)
                     .with_for_update(skip_locked=True)
                 )
             )
-            recovered = 0
-            for row in rows:
-                token = row.claim_token
-                if row.attempt_count >= self._max_attempts:
-                    try:
-                        fingerprint = await self._service.dependency_fingerprint_in_session(
-                            session, row.event_candidate_id
-                        )
-                        error = "event_bundle_retry_exhausted"
-                    except Exception:
-                        fingerprint = None
-                        error = "event_bundle_dependency_fingerprint_unavailable"
-                    values: dict[str, object] = {
-                        "status": EventEvidenceBundleJobStatus.BLOCKED,
-                        "safe_error_code": error,
-                        "dependency_fingerprint": fingerprint,
-                        "next_retry_at": None,
-                    }
-                else:
-                    values = {
-                        "status": EventEvidenceBundleJobStatus.RETRY,
-                        "safe_error_code": "event_bundle_stale",
-                        "dependency_fingerprint": None,
-                        "next_retry_at": now,
-                    }
+            candidates = tuple(
+                (row.event_candidate_id, row.claim_token, row.attempt_count) for row in rows
+            )
+
+        recovered = 0
+        for identity, token, attempt_count in candidates:
+            if token is None:
+                continue
+            if attempt_count >= self._max_attempts:
+                try:
+                    fingerprint = await self._service.dependency_fingerprint(identity)
+                    error = "event_bundle_retry_exhausted"
+                except Exception:
+                    fingerprint = None
+                    error = "event_bundle_dependency_fingerprint_unavailable"
+                values: dict[str, object] = {
+                    "status": EventEvidenceBundleJobStatus.BLOCKED,
+                    "safe_error_code": error,
+                    "dependency_fingerprint": fingerprint,
+                    "next_retry_at": None,
+                }
+            else:
+                values = {
+                    "status": EventEvidenceBundleJobStatus.RETRY,
+                    "safe_error_code": "event_bundle_stale",
+                    "dependency_fingerprint": None,
+                    "next_retry_at": now,
+                }
+            async with self._factory.begin() as session:
                 result = await session.execute(
                     update(EventEvidenceBundleJob)
                     .where(
-                        EventEvidenceBundleJob.event_candidate_id == row.event_candidate_id,
+                        EventEvidenceBundleJob.event_candidate_id == identity,
                         EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
                         EventEvidenceBundleJob.claim_token == token,
+                        EventEvidenceBundleJob.processing_started_at < cutoff,
                     )
                     .values(
                         **values,
@@ -264,7 +270,7 @@ class EventEvidenceBundleWorker:
                     )
                 )
                 recovered += int((getattr(result, "rowcount", 0) or 0) > 0)
-            return recovered
+        return recovered
 
     async def _reopen_changed_dependencies(self, limit: int) -> int:
         async with self._factory.begin() as session:
@@ -317,7 +323,12 @@ class EventEvidenceBundleWorker:
                 )
         reopened = 0
         for identity, old_fingerprint in candidates:
-            current = await self._service.dependency_fingerprint(identity)
+            try:
+                current = await self._service.dependency_fingerprint(identity)
+            except Exception:
+                # Keep the durable blocked state and continue scanning. The bounded
+                # keyset wraps, so this dependency remains eligible for a later pass.
+                continue
             if current == old_fingerprint:
                 continue
             async with self._factory.begin() as session:
@@ -431,42 +442,74 @@ class EventEvidenceBundleWorker:
     async def _retry(
         self, identity: uuid.UUID, claim_token: uuid.UUID, code: str, now: datetime
     ) -> str:
-        async with self._factory.begin() as session:
-            row = await session.get(EventEvidenceBundleJob, identity, with_for_update=True)
-            if (
-                row is None
-                or row.status is not EventEvidenceBundleJobStatus.PROCESSING
-                or row.claim_token != claim_token
-            ):
-                return "claim_lost"
-            exhausted = row.attempt_count >= self._max_attempts
-            dependency_fingerprint: str | None = None
-            if exhausted:
-                try:
-                    dependency_fingerprint = await self._service.dependency_fingerprint_in_session(
-                        session, identity
-                    )
-                except Exception:
-                    row.status = EventEvidenceBundleJobStatus.BLOCKED
-                    row.safe_error_code = "event_bundle_dependency_fingerprint_unavailable"
-                    row.processing_started_at = None
-                    row.claim_token = None
-                    row.next_retry_at = None
-                    row.dependency_fingerprint = None
-                    row.updated_at = now
-                    return "blocked"
-            row.status = (
+        async with self._factory() as session:
+            attempt_count = await session.scalar(
+                select(EventEvidenceBundleJob.attempt_count).where(
+                    EventEvidenceBundleJob.event_candidate_id == identity,
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                    EventEvidenceBundleJob.claim_token == claim_token,
+                )
+            )
+        if attempt_count is None:
+            return "claim_lost"
+        exhausted = attempt_count >= self._max_attempts
+        dependency_fingerprint: str | None = None
+        error = code
+        if exhausted:
+            try:
+                # This read owns its transaction. A DBAPI failure therefore cannot
+                # poison the fresh transaction used for the claim-token transition.
+                dependency_fingerprint = await self._service.dependency_fingerprint(identity)
+                error = "event_bundle_retry_exhausted"
+            except Exception:
+                error = "event_bundle_dependency_fingerprint_unavailable"
+        transitioned = await self._transition_claim(
+            identity,
+            claim_token,
+            status=(
                 EventEvidenceBundleJobStatus.BLOCKED
                 if exhausted
                 else EventEvidenceBundleJobStatus.RETRY
+            ),
+            code=error,
+            retry_at=None if exhausted else now + self._retry_delay,
+            dependency_fingerprint=dependency_fingerprint if exhausted else None,
+            now=now,
+        )
+        if not transitioned:
+            return "claim_lost"
+        return "blocked" if exhausted else "retry"
+
+    async def _transition_claim(
+        self,
+        identity: uuid.UUID,
+        claim_token: uuid.UUID,
+        *,
+        status: EventEvidenceBundleJobStatus,
+        code: str,
+        retry_at: datetime | None,
+        dependency_fingerprint: str | None,
+        now: datetime,
+    ) -> bool:
+        async with self._factory.begin() as session:
+            result = await session.execute(
+                update(EventEvidenceBundleJob)
+                .where(
+                    EventEvidenceBundleJob.event_candidate_id == identity,
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                    EventEvidenceBundleJob.claim_token == claim_token,
+                )
+                .values(
+                    status=status,
+                    safe_error_code=code,
+                    processing_started_at=None,
+                    claim_token=None,
+                    next_retry_at=retry_at,
+                    dependency_fingerprint=dependency_fingerprint,
+                    updated_at=now,
+                )
             )
-            row.safe_error_code = "event_bundle_retry_exhausted" if exhausted else code
-            row.dependency_fingerprint = dependency_fingerprint if exhausted else None
-            row.processing_started_at = None
-            row.claim_token = None
-            row.next_retry_at = None if exhausted else now + self._retry_delay
-            row.updated_at = now
-            return "blocked" if exhausted else "retry"
+            return (getattr(result, "rowcount", 0) or 0) > 0
 
     async def _set_failure(
         self,

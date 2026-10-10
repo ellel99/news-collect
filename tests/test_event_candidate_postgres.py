@@ -313,7 +313,7 @@ async def test_deactivate_refreshes_active_aggregates_and_retains_evidence(
                 EventCandidateEvidence.active.is_(False),
             )
         )
-        == 2
+        == 1
     )
     assert (
         await event_session.scalar(

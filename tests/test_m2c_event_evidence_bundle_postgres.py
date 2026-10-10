@@ -581,6 +581,19 @@ async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item()
         _raw_two, second_evidence = await _linked_evidence(factory, "sec_edgar")
         first_event = await _event(factory, (first_evidence,))
         second_event = await _event(factory, (second_evidence,))
+        async with factory.begin() as session:
+            session.add_all(
+                (
+                    EventEvidenceBundleJob(
+                        event_candidate_id=first_event,
+                        status=EventEvidenceBundleJobStatus.PENDING,
+                    ),
+                    EventEvidenceBundleJob(
+                        event_candidate_id=second_event,
+                        status=EventEvidenceBundleJobStatus.PENDING,
+                    ),
+                )
+            )
         delegate = EventEvidenceBundleService(factory)
 
         class IsolatedFailureService:
@@ -591,19 +604,16 @@ async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item()
                     raise BundleRetryableConflict("event_bundle_packet_not_ready")
                 return await delegate.build(identity, claim_token=claim_token)
 
-            async def dependency_fingerprint_in_session(
-                self, session: AsyncSession, identity: uuid.UUID
-            ) -> str:
-                if identity == first_event:
-                    raise RuntimeError("synthetic value-bearing detail must not escape")
-                return await delegate.dependency_fingerprint_in_session(session, identity)
-
             async def dependency_fingerprint(self, identity: uuid.UUID) -> str:
+                if identity == first_event:
+                    async with factory() as session:
+                        await session.execute(text("SELECT 1 / 0"))
                 return await delegate.dependency_fingerprint(identity)
 
         worker = EventEvidenceBundleWorker(factory, max_attempts=1)
         worker._service = IsolatedFailureService()  # type: ignore[assignment]
         report = await worker.process_batch(limit=10)
+        assert report.claimed == 2
         assert report.blocked == 1
         assert report.ready + report.partial == 1
         async with factory() as session:
@@ -618,6 +628,125 @@ async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item()
                 EventEvidenceBundleJobStatus.READY,
                 EventEvidenceBundleJobStatus.PARTIAL,
             }
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stale_fingerprint_dbapi_failure_isolated_from_later_recovery() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw_one, first_evidence = await _linked_evidence(factory, "marketaux")
+        _raw_two, second_evidence = await _linked_evidence(factory, "sec_edgar")
+        first_event = await _event(factory, (first_evidence,))
+        second_event = await _event(factory, (second_evidence,))
+        stale = datetime.now(UTC) - timedelta(hours=1)
+        async with factory.begin() as session:
+            session.add_all(
+                (
+                    EventEvidenceBundleJob(
+                        event_candidate_id=first_event,
+                        status=EventEvidenceBundleJobStatus.PROCESSING,
+                        attempt_count=1,
+                        processing_started_at=stale,
+                        claim_token=uuid.uuid4(),
+                    ),
+                    EventEvidenceBundleJob(
+                        event_candidate_id=second_event,
+                        status=EventEvidenceBundleJobStatus.PROCESSING,
+                        attempt_count=1,
+                        processing_started_at=stale,
+                        claim_token=uuid.uuid4(),
+                    ),
+                )
+            )
+        delegate = EventEvidenceBundleService(factory)
+
+        class IsolatedDbapiFingerprint:
+            async def dependency_fingerprint(self, identity: uuid.UUID) -> str:
+                if identity == first_event:
+                    async with factory() as session:
+                        await session.execute(text("SELECT 1 / 0"))
+                return await delegate.dependency_fingerprint(identity)
+
+        worker = EventEvidenceBundleWorker(
+            factory, max_attempts=1, stale_after=timedelta(seconds=1)
+        )
+        worker._service = IsolatedDbapiFingerprint()  # type: ignore[assignment]
+        assert await worker._recover_stale(datetime.now(UTC), 10) == 2
+        async with factory() as session:
+            first_job = await session.get(EventEvidenceBundleJob, first_event)
+            second_job = await session.get(EventEvidenceBundleJob, second_event)
+            assert first_job is not None and second_job is not None
+            assert first_job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert first_job.safe_error_code == "event_bundle_dependency_fingerprint_unavailable"
+            assert first_job.dependency_fingerprint is None
+            assert second_job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert second_job.safe_error_code == "event_bundle_retry_exhausted"
+            assert second_job.dependency_fingerprint is not None
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reopen_scan_dbapi_failure_does_not_hide_later_changed_dependency() -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw_one, first_evidence = await _linked_evidence(factory, "marketaux")
+        _raw_two, second_evidence = await _linked_evidence(factory, "sec_edgar")
+        first_event = await _event(factory, (first_evidence,))
+        second_event = await _event(factory, (second_evidence,))
+        old_fingerprint = "0" * 64
+        async with factory.begin() as session:
+            session.add_all(
+                (
+                    EventEvidenceBundleJob(
+                        event_candidate_id=first_event,
+                        status=EventEvidenceBundleJobStatus.BLOCKED,
+                        attempt_count=1,
+                        safe_error_code="event_bundle_retry_exhausted",
+                        dependency_fingerprint=old_fingerprint,
+                    ),
+                    EventEvidenceBundleJob(
+                        event_candidate_id=second_event,
+                        status=EventEvidenceBundleJobStatus.BLOCKED,
+                        attempt_count=1,
+                        safe_error_code="event_bundle_retry_exhausted",
+                        dependency_fingerprint=old_fingerprint,
+                    ),
+                )
+            )
+            await session.execute(
+                text("""
+                INSERT INTO system_metadata(key,value) VALUES
+                  ('event_evidence_bundle_dependency_cursor','')
+                ON CONFLICT (key) DO UPDATE SET value=''
+                """)
+            )
+        delegate = EventEvidenceBundleService(factory)
+
+        class IsolatedDbapiFingerprint:
+            async def dependency_fingerprint(self, identity: uuid.UUID) -> str:
+                if identity == first_event:
+                    async with factory() as session:
+                        await session.execute(text("SELECT 1 / 0"))
+                return await delegate.dependency_fingerprint(identity)
+
+        worker = EventEvidenceBundleWorker(factory)
+        worker._service = IsolatedDbapiFingerprint()  # type: ignore[assignment]
+        assert await worker._reopen_changed_dependencies(10) == 1
+        async with factory() as session:
+            first_job = await session.get(EventEvidenceBundleJob, first_event)
+            second_job = await session.get(EventEvidenceBundleJob, second_event)
+            assert first_job is not None and second_job is not None
+            assert first_job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert first_job.dependency_fingerprint == old_fingerprint
+            assert second_job.status is EventEvidenceBundleJobStatus.PENDING
+            assert second_job.dependency_fingerprint is None
     finally:
         await _cleanup(factory)
         await engine.dispose()
