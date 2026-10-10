@@ -458,7 +458,7 @@ async def test_same_company_different_fact_and_expired_window_remain_separate(
 
 
 @pytest.mark.asyncio
-async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
+async def test_single_active_owner_preserves_inactive_regroup_history(
     event_session: AsyncSession,
 ) -> None:
     service = EventCandidateService()
@@ -471,6 +471,7 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
     outcome = await service.process(event_session, evidence_id)
     original = await event_session.get(EventCandidate, outcome.event_candidate_id)
     assert original is not None
+    original_id = original.id
     other = EventCandidate(
         cluster_key="f" * 64,
         anchor_type="test",
@@ -500,9 +501,10 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
     )
     event_session.add(other)
     await event_session.flush()
+    other_id = other.id
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="reviewed_regroup",
             rule_version=1,
@@ -522,7 +524,7 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
     )
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="duplicate",
             rule_version=1,
@@ -537,18 +539,33 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
             select(func.count())
             .select_from(EventCandidateEvidence)
             .where(
-                EventCandidateEvidence.event_candidate_id == other.id,
+                EventCandidateEvidence.event_candidate_id == other_id,
                 EventCandidateEvidence.evidence_item_id == evidence_id,
                 EventCandidateEvidence.active.is_(False),
             )
         )
         == 2
     )
+    with pytest.raises(IntegrityError, match="uq_event_candidate_evidence_active_owner"):
+        async with event_session.begin_nested():
+            event_session.add(
+                EventCandidateEvidence(
+                    event_candidate_id=other_id,
+                    evidence_item_id=evidence_id,
+                    match_rule="forbidden_second_owner",
+                    rule_version=2,
+                    official_source=False,
+                    active=True,
+                    removed_at=None,
+                )
+            )
+            await event_session.flush()
+    await service.deactivate_association(event_session, original_id, evidence_id)
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
-            match_rule="active_regroup",
+            match_rule="reviewed_regroup",
             rule_version=2,
             official_source=False,
             active=True,
@@ -556,8 +573,8 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
         )
     )
     await event_session.commit()
-    with pytest.raises(ValueError, match="event_candidate_association_ambiguous"):
-        await service.process(event_session, evidence_id)
+    result = await service.process(event_session, evidence_id)
+    assert result.event_candidate_id == other_id
     assert await event_session.scalar(select(func.count()).select_from(EventCandidate)) == 2
     assert (
         await event_session.scalar(
@@ -568,11 +585,11 @@ async def test_pair_uniqueness_does_not_impose_global_evidence_ownership(
                 EventCandidateEvidence.active.is_(True),
             )
         )
-        == 2
+        == 1
     )
     event_session.add(
         EventCandidateEvidence(
-            event_candidate_id=other.id,
+            event_candidate_id=other_id,
             evidence_item_id=evidence_id,
             match_rule="duplicate_active",
             rule_version=2,
@@ -623,7 +640,15 @@ async def test_0005_migration_round_trip_and_identity_trigger() -> None:
         existing = [
             table
             for table in Base.metadata.sorted_tables
-            if table.name not in {"event_candidates", "event_candidate_evidence"}
+            if table.name
+            not in {
+                "event_candidates",
+                "event_candidate_evidence",
+                "event_evidence_bundles",
+                "event_evidence_bundle_items",
+                "event_evidence_bundle_heads",
+                "event_evidence_bundle_jobs",
+            }
         ]
         Base.metadata.create_all(sync_connection, tables=existing)
         revision = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("0005")

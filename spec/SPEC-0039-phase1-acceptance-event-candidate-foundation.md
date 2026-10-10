@@ -133,8 +133,9 @@ Implementation may introduce one isolated, reversible Alembic revision after app
 - `evidence_item_id` FK;
 - partial unique index on `(event_candidate_id, evidence_item_id) WHERE active = true` prevents duplicate
   active membership while allowing multiple immutable inactive history generations;
-- this first version does **not** add `UNIQUE(evidence_item_id)`: single-event ownership is not assumed without
-  an independently reviewed policy;
+- SPEC-0047/M2-C supplies the later reviewed v1 policy: a partial unique index on `evidence_item_id WHERE active`
+  enforces one active Event owner per Evidence. Inactive generations remain available for reversible regrouping;
+  multi-Event active ownership is not supported in v1;
 - `match_rule` / `cluster_rule`, `rule_version`, official-source flag, and `added_at` explain every association;
 - minimal reversible history uses append-only generations with `active` plus nullable `removed_at`; deactivate
   preserves the old row, reactivation creates a new row, and regrouping deactivates the old candidate link then

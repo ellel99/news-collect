@@ -1,5 +1,31 @@
 # Changelog
 
+- Harden M2-C correction semantics: single-active-Event Evidence ownership, independent value-duplicate and
+  identity-conflict dimensions, deterministic Evidence-row serialization with R8-A job invalidation, stale
+  exhaustion fingerprints, and material-only dependency reopening. No production activation or external request.
+
+## Unreleased — M2-C Event Evidence Bundle
+
+- Add SPEC-0047 and migration 0011 for immutable, append-only Event Evidence Bundle revisions, ordered Evidence
+  association snapshots, current/canonical heads and bounded durable reconciliation jobs.
+- Add a deterministic RichEvidencePacket consumer with source/provider/operation diversity, time coverage,
+  stable digest and descriptive supporting/duplicate/contradicting/superseding relations. Conflict is expressed,
+  never judged by AI.
+- Add authority-neutral Celery reconciliation with bounded discovery, `SKIP LOCKED` claim, finite retry, stale
+  recovery and value-free counts; production collection authority remains `legacy`.
+- Enforce the 500-active-association budget at membership authority under a PostgreSQL advisory lock, retain the
+  bundle/service cap, and validate worker claim tokens inside the revision transaction so stale recovered workers
+  cannot persist an ABA completion.
+- Build every revision from one repeatable-read packet snapshot and revalidate projection identity/hash/count at
+  commit. Persist a value-free dependency fingerprint after retry exhaustion so changed link/membership input can
+  reopen without turning unchanged failures into an infinite loop.
+- Define duplicate/contradicting relations only within the same deterministic fact identity; value groups and
+  superseding membership revisions are stable regardless of input/UUID order and never perform semantic judgment.
+- Remove the mutable bundle head when an EventCandidate loses its final active Evidence association while retaining
+  all immutable revisions; reviewed re-association reopens reconciliation instead of exposing stale evidence.
+- Add value-free existing-state preflight and fail-closed nonempty downgrade. No production migration,
+  activation, historical replay or external request is performed.
+
 ## Unreleased — M2-B concentrated correction
 
 - Unify handoff, typed preflight, packet reads and PostgreSQL guards on the exact four-operation historical

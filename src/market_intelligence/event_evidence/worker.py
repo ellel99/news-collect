@@ -1,0 +1,540 @@
+"""Bounded, retryable and stale-safe M2-C bundle reconciliation worker."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import exists, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from market_intelligence.db.base import system_metadata
+from market_intelligence.db.models import (
+    EventCandidate,
+    EventCandidateEvidence,
+    EventEvidenceBundleHead,
+    EventEvidenceBundleJob,
+    EventEvidenceBundleJobStatus,
+)
+from market_intelligence.event_evidence.contracts import (
+    BundleClaimLost,
+    BundleConflict,
+    BundleRetryableConflict,
+    BundleWorkerReport,
+)
+from market_intelligence.event_evidence.service import EventEvidenceBundleService
+
+_DISCOVERY_KEY = "event_evidence_bundle_discovery_cursor"
+_DEPENDENCY_KEY = "event_evidence_bundle_dependency_cursor"
+
+
+class EventEvidenceBundleWorker:
+    def __init__(
+        self,
+        factory: async_sessionmaker[AsyncSession],
+        *,
+        max_attempts: int = 3,
+        stale_after: timedelta = timedelta(minutes=10),
+        retry_delay: timedelta = timedelta(minutes=1),
+    ) -> None:
+        if not 1 <= max_attempts <= 10:
+            raise ValueError("event_bundle_max_attempts_invalid")
+        self._factory = factory
+        self._service = EventEvidenceBundleService(factory)
+        self._max_attempts = max_attempts
+        self._stale_after = stale_after
+        self._retry_delay = retry_delay
+
+    async def process_batch(self, *, limit: int = 100) -> BundleWorkerReport:
+        if not 1 <= limit <= 500:
+            raise ValueError("event_bundle_batch_limit_invalid")
+        now = datetime.now(UTC)
+        recovered = await self._recover_stale(now, limit)
+        await self._reopen_changed_dependencies(limit)
+        discovered = await self._discover(limit)
+        claimed = await self._claim(now, limit)
+        counts = {
+            "ready": 0,
+            "partial": 0,
+            "unchanged": 0,
+            "blocked": 0,
+            "retry": 0,
+            "claim_lost": 0,
+        }
+        for identity, claim_token in claimed:
+            try:
+                result = await self._service.build(identity, claim_token=claim_token)
+                outcome = result.status
+                completed = await self._complete(
+                    identity, claim_token, result.status, result.bundle_id, now
+                )
+                if not completed:
+                    outcome = "claim_lost"
+            except BundleClaimLost:
+                outcome = "claim_lost"
+            except BundleRetryableConflict as exc:
+                outcome = await self._retry(identity, claim_token, str(exc), now)
+            except BundleConflict as exc:
+                outcome = (
+                    "blocked"
+                    if await self._block(identity, claim_token, str(exc), now)
+                    else "claim_lost"
+                )
+            except (DBAPIError, IntegrityError):
+                outcome = await self._retry(
+                    identity, claim_token, "event_bundle_database_conflict", now
+                )
+            except Exception:
+                outcome = await self._retry(identity, claim_token, "event_bundle_unexpected", now)
+            counts[outcome] += 1
+        return BundleWorkerReport(
+            discovered,
+            len(claimed),
+            counts["ready"],
+            counts["partial"],
+            counts["unchanged"],
+            counts["blocked"],
+            counts["retry"],
+            recovered,
+            counts["claim_lost"],
+        )
+
+    async def _discover(self, limit: int) -> int:
+        async with self._factory.begin() as session:
+            await session.execute(
+                insert(system_metadata)
+                .values(key=_DISCOVERY_KEY, value="")
+                .on_conflict_do_nothing(index_elements=[system_metadata.c.key])
+            )
+            cursor_value = await session.scalar(
+                select(system_metadata.c.value)
+                .where(system_metadata.c.key == _DISCOVERY_KEY)
+                .with_for_update()
+            )
+            cursor = uuid.UUID(cursor_value) if cursor_value else None
+            eligible = or_(
+                EventEvidenceBundleJob.event_candidate_id.is_(None),
+                EventEvidenceBundleJob.status.in_(
+                    (
+                        EventEvidenceBundleJobStatus.READY,
+                        EventEvidenceBundleJobStatus.PARTIAL,
+                    )
+                ),
+                (
+                    (EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED)
+                    & (EventEvidenceBundleJob.safe_error_code == "event_bundle_no_active_evidence")
+                ),
+            )
+            has_material_or_head = or_(
+                exists().where(
+                    EventCandidateEvidence.event_candidate_id == EventCandidate.id,
+                    EventCandidateEvidence.active.is_(True),
+                ),
+                exists().where(EventEvidenceBundleHead.event_candidate_id == EventCandidate.id),
+            )
+            base = (
+                select(EventCandidate.id)
+                .outerjoin(
+                    EventEvidenceBundleJob,
+                    EventEvidenceBundleJob.event_candidate_id == EventCandidate.id,
+                )
+                .where(
+                    has_material_or_head,
+                    eligible,
+                )
+                .order_by(EventCandidate.id)
+                .limit(limit)
+            )
+            if cursor is not None:
+                base = base.where(EventCandidate.id > cursor)
+            candidates = tuple(await session.scalars(base))
+            if not candidates and cursor is not None:
+                candidates = tuple(
+                    await session.scalars(
+                        select(EventCandidate.id)
+                        .outerjoin(
+                            EventEvidenceBundleJob,
+                            EventEvidenceBundleJob.event_candidate_id == EventCandidate.id,
+                        )
+                        .where(
+                            has_material_or_head,
+                            eligible,
+                        )
+                        .order_by(EventCandidate.id)
+                        .limit(limit)
+                    )
+                )
+            if not candidates:
+                return 0
+            statement = insert(EventEvidenceBundleJob).values(
+                [
+                    {
+                        "event_candidate_id": identity,
+                        "status": EventEvidenceBundleJobStatus.PENDING.value,
+                    }
+                    for identity in candidates
+                ]
+            )
+            statement = statement.on_conflict_do_update(
+                index_elements=["event_candidate_id"],
+                set_={
+                    "status": EventEvidenceBundleJobStatus.PENDING.value,
+                    "safe_error_code": None,
+                    "next_retry_at": None,
+                    "dependency_fingerprint": None,
+                    "updated_at": datetime.now(UTC),
+                },
+                where=or_(
+                    EventEvidenceBundleJob.status.in_(
+                        (
+                            EventEvidenceBundleJobStatus.READY,
+                            EventEvidenceBundleJobStatus.PARTIAL,
+                        )
+                    ),
+                    (
+                        (EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED)
+                        & (
+                            EventEvidenceBundleJob.safe_error_code
+                            == "event_bundle_no_active_evidence"
+                        )
+                    ),
+                ),
+            )
+            await session.execute(statement)
+            await session.execute(
+                update(system_metadata)
+                .where(system_metadata.c.key == _DISCOVERY_KEY)
+                .values(value=str(candidates[-1]), updated_at=datetime.now(UTC))
+            )
+            return len(candidates)
+
+    async def _recover_stale(self, now: datetime, limit: int) -> int:
+        cutoff = now - self._stale_after
+        async with self._factory.begin() as session:
+            rows = tuple(
+                await session.scalars(
+                    select(EventEvidenceBundleJob)
+                    .where(
+                        EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                        EventEvidenceBundleJob.processing_started_at < cutoff,
+                    )
+                    .order_by(EventEvidenceBundleJob.processing_started_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            candidates = tuple(
+                (row.event_candidate_id, row.claim_token, row.attempt_count) for row in rows
+            )
+
+        recovered = 0
+        for identity, token, attempt_count in candidates:
+            if token is None:
+                continue
+            if attempt_count >= self._max_attempts:
+                try:
+                    fingerprint = await self._service.dependency_fingerprint(identity)
+                    error = "event_bundle_retry_exhausted"
+                except Exception:
+                    fingerprint = None
+                    error = "event_bundle_dependency_fingerprint_unavailable"
+                values: dict[str, object] = {
+                    "status": EventEvidenceBundleJobStatus.BLOCKED,
+                    "safe_error_code": error,
+                    "dependency_fingerprint": fingerprint,
+                    "next_retry_at": None,
+                }
+            else:
+                values = {
+                    "status": EventEvidenceBundleJobStatus.RETRY,
+                    "safe_error_code": "event_bundle_stale",
+                    "dependency_fingerprint": None,
+                    "next_retry_at": now,
+                }
+            async with self._factory.begin() as session:
+                result = await session.execute(
+                    update(EventEvidenceBundleJob)
+                    .where(
+                        EventEvidenceBundleJob.event_candidate_id == identity,
+                        EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                        EventEvidenceBundleJob.claim_token == token,
+                        EventEvidenceBundleJob.processing_started_at < cutoff,
+                    )
+                    .values(
+                        **values,
+                        processing_started_at=None,
+                        claim_token=None,
+                        updated_at=now,
+                    )
+                )
+                recovered += int((getattr(result, "rowcount", 0) or 0) > 0)
+        return recovered
+
+    async def _reopen_changed_dependencies(self, limit: int) -> int:
+        async with self._factory.begin() as session:
+            await session.execute(
+                insert(system_metadata)
+                .values(key=_DEPENDENCY_KEY, value="")
+                .on_conflict_do_nothing(index_elements=[system_metadata.c.key])
+            )
+            cursor_value = await session.scalar(
+                select(system_metadata.c.value)
+                .where(system_metadata.c.key == _DEPENDENCY_KEY)
+                .with_for_update()
+            )
+            cursor = uuid.UUID(cursor_value) if cursor_value else None
+            statement = (
+                select(EventEvidenceBundleJob)
+                .where(
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED,
+                    EventEvidenceBundleJob.safe_error_code == "event_bundle_retry_exhausted",
+                    EventEvidenceBundleJob.dependency_fingerprint.is_not(None),
+                )
+                .order_by(EventEvidenceBundleJob.event_candidate_id)
+                .limit(limit)
+            )
+            if cursor is not None:
+                statement = statement.where(EventEvidenceBundleJob.event_candidate_id > cursor)
+            blocked = tuple(await session.scalars(statement))
+            if not blocked and cursor is not None:
+                blocked = tuple(
+                    await session.scalars(
+                        select(EventEvidenceBundleJob)
+                        .where(
+                            EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED,
+                            EventEvidenceBundleJob.safe_error_code
+                            == "event_bundle_retry_exhausted",
+                            EventEvidenceBundleJob.dependency_fingerprint.is_not(None),
+                        )
+                        .order_by(EventEvidenceBundleJob.event_candidate_id)
+                        .limit(limit)
+                    )
+                )
+            candidates = tuple(
+                (row.event_candidate_id, row.dependency_fingerprint) for row in blocked
+            )
+            if candidates:
+                await session.execute(
+                    update(system_metadata)
+                    .where(system_metadata.c.key == _DEPENDENCY_KEY)
+                    .values(value=str(candidates[-1][0]), updated_at=datetime.now(UTC))
+                )
+        reopened = 0
+        for identity, old_fingerprint in candidates:
+            try:
+                current = await self._service.dependency_fingerprint(identity)
+            except Exception:
+                # Keep the durable blocked state and continue scanning. The bounded
+                # keyset wraps, so this dependency remains eligible for a later pass.
+                continue
+            if current == old_fingerprint:
+                continue
+            async with self._factory.begin() as session:
+                result = await session.execute(
+                    update(EventEvidenceBundleJob)
+                    .where(
+                        EventEvidenceBundleJob.event_candidate_id == identity,
+                        EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.BLOCKED,
+                        EventEvidenceBundleJob.safe_error_code == "event_bundle_retry_exhausted",
+                        EventEvidenceBundleJob.dependency_fingerprint == old_fingerprint,
+                    )
+                    .values(
+                        status=EventEvidenceBundleJobStatus.PENDING,
+                        attempt_count=0,
+                        safe_error_code=None,
+                        dependency_fingerprint=None,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+                reopened += int((getattr(result, "rowcount", 0) or 0) > 0)
+        return reopened
+
+    async def _claim(self, now: datetime, limit: int) -> tuple[tuple[uuid.UUID, uuid.UUID], ...]:
+        async with self._factory.begin() as session:
+            rows = tuple(
+                await session.scalars(
+                    select(EventEvidenceBundleJob)
+                    .where(
+                        EventEvidenceBundleJob.status.in_(
+                            (
+                                EventEvidenceBundleJobStatus.PENDING,
+                                EventEvidenceBundleJobStatus.RETRY,
+                            )
+                        ),
+                        or_(
+                            EventEvidenceBundleJob.next_retry_at.is_(None),
+                            EventEvidenceBundleJob.next_retry_at <= now,
+                        ),
+                    )
+                    .order_by(
+                        EventEvidenceBundleJob.updated_at, EventEvidenceBundleJob.event_candidate_id
+                    )
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            claims: list[tuple[uuid.UUID, uuid.UUID]] = []
+            for row in rows:
+                token = uuid.uuid4()
+                row.status = EventEvidenceBundleJobStatus.PROCESSING
+                row.attempt_count += 1
+                row.processing_started_at = now
+                row.claim_token = token
+                row.next_retry_at = None
+                row.safe_error_code = None
+                row.dependency_fingerprint = None
+                row.updated_at = now
+                claims.append((row.event_candidate_id, token))
+            return tuple(claims)
+
+    async def _complete(
+        self,
+        identity: uuid.UUID,
+        claim_token: uuid.UUID,
+        status: str,
+        bundle_id: uuid.UUID | None,
+        now: datetime,
+    ) -> bool:
+        final = (
+            EventEvidenceBundleJobStatus.PARTIAL
+            if status == "partial"
+            else EventEvidenceBundleJobStatus.READY
+        )
+        async with self._factory.begin() as session:
+            row = await session.get(EventEvidenceBundleJob, identity, with_for_update=True)
+            if (
+                row is None
+                or row.status is not EventEvidenceBundleJobStatus.PROCESSING
+                or row.claim_token != claim_token
+            ):
+                return False
+            if status == "unchanged" and bundle_id is not None:
+                from market_intelligence.db.models import EventEvidenceBundle
+
+                bundle = await session.get(EventEvidenceBundle, bundle_id)
+                if bundle is not None and bundle.status.value == "partial":
+                    final = EventEvidenceBundleJobStatus.PARTIAL
+            row.status = final
+            row.latest_bundle_id = bundle_id
+            row.attempt_count = 0
+            row.processing_started_at = None
+            row.claim_token = None
+            row.next_retry_at = None
+            row.safe_error_code = None
+            row.dependency_fingerprint = None
+            row.updated_at = now
+            return True
+
+    async def _block(
+        self, identity: uuid.UUID, claim_token: uuid.UUID, code: str, now: datetime
+    ) -> bool:
+        return await self._set_failure(
+            identity,
+            claim_token,
+            EventEvidenceBundleJobStatus.BLOCKED,
+            code,
+            None,
+            now,
+        )
+
+    async def _retry(
+        self, identity: uuid.UUID, claim_token: uuid.UUID, code: str, now: datetime
+    ) -> str:
+        async with self._factory() as session:
+            attempt_count = await session.scalar(
+                select(EventEvidenceBundleJob.attempt_count).where(
+                    EventEvidenceBundleJob.event_candidate_id == identity,
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                    EventEvidenceBundleJob.claim_token == claim_token,
+                )
+            )
+        if attempt_count is None:
+            return "claim_lost"
+        exhausted = attempt_count >= self._max_attempts
+        dependency_fingerprint: str | None = None
+        error = code
+        if exhausted:
+            try:
+                # This read owns its transaction. A DBAPI failure therefore cannot
+                # poison the fresh transaction used for the claim-token transition.
+                dependency_fingerprint = await self._service.dependency_fingerprint(identity)
+                error = "event_bundle_retry_exhausted"
+            except Exception:
+                error = "event_bundle_dependency_fingerprint_unavailable"
+        transitioned = await self._transition_claim(
+            identity,
+            claim_token,
+            status=(
+                EventEvidenceBundleJobStatus.BLOCKED
+                if exhausted
+                else EventEvidenceBundleJobStatus.RETRY
+            ),
+            code=error,
+            retry_at=None if exhausted else now + self._retry_delay,
+            dependency_fingerprint=dependency_fingerprint if exhausted else None,
+            now=now,
+        )
+        if not transitioned:
+            return "claim_lost"
+        return "blocked" if exhausted else "retry"
+
+    async def _transition_claim(
+        self,
+        identity: uuid.UUID,
+        claim_token: uuid.UUID,
+        *,
+        status: EventEvidenceBundleJobStatus,
+        code: str,
+        retry_at: datetime | None,
+        dependency_fingerprint: str | None,
+        now: datetime,
+    ) -> bool:
+        async with self._factory.begin() as session:
+            result = await session.execute(
+                update(EventEvidenceBundleJob)
+                .where(
+                    EventEvidenceBundleJob.event_candidate_id == identity,
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                    EventEvidenceBundleJob.claim_token == claim_token,
+                )
+                .values(
+                    status=status,
+                    safe_error_code=code,
+                    processing_started_at=None,
+                    claim_token=None,
+                    next_retry_at=retry_at,
+                    dependency_fingerprint=dependency_fingerprint,
+                    updated_at=now,
+                )
+            )
+            return (getattr(result, "rowcount", 0) or 0) > 0
+
+    async def _set_failure(
+        self,
+        identity: uuid.UUID,
+        claim_token: uuid.UUID,
+        status: EventEvidenceBundleJobStatus,
+        code: str,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> bool:
+        async with self._factory.begin() as session:
+            result = await session.execute(
+                update(EventEvidenceBundleJob)
+                .where(
+                    EventEvidenceBundleJob.event_candidate_id == identity,
+                    EventEvidenceBundleJob.status == EventEvidenceBundleJobStatus.PROCESSING,
+                    EventEvidenceBundleJob.claim_token == claim_token,
+                )
+                .values(
+                    status=status,
+                    safe_error_code=code,
+                    processing_started_at=None,
+                    claim_token=None,
+                    next_retry_at=retry_at,
+                    updated_at=now,
+                )
+            )
+            return (getattr(result, "rowcount", 0) or 0) > 0
