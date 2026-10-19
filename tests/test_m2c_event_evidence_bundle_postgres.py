@@ -351,6 +351,145 @@ async def test_recovered_claim_cannot_create_bundle_or_advance_head() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("exhausted", [False, True])
+async def test_stale_recovery_revokes_claim_before_old_worker_revision(
+    exhausted: bool,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "sec_edgar")
+        event_id = await _event(factory, (evidence_id,))
+        old_token = uuid.uuid4()
+        attempt_count = 1
+        max_attempts = 1 if exhausted else 2
+        async with factory.begin() as session:
+            session.add(
+                EventEvidenceBundleJob(
+                    event_candidate_id=event_id,
+                    status=EventEvidenceBundleJobStatus.PROCESSING,
+                    attempt_count=attempt_count,
+                    processing_started_at=datetime.now(UTC) - timedelta(hours=1),
+                    claim_token=old_token,
+                )
+            )
+        delegate = RichEvidencePacketBuilder(factory)
+        before_revision = asyncio.Event()
+        release = asyncio.Event()
+
+        class GateBeforeRevision:
+            async def build_many(self, evidence_ids: tuple[uuid.UUID, ...]) -> tuple[object, ...]:
+                packets = await delegate.build_many(evidence_ids)
+                before_revision.set()
+                await release.wait()
+                return packets
+
+            async def build_many_in_session(
+                self, session: AsyncSession, evidence_ids: tuple[uuid.UUID, ...]
+            ) -> tuple[object, ...]:
+                return await delegate.build_many_in_session(session, evidence_ids)
+
+        old_worker = asyncio.create_task(
+            EventEvidenceBundleService(
+                factory,
+                packet_builder=GateBeforeRevision(),  # type: ignore[arg-type]
+            ).build(event_id, claim_token=old_token)
+        )
+        await before_revision.wait()
+        recovered = await EventEvidenceBundleWorker(
+            factory, max_attempts=max_attempts, stale_after=timedelta(seconds=1)
+        )._recover_stale(datetime.now(UTC), 10)
+        assert recovered == 1
+        release.set()
+        with pytest.raises(BundleClaimLost, match="event_bundle_claim_lost"):
+            await old_worker
+        async with factory() as session:
+            assert await session.scalar(select(func.count()).select_from(EventEvidenceBundle)) == 0
+            assert await session.get(EventEvidenceBundleHead, event_id) is None
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert job is not None
+            assert job.claim_token is None
+            assert job.status is (
+                EventEvidenceBundleJobStatus.BLOCKED
+                if exhausted
+                else EventEvidenceBundleJobStatus.RETRY
+            )
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exhausted", [False, True])
+async def test_old_worker_commit_atomically_wins_before_stale_recovery(
+    exhausted: bool,
+) -> None:
+    engine = create_async_engine(POSTGRES_TEST_URL)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        _raw, evidence_id = await _linked_evidence(factory, "marketaux")
+        event_id = await _event(factory, (evidence_id,))
+        old_token = uuid.uuid4()
+        max_attempts = 1 if exhausted else 2
+        async with factory.begin() as session:
+            session.add(
+                EventEvidenceBundleJob(
+                    event_candidate_id=event_id,
+                    status=EventEvidenceBundleJobStatus.PROCESSING,
+                    attempt_count=1,
+                    processing_started_at=datetime.now(UTC) - timedelta(hours=1),
+                    claim_token=old_token,
+                )
+            )
+        delegate = RichEvidencePacketBuilder(factory)
+        job_locked = asyncio.Event()
+        release = asyncio.Event()
+
+        class GateWithJobLocked:
+            async def build_many(self, evidence_ids: tuple[uuid.UUID, ...]) -> tuple[object, ...]:
+                return await delegate.build_many(evidence_ids)
+
+            async def build_many_in_session(
+                self, session: AsyncSession, evidence_ids: tuple[uuid.UUID, ...]
+            ) -> tuple[object, ...]:
+                packets = await delegate.build_many_in_session(session, evidence_ids)
+                job_locked.set()
+                await release.wait()
+                return packets
+
+        old_worker = asyncio.create_task(
+            EventEvidenceBundleService(
+                factory,
+                packet_builder=GateWithJobLocked(),  # type: ignore[arg-type]
+            ).build(event_id, claim_token=old_token)
+        )
+        await job_locked.wait()
+        recovery = asyncio.create_task(
+            EventEvidenceBundleWorker(
+                factory, max_attempts=max_attempts, stale_after=timedelta(seconds=1)
+            )._recover_stale(datetime.now(UTC), 10)
+        )
+        # The bundle transaction already owns the job row. SKIP LOCKED makes
+        # recovery yield this race without waiting or replacing the live claim.
+        assert await recovery == 0
+        release.set()
+        result = await old_worker
+        async with factory() as session:
+            head = await session.get(EventEvidenceBundleHead, event_id)
+            job = await session.get(EventEvidenceBundleJob, event_id)
+            assert head is not None and head.current_bundle_id == result.bundle_id
+            assert job is not None and job.latest_bundle_id == result.bundle_id
+            assert job.status in {
+                EventEvidenceBundleJobStatus.READY,
+                EventEvidenceBundleJobStatus.PARTIAL,
+            }
+            assert job.claim_token is None
+    finally:
+        await _cleanup(factory)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_packet_revision_cannot_publish_mixed_snapshot() -> None:
     engine = create_async_engine(POSTGRES_TEST_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -610,12 +749,23 @@ async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item()
                         await session.execute(text("SELECT 1 / 0"))
                 return await delegate.dependency_fingerprint(identity)
 
-        worker = EventEvidenceBundleWorker(factory, max_attempts=1)
+        worker = EventEvidenceBundleWorker(factory, max_attempts=1, retry_delay=timedelta(0))
         worker._service = IsolatedFailureService()  # type: ignore[assignment]
         report = await worker.process_batch(limit=10)
         assert report.claimed == 2
-        assert report.blocked == 1
+        assert report.retry == 1
         assert report.ready + report.partial == 1
+        retry_claims = await worker._claim(datetime.now(UTC) + timedelta(seconds=1), 10)
+        assert len(retry_claims) == 1 and retry_claims[0][0] == first_event
+        assert (
+            await worker._retry(
+                first_event,
+                retry_claims[0][1],
+                "event_bundle_packet_not_ready",
+                datetime.now(UTC) + timedelta(seconds=1),
+            )
+            == "blocked"
+        )
         async with factory() as session:
             first_job = await session.get(EventEvidenceBundleJob, first_event)
             second_job = await session.get(EventEvidenceBundleJob, second_event)
@@ -672,7 +822,10 @@ async def test_stale_fingerprint_dbapi_failure_isolated_from_later_recovery() ->
                 return await delegate.dependency_fingerprint(identity)
 
         worker = EventEvidenceBundleWorker(
-            factory, max_attempts=1, stale_after=timedelta(seconds=1)
+            factory,
+            max_attempts=1,
+            stale_after=timedelta(seconds=1),
+            retry_delay=timedelta(0),
         )
         worker._service = IsolatedDbapiFingerprint()  # type: ignore[assignment]
         assert await worker._recover_stale(datetime.now(UTC), 10) == 2
@@ -680,12 +833,43 @@ async def test_stale_fingerprint_dbapi_failure_isolated_from_later_recovery() ->
             first_job = await session.get(EventEvidenceBundleJob, first_event)
             second_job = await session.get(EventEvidenceBundleJob, second_event)
             assert first_job is not None and second_job is not None
-            assert first_job.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert first_job.status is EventEvidenceBundleJobStatus.RETRY
             assert first_job.safe_error_code == "event_bundle_dependency_fingerprint_unavailable"
             assert first_job.dependency_fingerprint is None
             assert second_job.status is EventEvidenceBundleJobStatus.BLOCKED
             assert second_job.safe_error_code == "event_bundle_retry_exhausted"
             assert second_job.dependency_fingerprint is not None
+        retry_now = datetime.now(UTC) + timedelta(seconds=1)
+        claims = await worker._claim(retry_now, 10)
+        assert len(claims) == 1 and claims[0][0] == first_event
+        async with factory.begin() as session:
+            await session.execute(
+                text("""
+                UPDATE event_evidence_bundle_jobs
+                SET processing_started_at=:stale
+                WHERE event_candidate_id=:event
+                """),
+                {"stale": retry_now - timedelta(hours=1), "event": first_event},
+            )
+        assert await worker._recover_stale(retry_now, 10) == 1
+        async with factory() as session:
+            exhausted = await session.get(EventEvidenceBundleJob, first_event)
+            assert exhausted is not None
+            assert exhausted.status is EventEvidenceBundleJobStatus.BLOCKED
+            assert exhausted.safe_error_code == "event_bundle_dependency_fingerprint_unavailable"
+            assert exhausted.attempt_count == 2
+
+        worker._service = delegate  # type: ignore[assignment]
+        assert await worker._reopen_changed_dependencies(10) == 1
+        async with factory() as session:
+            reopened = await session.get(EventEvidenceBundleJob, first_event)
+            assert reopened is not None
+            assert reopened.status is EventEvidenceBundleJobStatus.PENDING
+            assert reopened.attempt_count == 0
+            assert reopened.safe_error_code is None
+            assert reopened.dependency_fingerprint is None
+        recovered = await worker.process_batch(limit=10)
+        assert recovered.ready + recovered.partial == 1
     finally:
         await _cleanup(factory)
         await engine.dispose()

@@ -101,6 +101,7 @@ class EventEvidenceBundleService:
             prepared.append(_Prepared(association_id, evidence_id, packet, identity, value))
 
         async with self._factory.begin() as session:
+            claimed_job: EventEvidenceBundleJob | None = None
             candidate = await session.scalar(
                 select(EventCandidate)
                 .where(EventCandidate.id == event_candidate_id)
@@ -136,13 +137,13 @@ class EventEvidenceBundleService:
             if set(locked_evidence) != {row[1] for row in locked}:
                 raise BundleConflict("event_bundle_evidence_missing")
             if claim_token is not None:
-                job = await session.get(
+                claimed_job = await session.get(
                     EventEvidenceBundleJob, event_candidate_id, with_for_update=True
                 )
                 if (
-                    job is None
-                    or job.status is not EventEvidenceBundleJobStatus.PROCESSING
-                    or job.claim_token != claim_token
+                    claimed_job is None
+                    or claimed_job.status is not EventEvidenceBundleJobStatus.PROCESSING
+                    or claimed_job.claim_token != claim_token
                 ):
                     raise BundleClaimLost("event_bundle_claim_lost")
             try:
@@ -161,6 +162,7 @@ class EventEvidenceBundleService:
                 current = await session.get(EventEvidenceBundle, head.current_bundle_id)
                 if current is None:
                     raise BundleConflict("event_bundle_head_invalid")
+                _finalize_claimed_job(claimed_job, current.status, current.id)
                 return BundleBuildResult(
                     "unchanged", event_candidate_id, current.id, current.revision
                 )
@@ -171,6 +173,7 @@ class EventEvidenceBundleService:
             if head is not None:
                 current = await session.get(EventEvidenceBundle, head.current_bundle_id)
                 if current is not None and current.bundle_digest == digest:
+                    _finalize_claimed_job(claimed_job, current.status, current.id)
                     return BundleBuildResult(
                         "unchanged", event_candidate_id, current.id, current.revision
                     )
@@ -240,6 +243,7 @@ class EventEvidenceBundleService:
                 if status is EventEvidenceBundleStatus.READY:
                     head.canonical_bundle_id = bundle.id
                 head.updated_at = datetime.now(UTC)
+            _finalize_claimed_job(claimed_job, status, bundle.id)
             return BundleBuildResult(status.value, event_candidate_id, bundle.id, revision)
 
     async def dependency_fingerprint(self, event_candidate_id: uuid.UUID) -> str:
@@ -421,6 +425,29 @@ def _packets_still_current(
         and row.packet.current.projection_hash == current.current.projection_hash
         for row, current in zip(prepared, current_packets, strict=True)
     )
+
+
+def _finalize_claimed_job(
+    job: EventEvidenceBundleJob | None,
+    status: EventEvidenceBundleStatus,
+    bundle_id: uuid.UUID,
+) -> None:
+    """Commit the bundle head and its worker outcome in one transaction."""
+    if job is None:
+        return
+    job.status = (
+        EventEvidenceBundleJobStatus.PARTIAL
+        if status is EventEvidenceBundleStatus.PARTIAL
+        else EventEvidenceBundleJobStatus.READY
+    )
+    job.latest_bundle_id = bundle_id
+    job.attempt_count = 0
+    job.processing_started_at = None
+    job.claim_token = None
+    job.next_retry_at = None
+    job.safe_error_code = None
+    job.dependency_fingerprint = None
+    job.updated_at = datetime.now(UTC)
 
 
 def _quality(

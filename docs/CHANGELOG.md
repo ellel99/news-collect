@@ -2,7 +2,8 @@
 
 - Harden M2-C correction semantics: single-active-Event Evidence ownership, independent value-duplicate and
   identity-conflict dimensions, deterministic Evidence-row serialization with R8-A job invalidation, stale
-  exhaustion fingerprints, and material-only dependency reopening. No production activation or external request.
+  exhaustion fingerprints, material-only dependency reopening, atomic bundle/head/job completion, recovery-owned
+  stale claim revocation, and bounded fingerprint-error recovery. No production activation or external request.
 
 ## Unreleased — M2-C Event Evidence Bundle
 

@@ -64,15 +64,19 @@ and provider SDK objects are forbidden. Conflict is expressed, not judged.
   stale/mixed consumable head or return a durable false unchanged.
 - A concurrent membership change or not-yet-linked Rich Evidence dependency is RETRY, while invalid identity,
   provenance, packet contracts and exhausted retry are value-free BLOCKED outcomes.
-- A claim token is revalidated under lock inside the same transaction that creates a revision, so a stale worker
-  cannot create a bundle, advance the head or complete a recovered claim (ABA protection).
+- A claim token is revalidated under lock and successful bundle/head/job completion is committed in the same
+  transaction. Stale recovery first replaces the old token under row lock with a recovery-owned PROCESSING token;
+  fingerprinting then runs in an independent transaction and the final RETRY/BLOCKED transition uses that exact
+  recovery token. A stale worker therefore either atomically completes first or cannot create/advance anything.
 - Event membership authority itself is capped at 500 active associations per EventCandidate by a PostgreSQL
   advisory-lock trigger, including concurrent inserts/reactivation. Inactive history is not counted. Bundle and
   service bounds remain defense in depth.
 - Retry and stale-recovery exhaustion record the same value-free dependency fingerprint. It contains only active
   association identity and buildable linked projection lineage/hash; bookkeeping timestamps are excluded.
   Unchanged input stays BLOCKED; a later Evidence link or association material change atomically reopens the job
-  with a fresh finite retry budget.
+  with a fresh finite retry budget. Fingerprint DBAPI failure receives one delayed retry, then becomes value-free
+  BLOCKED; bounded reconciliation reopens once fingerprinting recovers. A still-unbuildable dependency then records
+  the normal material fingerprint and remains blocked until that material changes, avoiding a hot loop.
 - The mutable head may point only to the greatest revision and its canonical pointer must equal the greatest READY
   revision. PostgreSQL enforces these current/canonical semantics and rejects rollback/rebinding by SQL bypass.
 - Migration 0011 is additive. Existing-state preflight rejects broken active membership value-free. Downgrade is

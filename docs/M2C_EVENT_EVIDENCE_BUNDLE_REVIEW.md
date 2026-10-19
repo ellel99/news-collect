@@ -23,15 +23,18 @@
 8. Existing-state preflight is read-only and value-free. Downgrade refuses nonempty M2-C state.
 9. M2-D receives bundle version/digest/status, ordered items, scalar/multidimensional relations,
    packet/projection hashes, diversity and time range, and consumes only a matching READY/PARTIAL durable job.
-10. The service revalidates the worker claim token under lock in the revision transaction; recovered stale claims
-    cannot create history or advance the head. PostgreSQL independently caps active membership and revisions at
-    500 items and requires head pointers to name the latest current and latest READY canonical revisions.
+10. The service revalidates the worker claim token and commits bundle/head/job completion in one transaction.
+    Recovery first atomically replaces a stale token with a recovery-owned PROCESSING token, then fingerprints in
+    an independent transaction before an exact-token RETRY/BLOCKED transition. PostgreSQL independently caps active
+    membership and revisions at 500 items and requires heads to name the latest current/latest READY revisions.
 11. An EventCandidate with no active membership has no current head. Reconciliation removes only that mutable
     pointer, preserves immutable revisions, and can reopen the blocked job after a reviewed association is added.
 12. One revision reads all packets from one repeatable-read snapshot. The commit transaction locks Event,
     membership and Evidence in deterministic order and rejects changed projection identity/hash/count. A later
     R8-A link atomically invalidates the job before downstream consumption. Exhausted transient dependencies reopen
-    only after a material-only persisted fingerprint changes; unchanged input remains bounded BLOCKED.
+    only after a material-only persisted fingerprint changes; unchanged input remains bounded BLOCKED. Fingerprint
+    DBAPI failure has one delayed retry, bounded exhaustion, and a periodic recovery/reopen path; any subsequent
+    build failure with working fingerprinting returns to material-change-gated BLOCKED rather than a hot loop.
 
 ## Explicitly absent
 
