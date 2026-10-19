@@ -753,7 +753,7 @@ async def test_fingerprint_failure_isolated_and_does_not_stop_later_batch_item()
         worker._service = IsolatedFailureService()  # type: ignore[assignment]
         report = await worker.process_batch(limit=10)
         assert report.claimed == 2
-        assert report.retry == 1
+        assert report.retried == 1
         assert report.ready + report.partial == 1
         retry_claims = await worker._claim(datetime.now(UTC) + timedelta(seconds=1), 10)
         assert len(retry_claims) == 1 and retry_claims[0][0] == first_event
