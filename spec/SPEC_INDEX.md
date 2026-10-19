@@ -2,7 +2,7 @@
 
 Foundation：v2.3-FROZEN
 Current Phase：Event Intelligence foundation
-Active SPEC：SPEC-0046 — M2-B Rich Evidence Packet（Active — Implementation Review）
+Active SPEC：SPEC-0047 — M2-C Event Evidence Bundle（Active — Draft Implementation Review）
 Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 
 | SPEC | 名称 | 状态 | 依赖 |
@@ -44,9 +44,10 @@ Latest governance review：Foundation v2.3 R0 Freeze Review（Completed/PASS）
 | SPEC-0041 implementation | Unified Production Collection Control Plane Implementation Contract | Completed — Implementation Review approved | SPEC-0041 architecture；Foundation v2.3 R0 PASS；R1 |
 | SPEC-0042 implementation | Durable Safe Factual Projection | Completed — Implementation Review approved | SPEC-0041 implementation merged；Pre-AI R2 |
 | SPEC-0043 | R8-A SafeFactProjection → Evidence Durable Handoff | Completed — Implementation Review approved; PR #45 merged | SPEC-0042 implementation；Pre-AI R8 |
-| SPEC-0044 | M2 AI-Ready Evidence Data Plane | Authorized milestone; M2-A completed, M2-B active, M2-C/D not started | R1/R2/R8-A |
+| SPEC-0044 | M2 AI-Ready Evidence Data Plane | Authorized milestone; M2-A/M2-B completed, M2-C active, M2-D not started | R1/R2/R8-A |
 | SPEC-0045 | M2-A Four-Provider Data Breadth | Completed — Implementation Review approved; PR #46 merged | SPEC-0044 |
-| SPEC-0046 | M2-B Rich Evidence Packet | Active — Implementation Review | SPEC-0045; R8-A |
+| SPEC-0046 | M2-B Rich Evidence Packet | Completed — Implementation Review approved; PR #47 merged | SPEC-0045; R8-A |
+| SPEC-0047 | M2-C Event Evidence Bundle | Active — Draft Implementation Review | SPEC-0046; SPEC-0039 EventCandidate foundation |
 
 仓库允许 Active SPEC 为 `None`。此时不得开始任何实现，只能进行用户明确授权的文档准备、
 审查或历史收尾。`Planned` 不代表批准；`Active — Docs Review` 也只表示唯一 SPEC 文档正在
@@ -112,11 +113,12 @@ SPEC-0018 只设计 normalized evidence contract，也不授权正式 normalizat
 SPEC-0021 implementation、SPEC-0023 Docs Review/implementation、SPEC-0024 Docs Review、
 SPEC-0025、SPEC-0026、SPEC-0027、SPEC-0028 与 SPEC-0029 implementation 均已 Completed。当前
 SPEC-0030–0039 已完成；SPEC-0041 Architecture/Implementation 已完成批准范围并进入 main。当前 Active
-SPEC 为 SPEC-0046 Implementation Review；Foundation v2.3-FROZEN 生效，R0 Completed/PASS；production
+SPEC 为 SPEC-0047 Draft Implementation Review；Foundation v2.3-FROZEN 生效，R0 Completed/PASS；production
 authority 仍为 `legacy`，Migration B、production activation、cutover 与 historical replay 未授权、未开始。
 R2 已新增 canonical RawItem observation lineage 和 durable safe factual projection；R8-A 实现 READY
 projection 到 canonical Evidence/allowlisted Content 的 durable handoff；M2-A 已完成批准的 operation
-breadth。M2-B 只实现 typed Rich Evidence read boundary。Event/Fact/Impact/AI 与 M2-C/D 仍属于后续独立审核范围。
+breadth。M2-B typed Rich Evidence read boundary 已进入 main；M2-C 只实现 deterministic durable Event
+Evidence Bundle，不实现关联判断 AI。Fact/Impact/AI 与 M2-D 仍属于后续独立审核范围。
 PR #39 的 SPEC-0040 是未合并 Draft，在 Pre-AI R0–R8 完成前不得合并；之后须基于最新 main
 重新审计/rebase。SPEC-0005 及其他 Planned/candidate 不代表批准；SPEC-0022 已被 SPEC-0039
 absorb/supersede。
